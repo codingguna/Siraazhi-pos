@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Siraazhi Pro POS — Vanur FPC Ltd</title>
   <meta name="theme-color" content="#134e19">
   <meta name="description" content="Professional Billing, Multi-Printer, Inventory & GST Suite for Vanur Farmer Producer Company Ltd">
@@ -27,6 +27,9 @@
 
     <!-- Quick Status Bar & Actions -->
     <div class="header-tools">
+      <button class="tool-btn" id="printQueueBtn" title="Master Hardware Print Queue" onclick="showPrintQueueModal()" style="display:none;">
+        🖨️ Queue <span class="queue-badge" id="printQueueBadge" style="display:none;">0</span>
+      </button>
       <button class="tool-btn" id="qrBtn" title="Connect Mobile / Tablet over Wi-Fi" onclick="showNetworkModal()">
         📱 Mobile / LAN Access
       </button>
@@ -54,10 +57,21 @@
 
     <!-- 1. POS BILLING SECTION -->
     <section id="tab-pos" class="tab-pane active">
-      <div class="pos-workspace">
+      
+      <!-- Mobile View Switcher (Visible on mobile/tablets <= 850px) -->
+      <div class="mobile-pos-switcher" id="mobilePosSwitcher">
+        <button type="button" class="mobile-switch-btn active" id="btnShowCatalog" onclick="switchMobilePosView('catalog')">
+          🛢️ Oil Catalog
+        </button>
+        <button type="button" class="mobile-switch-btn" id="btnShowCart" onclick="switchMobilePosView('cart')">
+          🧾 Active Bill (<span id="mobileCartItemCount">0</span>)
+        </button>
+      </div>
+
+      <div class="pos-workspace" id="posWorkspace">
         
         <!-- Left: Catalog & Fast Item Selector -->
-        <div class="pos-catalog-panel">
+        <div class="pos-catalog-panel" id="posCatalogPanel">
           <div class="catalog-header">
             <div class="search-box">
               <span class="search-icon">🔍</span>
@@ -79,8 +93,13 @@
         </div>
 
         <!-- Right: Real-time Cart & Checkout Terminal -->
-        <div class="pos-cart-panel">
+        <div class="pos-cart-panel" id="posCartPanel">
           
+          <!-- Mobile Back to Catalog Button (Mobile only) -->
+          <button type="button" class="mobile-back-catalog-btn" id="mobileBackCatalogBtn" onclick="switchMobilePosView('catalog')">
+            ← Add More Oils from Catalog
+          </button>
+
           <!-- Multi-Bill Active Tabs Bar -->
           <div class="bill-tabs-bar">
             <div class="bill-tabs-list" id="billTabsList">
@@ -220,6 +239,19 @@
         </div>
 
       </div>
+
+      <!-- Sticky Floating Mobile Cart Bar (Appears on mobile when in catalog view and cart has items) -->
+      <div class="mobile-floating-cart-bar" id="mobileFloatingCartBar" style="display:none;" onclick="switchMobilePosView('cart')">
+        <div class="mfcb-left">
+          <span class="mfcb-icon">🛒</span>
+          <div class="mfcb-details">
+            <span class="mfcb-count" id="mfcbCount">0 items in bill</span>
+            <span class="mfcb-total" id="mfcbTotal">₹0.00</span>
+          </div>
+        </div>
+        <button type="button" class="mfcb-btn">View Bill & Pay ➔</button>
+      </div>
+
     </section>
 
     <!-- 2. DASHBOARD SECTION -->
@@ -829,6 +861,63 @@
       </div>
     </div>
   </div>
+
+  <!-- MODAL: MASTER SYSTEM PRINT QUEUE -->
+  <div id="printQueueModal" class="modal-overlay">
+    <div class="modal-card print-queue-modal-card">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:22px;">🖨️</span>
+          <div>
+            <h3 style="margin:0;">Master System Print Queue</h3>
+            <span class="muted-text" style="font-size:11px;">Central hardware printer spooler for shop floor mobile terminals</span>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closePrintQueueModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Queue controls -->
+        <div class="print-queue-toolbar">
+          <label class="toggle-control">
+            <input type="checkbox" id="autoPrintToggle" checked onchange="toggleAutoPrintRemote(this.checked)">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><b>⚡ Auto-Print Incoming Mobile Bills</b> (Thermal Roll)</span>
+          </label>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-sm btn-secondary" onclick="loadPrintQueueModalData()">🔄 Refresh</button>
+            <button class="btn btn-sm btn-secondary" onclick="clearFinishedPrintJobs()">🧹 Clear Done</button>
+          </div>
+        </div>
+
+        <!-- Queue Items List -->
+        <div class="print-queue-list-wrapper">
+          <table class="data-table print-queue-table">
+            <thead>
+              <tr>
+                <th>Bill No</th>
+                <th>Time</th>
+                <th>Terminal / Device</th>
+                <th>Customer</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th class="center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="printQueueTableBody">
+              <tr><td colspan="7" class="center muted-text" style="padding:24px;">No print jobs in queue</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="muted-text" style="font-size:12px;" id="printQueueFooterStatus">Printer: Ready on Master PC</span>
+        <button class="btn btn-secondary" onclick="closePrintQueueModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastNotificationContainer" class="toast-container"></div>
 
   <!-- SCRIPTS -->
   <script src="js/print.js"></script>

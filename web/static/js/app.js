@@ -38,7 +38,7 @@ let PRODUCTS = [];
 let ALL_BILLS = [];
 let ACTIVE_CATEGORY = 'all';
 let IS_MASTER_MODE = true; // Determined dynamically below
-const DEFAULT_MASTER_PIN = '1234';
+const DEFAULT_MASTER_PIN = '822035';
 
 // Multi-Bill State Management (Hold & Resume Active Carts)
 let BILL_TABS = [
@@ -178,6 +178,14 @@ function enableClientStaffMode() {
   $('statusText').textContent = 'Staff Billing Mode';
   $('statusPill').style.background = '#0284c7';
 
+  // Mobile/Client terminals print to Master System
+  if ($('saveAndPrintBtn')) {
+    $('saveAndPrintBtn').innerHTML = '🖨️ Send to Master Printer (F10)';
+  }
+  if ($('printQueueBtn')) {
+    $('printQueueBtn').style.display = 'none';
+  }
+
   // Add an unlock master button
   const tools = document.querySelector('.header-tools');
   if (!$('unlockMasterBtn')) {
@@ -206,9 +214,18 @@ function enableMasterMode() {
   $('statusText').textContent = 'Master System';
   $('statusPill').style.background = 'rgba(0, 0, 0, 0.2)';
 
+  if ($('saveAndPrintBtn')) {
+    $('saveAndPrintBtn').innerHTML = '🖨 Save & Print (F10)';
+  }
+  if ($('printQueueBtn')) {
+    $('printQueueBtn').style.display = 'inline-flex';
+  }
+
   if ($('unlockMasterBtn')) {
     $('unlockMasterBtn').remove();
   }
+
+  startMasterPrintQueuePoller();
 }
 
 /**
@@ -715,6 +732,7 @@ function renderCart() {
 
   recalcCart();
   renderBillTabs();
+  updateMobileFloatingCart();
 }
 
 /**
@@ -810,8 +828,24 @@ async function checkoutBill(printFormat) {
     // Print or PDF Export
     if (printFormat === 'pdf') {
       PDFEngine.saveBillPDF(bill, SETTINGS);
-    } else {
+      showToast(`📄 PDF for Bill ${bill.billNo} saved!`);
+    } else if (IS_MASTER_MODE) {
       PrintEngine.print(bill, printFormat, SETTINGS);
+      showToast(`✅ Bill ${bill.billNo} Created & Printed!`);
+    } else {
+      // Remote Mobile / Tablet Terminal Mode:
+      // Send print job to Master System Print Queue!
+      try {
+        await api('POST', '/api/print-queue', {
+          billId: bill.id,
+          bill: bill,
+          format: printFormat || (SETTINGS && SETTINGS.defaultPrinter) || '80mm'
+        });
+        showToast(`✅ Bill ${bill.billNo} Created! Queued to Master Thermal Printer.`, 'success', 5000);
+      } catch (qErr) {
+        console.error('Queue error:', qErr);
+        showToast(`✅ Bill ${bill.billNo} created! (Master spooler note: ${qErr.message})`, 'info');
+      }
     }
 
     // Advance Multi-Bill Tabs: close current tab if multiple bills were open, or clear it
@@ -1382,7 +1416,17 @@ async function editExistingBill(id) {
 async function reprintBill(id, format) {
   try {
     const bill = await api('GET', `/api/bills/${id}`);
-    PrintEngine.print(bill, format, SETTINGS);
+    if (IS_MASTER_MODE) {
+      PrintEngine.print(bill, format, SETTINGS);
+      showToast(`🖨️ Printing Bill ${bill.billNo}...`);
+    } else {
+      await api('POST', '/api/print-queue', {
+        billId: bill.id,
+        bill: bill,
+        format: format || (SETTINGS && SETTINGS.defaultPrinter) || '80mm'
+      });
+      showToast(`✅ Bill ${bill.billNo} sent to Master Print Queue!`, 'success', 4000);
+    }
   } catch (err) {
     alert('Failed to fetch bill for printing: ' + err.message);
   }
@@ -1588,6 +1632,228 @@ function closeAllModals() {
   closeProductModal();
   closeAdjustModal();
   closeNetworkModal();
+  closePrintQueueModal();
+}
+
+// --------------------------------------------------------------------------
+// Toast Notification Engine
+// --------------------------------------------------------------------------
+function showToast(message, type = 'success', duration = 3500) {
+  const container = $('toastNotificationContainer');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast-message ${type}`;
+  toast.innerHTML = `<span>${type === 'success' ? '✅' : '🔔'}</span> <span>${escapeHtml(message)}</span>`;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(10px)';
+    setTimeout(() => toast.remove(), 400);
+  }, duration);
+}
+
+// --------------------------------------------------------------------------
+// Mobile POS View Switcher & Floating Cart Bar
+// --------------------------------------------------------------------------
+let CURRENT_MOBILE_POS_VIEW = 'catalog'; // 'catalog' or 'cart'
+
+function switchMobilePosView(view) {
+  CURRENT_MOBILE_POS_VIEW = view;
+  const catPanel = $('posCatalogPanel');
+  const cartPanel = $('posCartPanel');
+  const btnCatalog = $('btnShowCatalog');
+  const btnCart = $('btnShowCart');
+  const floatingBar = $('mobileFloatingCartBar');
+
+  if (window.innerWidth <= 850) {
+    if (view === 'cart') {
+      if (catPanel) catPanel.classList.add('mobile-hidden');
+      if (cartPanel) cartPanel.classList.remove('mobile-hidden');
+      if (btnCatalog) btnCatalog.classList.remove('active');
+      if (btnCart) btnCart.classList.add('active');
+      if (floatingBar) floatingBar.style.display = 'none';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      if (catPanel) catPanel.classList.remove('mobile-hidden');
+      if (cartPanel) cartPanel.classList.add('mobile-hidden');
+      if (btnCatalog) btnCatalog.classList.add('active');
+      if (btnCart) btnCart.classList.remove('active');
+      updateMobileFloatingCart();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  } else {
+    // Desktop / Tablet landscape shows both side-by-side
+    if (catPanel) catPanel.classList.remove('mobile-hidden');
+    if (cartPanel) cartPanel.classList.remove('mobile-hidden');
+    if (floatingBar) floatingBar.style.display = 'none';
+  }
+}
+
+function updateMobileFloatingCart() {
+  const floatingBar = $('mobileFloatingCartBar');
+  const badge = $('mobileCartItemCount');
+  const cartBadge = $('mobileCartBadge');
+  if (!floatingBar) return;
+
+  const count = CART.reduce((sum, it) => sum + (it.qty || 1), 0);
+  const total = CART.reduce((sum, it) => sum + (it.qty * it.price), 0);
+
+  if (badge) badge.textContent = count;
+  if (cartBadge) cartBadge.textContent = count;
+
+  if (window.innerWidth <= 850 && CURRENT_MOBILE_POS_VIEW === 'catalog' && count > 0) {
+    $('mfcbCount').textContent = `${count} item${count > 1 ? 's' : ''} in bill`;
+    $('mfcbTotal').textContent = formatINR(total);
+    floatingBar.style.display = 'flex';
+  } else {
+    floatingBar.style.display = 'none';
+  }
+}
+
+window.addEventListener('resize', () => {
+  switchMobilePosView(CURRENT_MOBILE_POS_VIEW);
+});
+
+// --------------------------------------------------------------------------
+// Master System Print Queue Spooler & Management
+// --------------------------------------------------------------------------
+let printQueuePollTimer = null;
+
+function startMasterPrintQueuePoller() {
+  if (printQueuePollTimer) return;
+  checkMasterPrintQueue();
+  printQueuePollTimer = setInterval(checkMasterPrintQueue, 2500);
+}
+
+async function checkMasterPrintQueue() {
+  if (!IS_MASTER_MODE) return;
+  try {
+    const res = await api('GET', '/api/print-queue?status=pending');
+    const badge = $('printQueueBadge');
+    const count = res.pendingCount || 0;
+    if (badge) {
+      badge.textContent = count;
+      badge.style.display = count > 0 ? 'inline-block' : 'none';
+    }
+
+    const autoPrint = localStorage.getItem('siraazhi_autoprint') !== 'false';
+    if (autoPrint && res.jobs && res.jobs.length > 0) {
+      for (const job of res.jobs) {
+        if (job.status === 'pending' && job.bill) {
+          // Trigger print on Master System's physical hardware printer
+          PrintEngine.print(job.bill, job.format, SETTINGS);
+          // Mark completed in queue
+          await api('POST', `/api/print-queue/${job.id}/complete`);
+          showToast(`🔔 Remote Bill #${job.billNo} received & sent to printer!`, 'info', 4000);
+          loadDashboard();
+          loadBills();
+        }
+      }
+      checkMasterPrintQueue();
+    }
+  } catch (err) {
+    // Silent ignore for minor polling hiccups
+  }
+}
+
+async function showPrintQueueModal() {
+  $('printQueueModal').classList.add('active');
+  const autoPrintToggle = $('autoPrintToggle');
+  if (autoPrintToggle) {
+    autoPrintToggle.checked = localStorage.getItem('siraazhi_autoprint') !== 'false';
+  }
+  loadPrintQueueModalData();
+}
+
+function closePrintQueueModal() {
+  $('printQueueModal').classList.remove('active');
+}
+
+function toggleAutoPrintRemote(checked) {
+  localStorage.setItem('siraazhi_autoprint', checked ? 'true' : 'false');
+  showToast(checked ? '⚡ Auto-print enabled for incoming mobile bills' : '⏸ Auto-print paused. Bills will wait in queue.');
+}
+
+async function loadPrintQueueModalData() {
+  const tbody = $('printQueueTableBody');
+  if (!tbody) return;
+  try {
+    const res = await api('GET', '/api/print-queue');
+    const jobs = res.jobs || [];
+    if (!jobs.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="center muted-text" style="padding:24px;">No print jobs in queue</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = jobs.map(j => {
+      const isPending = j.status === 'pending';
+      const timeStr = new Date(j.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const cust = j.bill && j.bill.customer ? j.bill.customer.name : '-';
+      const total = j.bill ? formatINR(j.bill.grandTotal) : '-';
+
+      return `
+        <tr>
+          <td><b>${escapeHtml(j.billNo)}</b></td>
+          <td style="font-size:12px;">${timeStr}</td>
+          <td><span style="font-size:11px; font-family:monospace; background:#e2e8f0; padding:2px 6px; border-radius:4px;">${escapeHtml(j.clientIp || 'LAN')}</span></td>
+          <td>${escapeHtml(cust)}</td>
+          <td style="font-weight:700;">${total}</td>
+          <td><span class="status-badge ${j.status}">${j.status}</span></td>
+          <td class="center">
+            ${isPending ? 
+              `<button class="btn btn-sm btn-primary" onclick="executeManualPrintJob('${j.id}')">🖨️ Print Now</button>` : 
+              `<button class="btn btn-sm btn-secondary" onclick="executeManualPrintJob('${j.id}')">Reprint</button>`
+            }
+            <button class="del-btn" onclick="deletePrintJob('${j.id}')" title="Delete job">✕</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="center" style="color:red; padding:16px;">Failed to load queue: ${err.message}</td></tr>`;
+  }
+}
+
+async function executeManualPrintJob(jobId) {
+  try {
+    const res = await api('GET', '/api/print-queue');
+    const job = (res.jobs || []).find(j => j.id === jobId);
+    if (!job || !job.bill) {
+      alert('Job or bill data not found');
+      return;
+    }
+    PrintEngine.print(job.bill, job.format, SETTINGS);
+    await api('POST', `/api/print-queue/${job.id}/complete`);
+    loadPrintQueueModalData();
+    checkMasterPrintQueue();
+    showToast(`🖨️ Printed Bill #${job.billNo}`);
+  } catch (err) {
+    alert('Print error: ' + err.message);
+  }
+}
+
+async function deletePrintJob(jobId) {
+  try {
+    await api('DELETE', `/api/print-queue/${jobId}`);
+    loadPrintQueueModalData();
+    checkMasterPrintQueue();
+  } catch (err) {
+    alert('Delete error: ' + err.message);
+  }
+}
+
+async function clearFinishedPrintJobs() {
+  try {
+    await api('DELETE', '/api/print-queue');
+    loadPrintQueueModalData();
+    checkMasterPrintQueue();
+    showToast('🧹 Cleared printed jobs from history');
+  } catch (err) {
+    alert('Clear error: ' + err.message);
+  }
 }
 
 function downloadBackupJSON() {
