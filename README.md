@@ -1,4 +1,5 @@
 # Siraazhi Pro POS — Vanur Farmer Producer Company Limited
+
 ## Universal Billing, Multi-Printer, Inventory & GST Suite
 
 Standalone, single-executable point-of-sale software engineered for **Vanur Farmer Producer Company Ltd (VFPC)**. Works 100% offline on Windows with embedded SQLite and zero external runtime dependencies.
@@ -32,14 +33,17 @@ Standalone, single-executable point-of-sale software engineered for **Vanur Farm
 ## 🚀 How to Run
 
 ### Method 1: Interactive Desktop (Double-Click)
-Simply double-click `siraazhi-pos.exe`.  
+
+Simply double-click `siraazhi-pos.exe`.
 It starts the server on port `8080` and automatically opens your web browser to the POS counter screen.
 
 ### Method 2: Silent Background Service (No Black Console Window)
-Double-click `start_silent.vbs`.  
+
+Double-click `start_silent.vbs`.
 It launches `siraazhi-pos.exe` in the background with zero visible windows, running continuously on `http://localhost:8080` and `http://<your-ip>:8080`.
 
 ### Method 3: Command-Line Flags
+
 ```powershell
 # Run on default port 8080 and auto-open browser
 ./siraazhi-pos.exe
