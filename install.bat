@@ -41,7 +41,9 @@ if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
 
 :: 2. Copy Executable & Assets
 echo [2/6] Copying Software Files...
+taskkill /f /im siraazhi-pos.exe >nul 2>&1
 copy /y "siraazhi-pos.exe" "%INSTALL_DIR%\siraazhi-pos.exe" >nul
+copy /y "app.ico" "%INSTALL_DIR%\app.ico" >nul 2>&1
 copy /y "start_silent.vbs" "%INSTALL_DIR%\start_silent.vbs" >nul
 copy /y "README.md" "%INSTALL_DIR%\README.md" >nul
 
@@ -61,6 +63,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$s1.TargetPath = '%INSTALL_DIR%\siraazhi-pos.exe'; " ^
   "$s1.Arguments = '-port 8080 -db \"\"%DATA_DIR%\pos.db\"\"'; " ^
   "$s1.WorkingDirectory = '%INSTALL_DIR%'; " ^
+  "$s1.IconLocation = '%INSTALL_DIR%\siraazhi-pos.exe,0'; " ^
   "$s1.Description = 'Siraazhi Pro POS — Billing & Inventory Suite'; " ^
   "$s1.Save(); " ^
   "$startMenu = [Environment]::GetFolderPath('CommonStartMenu'); " ^
@@ -68,6 +71,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$s2.TargetPath = '%INSTALL_DIR%\siraazhi-pos.exe'; " ^
   "$s2.Arguments = '-port 8080 -db \"\"%DATA_DIR%\pos.db\"\"'; " ^
   "$s2.WorkingDirectory = '%INSTALL_DIR%'; " ^
+  "$s2.IconLocation = '%INSTALL_DIR%\siraazhi-pos.exe,0'; " ^
   "$s2.Save();"
 
 :: 4. Register Auto-Start with Windows Boot (Runs Silently in Background)

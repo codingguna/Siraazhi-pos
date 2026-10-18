@@ -121,6 +121,7 @@ func main() {
 		$s1.TargetPath = '%s';
 		$s1.Arguments = '-port 8080 -db ""%s\pos.db""';
 		$s1.WorkingDirectory = '%s';
+		$s1.IconLocation = '%s,0';
 		$s1.Description = 'Siraazhi Pro POS — Billing & Inventory Suite';
 		$s1.Save();
 
@@ -129,8 +130,10 @@ func main() {
 		$s2.TargetPath = '%s';
 		$s2.Arguments = '-port 8080 -db ""%s\pos.db""';
 		$s2.WorkingDirectory = '%s';
+		$s2.IconLocation = '%s,0';
+		$s2.Description = 'Siraazhi Pro POS — Billing & Inventory Suite';
 		$s2.Save();
-	`, targetExe, dataDir, installDir, targetExe, dataDir, installDir)
+	`, targetExe, dataDir, installDir, targetExe, targetExe, dataDir, installDir, targetExe)
 
 	exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript).Run()
 

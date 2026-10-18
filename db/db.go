@@ -46,6 +46,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -55,7 +56,17 @@ var (
 	// DB is the singleton SQLite database connection handle
 	DB   *sql.DB
 	lock sync.Mutex
+
+	// globalSeq ensures monotonic collision-free unique IDs even across concurrent operations
+	globalSeq uint64
 )
+
+// GenID generates a collision-free unique identifier combining prefix, nanoseconds, and atomic counter.
+// Format: <prefix>_<unix_nano>_<counter>
+func GenID(prefix string) string {
+	seq := atomic.AddUint64(&globalSeq, 1)
+	return fmt.Sprintf("%s_%d_%d", prefix, time.Now().UnixNano(), seq)
+}
 
 // InitDB initializes SQLite database, sets concurrency pragmas, and runs migrations.
 //
@@ -358,7 +369,7 @@ func GetProductByBarcode(code string) (Product, error) {
 // SaveProduct creates a new product or updates an existing one (upsert).
 func SaveProduct(p Product) error {
 	if p.ID == "" {
-		p.ID = fmt.Sprintf("p%d", time.Now().UnixNano()%10000000)
+		p.ID = GenID("p")
 	}
 	_, err := DB.Exec(`INSERT INTO products 
 		(id, category, category_ta, variant, variant_ml, name_en, name_ta, hsn, barcode, gst_pct, price, mrp, stock, low_alert, unit)
@@ -462,7 +473,7 @@ func CreateBill(bill Bill) (Bill, error) {
 	}
 
 	// Insert bill items & deduct stock
-	for _, it := range bill.Items {
+	for i, it := range bill.Items {
 		_, err = tx.Exec(`INSERT INTO bill_items 
 			(bill_id, product_id, name_en, name_ta, hsn, barcode, qty, price, gst_pct, amount, gst_portion)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -478,8 +489,8 @@ func CreateBill(bill Bill) (Bill, error) {
 			return bill, fmt.Errorf("deduct stock failed: %w", err)
 		}
 
-		// Record stock move
-		moveID := fmt.Sprintf("sm_%d", time.Now().UnixNano()%10000000)
+		// Record stock move with deterministic unique ID per bill item
+		moveID := fmt.Sprintf("sm_%s_%d", bill.ID, i+1)
 		_, err = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref)
 			VALUES (?, ?, ?, 'sale', ?, ?, ?)`,
 			moveID, bill.Date, it.ProductID, -it.Qty, "Bill "+bill.BillNo, bill.ID,
@@ -536,12 +547,12 @@ func CancelBill(id string) error {
 	_ = tx.QueryRow("SELECT bill_no FROM bills WHERE id = ?", id).Scan(&billNo)
 
 	// Restore stock
-	for _, ir := range toRestore {
+	for i, ir := range toRestore {
 		_, err = tx.Exec("UPDATE products SET stock = stock + ? WHERE id = ?", ir.qty, ir.pid)
 		if err != nil {
 			return err
 		}
-		moveID := fmt.Sprintf("sm_c_%d", time.Now().UnixNano()%10000000)
+		moveID := fmt.Sprintf("sm_c_%s_%d", id, i+1)
 		_, _ = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref)
 			VALUES (?, date('now'), ?, 'cancel', ?, ?, ?)`,
 			moveID, ir.pid, ir.qty, "Cancelled Bill "+billNo, id,
@@ -661,7 +672,7 @@ func AdjustStock(productID, date, moveType string, qty float64, note string) err
 		return err
 	}
 
-	moveID := fmt.Sprintf("sm_adj_%d", time.Now().UnixNano()%10000000)
+	moveID := GenID("sm_adj")
 	_, err = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note)
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		moveID, date, productID, moveType, qty, note,
@@ -696,7 +707,7 @@ func GetStockMoves(limit int) ([]StockMove, error) {
 // SavePurchase inserts a raw material or packaging procurement record.
 func SavePurchase(p Purchase) error {
 	if p.ID == "" {
-		p.ID = fmt.Sprintf("pu_%d", time.Now().UnixNano()%10000000)
+		p.ID = GenID("pu")
 	}
 	_, err := DB.Exec(`INSERT INTO purchases (id, date, supplier, item, qty, unit, cost, note)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -732,7 +743,7 @@ func DeletePurchase(id string) error {
 // SaveExpense inserts an operational expenditure record.
 func SaveExpense(e Expense) error {
 	if e.ID == "" {
-		e.ID = fmt.Sprintf("ex_%d", time.Now().UnixNano()%10000000)
+		e.ID = GenID("ex")
 	}
 	_, err := DB.Exec(`INSERT INTO expenses (id, date, head, amount, note)
 		VALUES (?, ?, ?, ?, ?)`,

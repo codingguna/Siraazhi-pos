@@ -38,7 +38,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"math"
 	"net/http"
 	"siraazhi-pos/db"
@@ -204,7 +203,7 @@ func HandleBills(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		billID := fmt.Sprintf("b_%d", time.Now().UnixNano()%100000000)
+		billID := db.GenID("b")
 		bill := db.Bill{
 			ID:         billID,
 			BillNo:     billNo,
