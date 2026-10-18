@@ -218,10 +218,23 @@ func createTables() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS customers (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		phone TEXT UNIQUE,
+		address TEXT,
+		gstin TEXT,
+		state TEXT DEFAULT 'Tamil Nadu',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_bills_date ON bills(date);
 	CREATE INDEX IF NOT EXISTS idx_stock_moves_pid ON stock_moves(product_id);
 	CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(date);
 	CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
+	CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
+	CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
 	`
 	_, err := DB.Exec(schema)
 	return err
@@ -503,6 +516,164 @@ func CreateBill(bill Bill) (Bill, error) {
 	if err := tx.Commit(); err != nil {
 		return bill, err
 	}
+
+	// Auto-save or update customer record in the customers database
+	custName := strings.TrimSpace(bill.Customer.Name)
+	custPhone := strings.TrimSpace(bill.Customer.Phone)
+	if custPhone != "" || (custName != "" && !strings.EqualFold(custName, "Walk-in")) {
+		_ = SaveCustomer(bill.Customer)
+	}
+
+	return bill, nil
+}
+
+// UpdateBill modifies an existing bill, reconciling inventory differences atomically.
+//
+// FLOW:
+//   1. Begins SQLite transaction.
+//   2. Queries existing items on this bill and credits back the previous stock deductions.
+//   3. Validates stock availability for new/updated items.
+//   4. Updates header in 'bills' table (preserving original bill_no and id).
+//   5. Replaces items in 'bill_items' table.
+//   6. Decrements stock for new items and writes 'sale' audit records in 'stock_moves'.
+//   7. Auto-saves customer details in 'customers' table.
+//   8. Commits transaction.
+func UpdateBill(bill Bill) (Bill, error) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return bill, err
+	}
+	defer tx.Rollback()
+
+	// 1. Fetch previous items to reverse previous inventory deductions
+	rows, err := tx.Query("SELECT product_id, qty FROM bill_items WHERE bill_id = ?", bill.ID)
+	if err != nil {
+		return bill, fmt.Errorf("failed to load original bill items: %w", err)
+	}
+	type itemRest struct {
+		pid string
+		qty float64
+	}
+	var oldItems []itemRest
+	for rows.Next() {
+		var ir itemRest
+		if err := rows.Scan(&ir.pid, &ir.qty); err == nil {
+			oldItems = append(oldItems, ir)
+		}
+	}
+	rows.Close()
+
+	// Reverse old stock deductions
+	for i, ir := range oldItems {
+		_, err = tx.Exec("UPDATE products SET stock = stock + ? WHERE id = ?", ir.qty, ir.pid)
+		if err != nil {
+			return bill, fmt.Errorf("failed to revert old stock: %w", err)
+		}
+		moveID := fmt.Sprintf("sm_rev_%s_%d", bill.ID, i+1)
+		_, _ = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref)
+			VALUES (?, date('now'), ?, 'cancel', ?, ?, ?)`,
+			moveID, ir.pid, ir.qty, "Bill Revision "+bill.BillNo, bill.ID,
+		)
+	}
+
+	// 2. Verify stock availability for updated items
+	for _, it := range bill.Items {
+		var curStock float64
+		var name string
+		err := tx.QueryRow("SELECT stock, name_en FROM products WHERE id = ?", it.ProductID).Scan(&curStock, &name)
+		if err != nil {
+			return bill, fmt.Errorf("item %s not found: %w", it.ProductID, err)
+		}
+		if curStock < it.Qty {
+			return bill, fmt.Errorf("insufficient stock for %s (available: %.0f, requested: %.0f)", name, curStock, it.Qty)
+		}
+	}
+
+	// 3. Update bill header (keep bill_no, id, and created_at intact)
+	gstOnInt := 0
+	if bill.GSTOn {
+		gstOnInt = 1
+	}
+
+	_, err = tx.Exec(`UPDATE bills SET 
+		date = ?,
+		customer_name = ?,
+		customer_phone = ?,
+		customer_address = ?,
+		customer_gstin = ?,
+		customer_state = ?,
+		subtotal = ?,
+		discount = ?,
+		taxable = ?,
+		gst_on = ?,
+		gst_amt = ?,
+		cgst = ?,
+		sgst = ?,
+		igst = ?,
+		grand_total = ?,
+		pay_mode = ?,
+		paid = ?,
+		balance = ?,
+		note = ?
+		WHERE id = ?`,
+		bill.Date,
+		bill.Customer.Name, bill.Customer.Phone, bill.Customer.Address, bill.Customer.Gstin, bill.Customer.State,
+		bill.Subtotal, bill.Discount, bill.Taxable, gstOnInt, bill.GSTAmt,
+		bill.CGST, bill.SGST, bill.IGST, bill.GrandTotal, bill.PayMode, bill.Paid, bill.Balance, bill.Note,
+		bill.ID,
+	)
+	if err != nil {
+		return bill, fmt.Errorf("update bill header failed: %w", err)
+	}
+
+	// 4. Delete old bill_items
+	_, err = tx.Exec("DELETE FROM bill_items WHERE bill_id = ?", bill.ID)
+	if err != nil {
+		return bill, fmt.Errorf("delete old bill items failed: %w", err)
+	}
+
+	// 5. Insert new bill items and apply new stock deductions
+	for i, it := range bill.Items {
+		_, err = tx.Exec(`INSERT INTO bill_items 
+			(bill_id, product_id, name_en, name_ta, hsn, barcode, qty, price, gst_pct, amount, gst_portion)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			bill.ID, it.ProductID, it.NameEn, it.NameTa, it.HSN, it.Barcode, it.Qty, it.Price, it.GSTPct, it.Amount, it.GSTPortion,
+		)
+		if err != nil {
+			return bill, fmt.Errorf("insert bill item failed: %w", err)
+		}
+
+		// Update stock
+		_, err = tx.Exec("UPDATE products SET stock = stock - ? WHERE id = ?", it.Qty, it.ProductID)
+		if err != nil {
+			return bill, fmt.Errorf("deduct stock failed: %w", err)
+		}
+
+		// Record stock move
+		moveID := fmt.Sprintf("sm_upd_%s_%d", bill.ID, i+1)
+		_, err = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref)
+			VALUES (?, ?, ?, 'sale', ?, ?, ?)`,
+			moveID, bill.Date, it.ProductID, -it.Qty, "Bill Update "+bill.BillNo, bill.ID,
+		)
+		if err != nil {
+			return bill, fmt.Errorf("record stock move failed: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return bill, err
+	}
+
+	// Auto-save or update customer record in the customers database
+	custName := strings.TrimSpace(bill.Customer.Name)
+	custPhone := strings.TrimSpace(bill.Customer.Phone)
+	if custPhone != "" || (custName != "" && !strings.EqualFold(custName, "Walk-in")) {
+		_ = SaveCustomer(bill.Customer)
+	}
+
 	return bill, nil
 }
 
@@ -810,4 +981,88 @@ func GetDashboard() (DashboardStats, error) {
 	}
 
 	return s, nil
+}
+
+// SaveCustomer creates or updates a customer profile.
+// Automatically called whenever a bill is generated with customer details.
+func SaveCustomer(c Customer) error {
+	name := strings.TrimSpace(c.Name)
+	phone := strings.TrimSpace(c.Phone)
+	if name == "" && phone == "" {
+		return nil
+	}
+	if strings.EqualFold(name, "Walk-in") && phone == "" {
+		return nil
+	}
+
+	lock.Lock()
+	defer lock.Unlock()
+
+	if c.ID == "" {
+		c.ID = GenID("c")
+	}
+	if c.State == "" {
+		c.State = "Tamil Nadu"
+	}
+
+	if phone != "" {
+		_, err := DB.Exec(`INSERT INTO customers (id, name, phone, address, gstin, state, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			ON CONFLICT(phone) DO UPDATE SET
+				name = excluded.name,
+				address = CASE WHEN excluded.address != '' THEN excluded.address ELSE customers.address END,
+				gstin = CASE WHEN excluded.gstin != '' THEN excluded.gstin ELSE customers.gstin END,
+				state = CASE WHEN excluded.state != '' THEN excluded.state ELSE customers.state END,
+				updated_at = CURRENT_TIMESTAMP`,
+			c.ID, name, phone, strings.TrimSpace(c.Address), strings.TrimSpace(c.Gstin), c.State,
+		)
+		return err
+	}
+
+	_, err := DB.Exec(`INSERT INTO customers (id, name, phone, address, gstin, state, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
+			address = excluded.address,
+			gstin = excluded.gstin,
+			state = excluded.state,
+			updated_at = CURRENT_TIMESTAMP`,
+		c.ID, name, "", strings.TrimSpace(c.Address), strings.TrimSpace(c.Gstin), c.State,
+	)
+	return err
+}
+
+// SearchCustomers finds customers matching name, mobile phone number, or GSTIN.
+func SearchCustomers(query string, limit int) ([]Customer, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 15
+	}
+	query = strings.TrimSpace(query)
+	var rows *sql.Rows
+	var err error
+
+	if query == "" {
+		rows, err = DB.Query(`SELECT id, name, COALESCE(phone, ''), COALESCE(address, ''), COALESCE(gstin, ''), COALESCE(state, 'Tamil Nadu') 
+			FROM customers ORDER BY updated_at DESC LIMIT ?`, limit)
+	} else {
+		pattern := "%" + query + "%"
+		rows, err = DB.Query(`SELECT id, name, COALESCE(phone, ''), COALESCE(address, ''), COALESCE(gstin, ''), COALESCE(state, 'Tamil Nadu') 
+			FROM customers 
+			WHERE name LIKE ? OR phone LIKE ? OR gstin LIKE ?
+			ORDER BY CASE WHEN name LIKE ? THEN 1 WHEN phone LIKE ? THEN 2 ELSE 3 END, updated_at DESC 
+			LIMIT ?`, pattern, pattern, pattern, query+"%", query+"%", limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []Customer
+	for rows.Next() {
+		var c Customer
+		if err := rows.Scan(&c.ID, &c.Name, &c.Phone, &c.Address, &c.Gstin, &c.State); err == nil {
+			list = append(list, c)
+		}
+	}
+	return list, nil
 }

@@ -1,0 +1,31 @@
+================================================================================
+  SIRAAZHI PRO POS — WI-FI MOBILE STAFF TERMINAL SETUP GUIDE
+  Vanur Farmer Producer Company Limited
+================================================================================
+
+1. WHAT IS MOBILE STAFF BILLING?
+   Siraazhi Pro POS allows multiple sales assistants with Android phones, iPhones,
+   or iPads to bill customers concurrently on the shop floor over the local Wi-Fi.
+
+2. SECURITY & ROLE ENFORCEMENT
+   - Host Windows PC runs as MASTER MODE:
+     Full administrative control, inventory adjustments, purchase logs, expense
+     auditing, database backups, and settings.
+   - Mobile Phones connect in RESTRICTED STAFF MODE:
+     Staff can only browse catalog, search barcodes, build carts, and finalize bills.
+     Staff cannot alter product rates, delete sales history, or view profit margins.
+
+3. HOW TO CONNECT A MOBILE PHONE
+   Step 1: Connect the smartphone/tablet to the same Wi-Fi router as the Master PC.
+   Step 2: On the Master PC, open Siraazhi Pro POS and click the "Network / Mobile" tab.
+   Step 3: Scan the on-screen QR Code using your phone camera, OR type the address:
+           Example: http://192.168.1.15:8080
+   Step 4: The mobile billing interface opens instantly.
+   Step 5: Tap "Add to Home Screen" in Chrome or Safari to run as a full-screen App!
+
+4. FIREWALL TROUBLESHOOTING
+   If the mobile device says "Connection Timed Out":
+   - Ensure both PC and Mobile are on the same Wi-Fi (not Mobile Data).
+   - In Windows Defender Firewall, allow port 8080 for Private Networks.
+
+================================================================================

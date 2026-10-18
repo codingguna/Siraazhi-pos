@@ -164,6 +164,15 @@ func HandleBills(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if strings.TrimSpace(req.Customer.Name) == "" {
+			ErrorJSON(w, http.StatusBadRequest, "Customer Name is compulsory")
+			return
+		}
+		if strings.TrimSpace(req.Customer.Phone) == "" {
+			ErrorJSON(w, http.StatusBadRequest, "Customer Mobile Phone Number is compulsory")
+			return
+		}
+
 		settings, err := db.GetSettings()
 		if err != nil {
 			ErrorJSON(w, http.StatusInternalServerError, "Failed to read settings: "+err.Error())
@@ -266,15 +275,117 @@ func HandleBillByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method != http.MethodGet {
-		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
+	switch r.Method {
+	case http.MethodGet:
+		bill, err := db.GetBillByID(id)
+		if err != nil {
+			ErrorJSON(w, http.StatusNotFound, "Bill not found")
+			return
+		}
+		JSON(w, http.StatusOK, bill)
 
-	bill, err := db.GetBillByID(id)
-	if err != nil {
-		ErrorJSON(w, http.StatusNotFound, "Bill not found")
-		return
+	case http.MethodPut:
+		var req struct {
+			Date     string        `json:"date"`
+			Customer db.Customer   `json:"customer"`
+			Items    []db.BillItem `json:"items"`
+			Discount float64       `json:"discount"`
+			GSTOn    *bool         `json:"gstOn"`
+			PayMode  string        `json:"payMode"`
+			Paid     *float64      `json:"paid"`
+			Note     string        `json:"note"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			ErrorJSON(w, http.StatusBadRequest, "Invalid bill payload: "+err.Error())
+			return
+		}
+
+		if len(req.Items) == 0 {
+			ErrorJSON(w, http.StatusBadRequest, "Bill must contain at least one item")
+			return
+		}
+
+		if strings.TrimSpace(req.Customer.Name) == "" {
+			ErrorJSON(w, http.StatusBadRequest, "Customer Name is compulsory")
+			return
+		}
+		if strings.TrimSpace(req.Customer.Phone) == "" {
+			ErrorJSON(w, http.StatusBadRequest, "Customer Mobile Phone Number is compulsory")
+			return
+		}
+
+		existingBill, err := db.GetBillByID(id)
+		if err != nil {
+			ErrorJSON(w, http.StatusNotFound, "Bill not found: "+err.Error())
+			return
+		}
+
+		settings, err := db.GetSettings()
+		if err != nil {
+			ErrorJSON(w, http.StatusInternalServerError, "Failed to read settings: "+err.Error())
+			return
+		}
+
+		gstOn := settings.GstDefaultOn
+		if req.GSTOn != nil {
+			gstOn = *req.GSTOn
+		}
+
+		date := req.Date
+		if date == "" {
+			date = existingBill.Date
+		}
+
+		payMode := req.PayMode
+		if payMode == "" {
+			payMode = existingBill.PayMode
+		}
+
+		subtotal, taxable, gstAmt, cgst, sgst, igst, grandTotal, processedItems := ComputeBill(
+			req.Items,
+			req.Discount,
+			gstOn,
+			req.Customer.State,
+			"Tamil Nadu",
+		)
+
+		paid := grandTotal
+		if req.Paid != nil {
+			paid = *req.Paid
+		}
+		balance := roundMoney(grandTotal - paid)
+
+		updatedBill := db.Bill{
+			ID:         existingBill.ID,
+			BillNo:     existingBill.BillNo,
+			Date:       date,
+			Customer:   req.Customer,
+			Items:      processedItems,
+			Subtotal:   subtotal,
+			Discount:   req.Discount,
+			Taxable:    taxable,
+			GSTOn:      gstOn,
+			GSTAmt:     gstAmt,
+			CGST:       cgst,
+			SGST:       sgst,
+			IGST:       igst,
+			GrandTotal: grandTotal,
+			PayMode:    payMode,
+			Paid:       paid,
+			Balance:    balance,
+			Note:       req.Note,
+			CreatedAt:  existingBill.CreatedAt,
+		}
+
+		savedBill, err := db.UpdateBill(updatedBill)
+		if err != nil {
+			ErrorJSON(w, http.StatusBadRequest, "Failed to update bill: "+err.Error())
+			return
+		}
+
+		JSON(w, http.StatusOK, savedBill)
+
+	default:
+		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
-	JSON(w, http.StatusOK, bill)
 }

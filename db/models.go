@@ -71,6 +71,7 @@ type Product struct {
 // WHAT IT IS: Retail consumer or registered B2B wholesale buyer.
 // HOW IT WORKS: If GSTIN is provided, the bill is classified as B2B in GSTR-1 reports.
 type Customer struct {
+	ID      string `json:"id,omitempty"`
 	Name    string `json:"name"`
 	Phone   string `json:"phone"`
 	Address string `json:"address"`

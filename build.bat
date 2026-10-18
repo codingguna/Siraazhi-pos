@@ -9,7 +9,7 @@
 ::   5. Uses -H=windowsgui so NO black command prompt window ever appears!
 :: ============================================================================
 
-title "Building Siraazhi Pro POS"
+title Building Siraazhi Pro POS
 cd /d "%~dp0"
 
 echo.
@@ -19,16 +19,18 @@ echo ==================================================================
 echo.
 
 :: 1. Generate Windows Icon Resources
-echo [1/4] Embedding Windows App Icon (app.ico)...
+echo [1/5] Embedding Windows App Icon (app.ico)...
 if exist "app.ico" (
     rsrc -ico app.ico -o rsrc.syso >nul 2>&1
     if not exist "installer" mkdir "installer"
     copy /y "app.ico" "installer\app.ico" >nul 2>&1
     rsrc -ico installer\app.ico -o installer\rsrc.syso >nul 2>&1
+    if not exist "uninstaller" mkdir "uninstaller"
+    rsrc -ico app.ico -o uninstaller\rsrc.syso >nul 2>&1
 )
 
 :: 2. Compile Main Application
-echo [2/4] Compiling Main Standalone POS (siraazhi-pos.exe)...
+echo [2/5] Compiling Main Standalone POS (siraazhi-pos.exe)...
 go build -v -ldflags "-s -w -H=windowsgui" -o siraazhi-pos.exe .
 if %errorlevel% neq 0 (
     echo.
@@ -36,14 +38,29 @@ if %errorlevel% neq 0 (
     pause
     exit /b %errorlevel%
 )
-echo       -> Generated: siraazhi-pos.exe (with Official Logo Icon)
+echo       -^> Generated: siraazhi-pos.exe (with Official Logo Icon)
 
-:: 3. Stage binary for installer embedding
-echo [3/4] Embedding binary into Setup Installer...
+:: 3. Compile Standalone GUI Uninstaller
+echo [3/5] Compiling Standalone Uninstaller (uninstall.exe)...
+go build -v -ldflags "-s -w -H=windowsgui" -o uninstall.exe .\uninstaller
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] Failed to compile uninstaller.
+    pause
+    exit /b %errorlevel%
+)
+echo       -^> Generated: uninstall.exe (with Official Logo Icon)
+
+:: 4. Stage components for installer embedding
+echo [4/5] Staging components into Setup Installer package...
 copy /y "siraazhi-pos.exe" "installer\siraazhi-pos.exe" >nul
+copy /y "uninstall.exe" "installer\uninstall.exe" >nul
+copy /y "app.ico" "installer\app.ico" >nul
+copy /y "README.txt" "installer\README.txt" >nul
+copy /y "LICENSE.txt" "installer\LICENSE.txt" >nul
 
-:: 4. Compile Standalone Installer
-echo [4/4] Compiling Standalone Windows Setup (SiraazhiPOS-Setup.exe)...
+:: 5. Compile Standalone Installer
+echo [5/5] Compiling Standalone Windows Setup (SiraazhiPOS-Setup.exe)...
 go build -v -ldflags "-s -w -H=windowsgui" -o SiraazhiPOS-Setup.exe .\installer
 if %errorlevel% neq 0 (
     echo.
@@ -51,10 +68,13 @@ if %errorlevel% neq 0 (
     pause
     exit /b %errorlevel%
 )
-echo       -> Generated: SiraazhiPOS-Setup.exe (with Official Setup Icon)
+echo       -^> Generated: SiraazhiPOS-Setup.exe (with Official Setup Icon)
 
-:: Clean up staged file
+:: Clean up staged temporary files
 del /f /q "installer\siraazhi-pos.exe" >nul 2>&1
+del /f /q "installer\uninstall.exe" >nul 2>&1
+del /f /q "installer\README.txt" >nul 2>&1
+del /f /q "installer\LICENSE.txt" >nul 2>&1
 
 echo.
 echo ==================================================================
@@ -68,6 +88,8 @@ echo                               (with Windows Logo Icon)
 echo.
 echo   2. siraazhi-pos.exe       -^> The portable standalone application
 echo                               (with Windows Logo Icon)
+echo.
+echo   3. uninstall.exe          -^> Standalone GUI uninstaller
 echo ==================================================================
 echo.
 pause

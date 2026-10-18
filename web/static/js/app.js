@@ -35,11 +35,26 @@
 // Global State
 let SETTINGS = {};
 let PRODUCTS = [];
-let CART = [];
 let ALL_BILLS = [];
 let ACTIVE_CATEGORY = 'all';
 let IS_MASTER_MODE = true; // Determined dynamically below
 const DEFAULT_MASTER_PIN = '1234';
+
+// Multi-Bill State Management (Hold & Resume Active Carts)
+let BILL_TABS = [
+  {
+    id: 1,
+    title: 'Bill 1',
+    cart: [],
+    customer: { name: '', phone: '', gstin: '', address: '' },
+    gstOn: true,
+    discount: 0,
+    paid: '',
+    payMode: 'Cash'
+  }
+];
+let ACTIVE_BILL_INDEX = 0;
+let CART = BILL_TABS[0].cart;
 
 /**
  * api is a generic async fetch wrapper with JSON serialization and error handling.
@@ -70,6 +85,7 @@ const formatINR = n => '₹' + Number(n || 0).toLocaleString('en-IN', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 });
+const escapeHtml = str => String(str || '').replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
 
 /**
  * initApp bootstraps the application on page load.
@@ -101,6 +117,7 @@ async function initApp() {
 
     renderProductsGrid();
     renderCart();
+    renderBillTabs();
 
     if (IS_MASTER_MODE) {
       loadDashboard();
@@ -427,15 +444,228 @@ function removeFromCart(index) {
 }
 
 function clearCart() {
-  CART = [];
-  $('billDiscount').value = 0;
-  $('custName').value = 'Walk-in';
-  $('custPhone').value = '';
-  $('custGstin').value = '';
-  $('custAddress').value = '';
-  $('billPaid').value = '';
+  if (BILL_TABS[ACTIVE_BILL_INDEX]) {
+    BILL_TABS[ACTIVE_BILL_INDEX].cart = [];
+    BILL_TABS[ACTIVE_BILL_INDEX].customer = { name: '', phone: '', gstin: '', address: '' };
+    BILL_TABS[ACTIVE_BILL_INDEX].discount = 0;
+    BILL_TABS[ACTIVE_BILL_INDEX].paid = '';
+  }
+  CART = BILL_TABS[ACTIVE_BILL_INDEX].cart;
+  if ($('billDiscount')) $('billDiscount').value = 0;
+  if ($('custName')) $('custName').value = '';
+  if ($('custPhone')) $('custPhone').value = '';
+  if ($('custGstin')) $('custGstin').value = '';
+  if ($('custAddress')) $('custAddress').value = '';
+  if ($('billPaid')) $('billPaid').value = '';
+  renderCart();
+  renderBillTabs();
+}
+
+/**
+ * Multi-Bill Active Tabs Logic (Hold & Resume Active Carts)
+ */
+function renderBillTabs() {
+  const container = $('billTabsList');
+  if (!container) return;
+
+  container.innerHTML = BILL_TABS.map((tab, idx) => {
+    const isActive = idx === ACTIVE_BILL_INDEX;
+    const count = tab.cart.reduce((sum, it) => sum + (it.qty || 1), 0);
+    const cust = tab.customer && tab.customer.name ? tab.customer.name : '';
+    const label = cust ? `${tab.title} (${cust})` : tab.title;
+
+    return `
+      <div class="bill-tab ${isActive ? 'active' : ''}" onclick="switchBillTab(${idx})">
+        <span>🧾</span>
+        <span>${escapeHtml(label)}</span>
+        <span class="tab-badge">${count}</span>
+        ${BILL_TABS.length > 1 ? `<span class="tab-close" onclick="closeBillTab(event, ${idx})" title="Close bill">✕</span>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  const titleElem = $('currentBillTitleDisplay');
+  if (titleElem && BILL_TABS[ACTIVE_BILL_INDEX]) {
+    titleElem.textContent = `${BILL_TABS[ACTIVE_BILL_INDEX].title} / நடப்பு பில்`;
+  }
+}
+
+function addNewBillTab() {
+  saveCurrentBillTabForm();
+  const nextId = BILL_TABS.length > 0 ? Math.max(...BILL_TABS.map(b => b.id)) + 1 : 1;
+  const newBill = {
+    id: nextId,
+    title: `Bill ${nextId}`,
+    cart: [],
+    customer: { name: '', phone: '', gstin: '', address: '' },
+    gstOn: $('gstToggle') ? $('gstToggle').checked : true,
+    discount: 0,
+    paid: '',
+    payMode: 'Cash'
+  };
+  BILL_TABS.push(newBill);
+  ACTIVE_BILL_INDEX = BILL_TABS.length - 1;
+  CART = BILL_TABS[ACTIVE_BILL_INDEX].cart;
+  loadActiveBillTabForm();
+  renderBillTabs();
+  renderCart();
+  if ($('custName')) $('custName').focus();
+}
+
+function switchBillTab(index) {
+  if (index === ACTIVE_BILL_INDEX || !BILL_TABS[index]) return;
+  saveCurrentBillTabForm();
+  ACTIVE_BILL_INDEX = index;
+  CART = BILL_TABS[ACTIVE_BILL_INDEX].cart;
+  loadActiveBillTabForm();
+  renderBillTabs();
   renderCart();
 }
+
+function closeBillTab(event, index) {
+  if (event) event.stopPropagation();
+  if (BILL_TABS.length <= 1) {
+    if (BILL_TABS[0].cart.length > 0) {
+      if (!confirm('Discard items in this bill?')) return;
+    }
+    clearCart();
+    return;
+  }
+  if (BILL_TABS[index].cart.length > 0) {
+    if (!confirm(`Discard ${BILL_TABS[index].title} with ${BILL_TABS[index].cart.length} items?`)) return;
+  }
+  BILL_TABS.splice(index, 1);
+  if (ACTIVE_BILL_INDEX >= BILL_TABS.length) {
+    ACTIVE_BILL_INDEX = BILL_TABS.length - 1;
+  }
+  CART = BILL_TABS[ACTIVE_BILL_INDEX].cart;
+  loadActiveBillTabForm();
+  renderBillTabs();
+  renderCart();
+}
+
+function saveCurrentBillTabForm() {
+  if (!BILL_TABS[ACTIVE_BILL_INDEX]) return;
+  const b = BILL_TABS[ACTIVE_BILL_INDEX];
+  b.customer = {
+    name: $('custName') ? $('custName').value.trim() : '',
+    phone: $('custPhone') ? $('custPhone').value.trim() : '',
+    gstin: $('custGstin') ? $('custGstin').value.trim() : '',
+    address: $('custAddress') ? $('custAddress').value.trim() : ''
+  };
+  b.discount = $('billDiscount') ? Number($('billDiscount').value) || 0 : 0;
+  b.paid = $('billPaid') ? $('billPaid').value : '';
+  b.payMode = $('billPayMode') ? $('billPayMode').value : 'Cash';
+  b.gstOn = $('gstToggle') ? $('gstToggle').checked : true;
+}
+
+function loadActiveBillTabForm() {
+  if (!BILL_TABS[ACTIVE_BILL_INDEX]) return;
+  const b = BILL_TABS[ACTIVE_BILL_INDEX];
+  if ($('custName')) $('custName').value = b.customer.name || '';
+  if ($('custPhone')) $('custPhone').value = b.customer.phone || '';
+  if ($('custGstin')) $('custGstin').value = b.customer.gstin || '';
+  if ($('custAddress')) $('custAddress').value = b.customer.address || '';
+  if ($('billDiscount')) $('billDiscount').value = b.discount || 0;
+  if ($('billPaid')) $('billPaid').value = b.paid || '';
+  if ($('billPayMode')) $('billPayMode').value = b.payMode || 'Cash';
+  if ($('gstToggle')) {
+    $('gstToggle').checked = b.gstOn !== false;
+    toggleGSTMode();
+  }
+}
+
+/**
+ * Instant Customer Database Search & Autocomplete
+ */
+let customerSearchTimeout = null;
+let CUSTOMER_SUGGESTIONS = [];
+
+function onCustomerSearchInput(field) {
+  const query = (field === 'phone' ? $('custPhone').value : $('custName').value).trim();
+  if (query.length < 1) {
+    closeCustomerDropdown();
+    return;
+  }
+
+  clearTimeout(customerSearchTimeout);
+  customerSearchTimeout = setTimeout(async () => {
+    try {
+      const results = await api('GET', `/api/customers?q=${encodeURIComponent(query)}&limit=8`);
+      renderCustomerDropdown(results);
+    } catch (err) {
+      console.error('Customer search error:', err);
+    }
+  }, 120);
+}
+
+function onCustomerSearchFocus(field) {
+  const query = (field === 'phone' ? $('custPhone').value : $('custName').value).trim();
+  if (query.length >= 1) {
+    onCustomerSearchInput(field);
+  }
+}
+
+function renderCustomerDropdown(customers) {
+  const dropdown = $('customerDropdown');
+  const list = $('customerDropdownList');
+  if (!dropdown || !list) return;
+
+  if (!customers || customers.length === 0) {
+    list.innerHTML = `<div class="customer-empty-sug">⚡ New Customer (will be saved to DB automatically)</div>`;
+    dropdown.style.display = 'block';
+    return;
+  }
+
+  CUSTOMER_SUGGESTIONS = customers;
+  list.innerHTML = customers.map((c, i) => `
+    <div class="customer-suggestion-item" onclick="selectCustomerByIndex(${i})">
+      <div class="cust-sug-left">
+        <div class="cust-sug-name"><b>${escapeHtml(c.name)}</b></div>
+        <div class="cust-sug-phone">📞 ${escapeHtml(c.phone || '-')}</div>
+      </div>
+      <div class="cust-sug-right">
+        <span class="cust-sug-tag">${c.gstin ? 'B2B' : 'Retail'}</span>
+        ${c.gstin ? `<span class="cust-sug-gst">${escapeHtml(c.gstin)}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  dropdown.style.display = 'block';
+}
+
+function selectCustomerByIndex(index) {
+  const c = CUSTOMER_SUGGESTIONS[index];
+  if (!c) return;
+
+  $('custName').value = c.name || '';
+  $('custPhone').value = c.phone || '';
+  if (c.gstin) {
+    $('custGstin').value = c.gstin;
+    $('gstDetailsRow').style.display = 'flex';
+  }
+  if (c.address) {
+    $('custAddress').value = c.address;
+    $('gstDetailsRow').style.display = 'flex';
+  }
+
+  saveCurrentBillTabForm();
+  renderBillTabs();
+  closeCustomerDropdown();
+}
+
+function closeCustomerDropdown() {
+  const dropdown = $('customerDropdown');
+  if (dropdown) dropdown.style.display = 'none';
+}
+
+// Global click outside to dismiss customer dropdown
+document.addEventListener('click', (e) => {
+  const container = $('customerBoxContainer');
+  if (container && !container.contains(e.target)) {
+    closeCustomerDropdown();
+  }
+});
 
 /**
  * toggleGSTMode switches between Tax Invoice (with GST breakdown) and Cash Bill.
@@ -458,6 +688,7 @@ function renderCart() {
   if (!CART.length) {
     tbody.innerHTML = `<tr class="empty-cart-row"><td colspan="5">Cart is empty. Click an item or scan barcode to add.</td></tr>`;
     recalcCart();
+    renderBillTabs();
     return;
   }
 
@@ -483,6 +714,7 @@ function renderCart() {
   `).join('');
 
   recalcCart();
+  renderBillTabs();
 }
 
 /**
@@ -515,11 +747,26 @@ function recalcCart() {
 
 /**
  * checkoutBill commits the invoice to backend and sends to printer / PDF.
- * Flow: compiles payload -> calls POST /api/bills -> receives saved invoice -> routes to PrintEngine or PDFEngine.
+ * Validates COMPULSORY Customer Name and Mobile Phone Number.
  */
 async function checkoutBill(printFormat) {
   if (!CART.length) {
     alert('Please add at least one item to the cart.');
+    return;
+  }
+
+  const custName = ($('custName').value || '').trim();
+  const custPhone = ($('custPhone').value || '').trim();
+
+  // Validate compulsory customer details
+  if (!custName) {
+    alert('⚠️ Customer Name is COMPULSORY. Please enter customer name.');
+    $('custName').focus();
+    return;
+  }
+  if (!custPhone) {
+    alert('⚠️ Customer Mobile Phone Number is COMPULSORY. Please enter mobile number.');
+    $('custPhone').focus();
     return;
   }
 
@@ -530,10 +777,10 @@ async function checkoutBill(printFormat) {
   const payload = {
     date: $('billDate').value || new Date().toISOString().slice(0, 10),
     customer: {
-      name: $('custName').value || 'Walk-in',
-      phone: $('custPhone').value || '',
-      address: $('custAddress').value || '',
-      gstin: $('custGstin').value || '',
+      name: custName,
+      phone: custPhone,
+      address: ($('custAddress').value || '').trim(),
+      gstin: ($('custGstin').value || '').trim(),
       state: 'Tamil Nadu'
     },
     items: CART,
@@ -544,8 +791,17 @@ async function checkoutBill(printFormat) {
     note: ''
   };
 
+  const activeTab = BILL_TABS[ACTIVE_BILL_INDEX];
+  const isEditing = activeTab && activeTab.editingBillId;
+
   try {
-    const bill = await api('POST', '/api/bills', payload);
+    let bill;
+    if (isEditing) {
+      bill = await api('PUT', `/api/bills/${activeTab.editingBillId}`, payload);
+      alert(`✅ Bill ${bill.billNo} updated successfully!`);
+    } else {
+      bill = await api('POST', '/api/bills', payload);
+    }
     
     // Refresh product stock cache
     PRODUCTS = await api('GET', '/api/products');
@@ -558,7 +814,19 @@ async function checkoutBill(printFormat) {
       PrintEngine.print(bill, printFormat, SETTINGS);
     }
 
-    clearCart();
+    // Advance Multi-Bill Tabs: close current tab if multiple bills were open, or clear it
+    if (BILL_TABS.length > 1) {
+      BILL_TABS.splice(ACTIVE_BILL_INDEX, 1);
+      if (ACTIVE_BILL_INDEX >= BILL_TABS.length) {
+        ACTIVE_BILL_INDEX = BILL_TABS.length - 1;
+      }
+      CART = BILL_TABS[ACTIVE_BILL_INDEX].cart;
+      loadActiveBillTabForm();
+      renderBillTabs();
+      renderCart();
+    } else {
+      clearCart();
+    }
 
     if (IS_MASTER_MODE) {
       loadDashboard();
@@ -587,10 +855,15 @@ function setupKeyboardShortcuts() {
       e.preventDefault();
       $('gstToggle').checked = !$('gstToggle').checked;
       toggleGSTMode();
+    } else if (e.key === 'F8' || (e.ctrlKey && e.key.toLowerCase() === 'n')) {
+      e.preventDefault();
+      switchTab('pos');
+      addNewBillTab();
     } else if (e.key === 'F10') {
       e.preventDefault();
       checkoutBill('default');
     } else if (e.key === 'Escape') {
+      closeCustomerDropdown();
       closeAllModals();
     }
   });
@@ -1029,6 +1302,7 @@ async function loadBills() {
         <td><b style="font-size:14px;">${formatINR(b.grandTotal)}</b></td>
         <td>${b.payMode}</td>
         <td>
+          <button class="chip-btn" style="color:#0284c7; font-weight:700;" onclick="editExistingBill('${b.id}')">✏️ Edit</button>
           <button class="chip-btn" onclick="reprintBill('${b.id}', '80mm')">🧻 80mm</button>
           <button class="chip-btn" onclick="reprintBill('${b.id}', 'a4')">📑 A4</button>
           <button class="chip-btn" onclick="downloadBillPDF('${b.id}')">📥 PDF</button>
@@ -1038,6 +1312,70 @@ async function loadBills() {
     `).join('');
   } catch (err) {
     console.error('Bills load failed:', err);
+  }
+}
+
+async function editExistingBill(id) {
+  try {
+    const bill = await api('GET', `/api/bills/${id}`);
+    if (!bill || !bill.items) {
+      alert('Could not load bill details for editing.');
+      return;
+    }
+
+    // Check if tab for this bill is already open
+    const existingTabIndex = BILL_TABS.findIndex(t => t.editingBillId === id);
+    if (existingTabIndex !== -1) {
+      switchBillTab(existingTabIndex);
+      switchTab('pos');
+      return;
+    }
+
+    // Open new tab for editing
+    saveCurrentBillTabForm();
+    const newBillTab = {
+      id: Date.now(),
+      title: `Edit: ${bill.billNo}`,
+      editingBillId: bill.id,
+      editingBillNo: bill.billNo,
+      cart: bill.items.map(it => ({
+        productId: it.productId,
+        nameEn: it.nameEn,
+        nameTa: it.nameTa,
+        hsn: it.hsn,
+        barcode: it.barcode,
+        price: it.price,
+        gstPct: it.gstPct,
+        qty: it.qty
+      })),
+      customer: {
+        name: bill.customer.name || '',
+        phone: bill.customer.phone || '',
+        gstin: bill.customer.gstin || '',
+        address: bill.customer.address || '',
+        state: bill.customer.state || 'Tamil Nadu'
+      },
+      gstOn: bill.gstOn !== false,
+      discount: bill.discount || 0,
+      paid: bill.paid || '',
+      payMode: bill.payMode || 'Cash',
+      date: bill.date || ''
+    };
+
+    BILL_TABS.push(newBillTab);
+    ACTIVE_BILL_INDEX = BILL_TABS.length - 1;
+    CART = BILL_TABS[ACTIVE_BILL_INDEX].cart;
+
+    loadActiveBillTabForm();
+    if (bill.date && $('billDate')) {
+      $('billDate').value = bill.date;
+    }
+    renderBillTabs();
+    renderCart();
+
+    switchTab('pos');
+  } catch (err) {
+    alert('Failed to load bill for editing: ' + err.message);
   }
 }
 

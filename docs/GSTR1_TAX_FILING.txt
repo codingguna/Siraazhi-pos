@@ -1,0 +1,26 @@
+================================================================================
+  SIRAAZHI PRO POS — GSTR-1 TAX AUDIT & FILING GUIDE
+  Vanur Farmer Producer Company Limited
+================================================================================
+
+1. GST RATE STRUCTURE FOR EDIBLE COLD-PRESSED OILS
+   - Groundnut Oil (HSN 1512): 5% GST (CGST 2.5% + SGST 2.5%)
+   - Coconut Oil   (HSN 1513): 5% GST (CGST 2.5% + SGST 2.5%)
+   - Sesame Oil    (HSN 1515): 5% GST (CGST 2.5% + SGST 2.5%)
+   - Inter-state Supplies: 5% IGST
+
+2. B2B vs B2C CLASSIFICATION
+   - Invoices with customer GSTIN entered are automatically classified as Table 4A (B2B).
+   - Invoices without GSTIN are classified as Table 7 (B2C Others / Retail Consumers).
+
+3. EXPORTING GSTR-1 TO EXCEL FOR YOUR CHARTERED ACCOUNTANT (CA)
+   - Step 1: In Siraazhi Pro POS, open the "Reports" tab.
+   - Step 2: Choose the filing period (e.g. 01/10/2026 to 31/10/2026).
+   - Step 3: Click "Export to Excel (.xlsx)".
+   - Step 4: The downloaded spreadsheet contains pre-aggregated sheets:
+             1. B2B Invoices (Registered wholesale buyers)
+             2. B2CS (Retail walk-in sales state-wise)
+             3. HSN Summary (Total quantity & tax per HSN code)
+             4. Document Summary (Serial range of issued & cancelled bills)
+
+================================================================================

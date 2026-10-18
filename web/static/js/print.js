@@ -74,7 +74,7 @@ const PrintEngine = {
 
         <div style="margin:4px 0; font-size:11px;">
           <div><b>Bill No:</b> ${bill.billNo} &nbsp;&nbsp; <b>Date:</b> ${bill.date}</div>
-          <div><b>Customer:</b> ${bill.customer.name || 'Walk-in'} ${bill.customer.phone ? '(' + bill.customer.phone + ')' : ''}</div>
+          <div><b>Customer:</b> ${bill.customer.name || '-'} ${bill.customer.phone ? ' | <b>Mob:</b> ' + bill.customer.phone : ''}</div>
           ${bill.customer.gstin ? `<div><b>Cust GSTIN:</b> ${bill.customer.gstin}</div>` : ''}
         </div>
 
@@ -145,6 +145,7 @@ const PrintEngine = {
           <div class="dashed-line"></div>
           <div class="bold">${bill.gstOn ? 'TAX INVOICE' : 'CASH BILL'}</div>
           <div style="font-size:8px;">${bill.billNo} • ${bill.date}</div>
+          <div style="font-size:8px;"><b>Cust:</b> ${bill.customer.name || '-'} ${bill.customer.phone ? '• 📞 ' + bill.customer.phone : ''}</div>
         </div>
 
         <div class="dashed-line"></div>
@@ -247,8 +248,8 @@ const PrintEngine = {
         <div class="meta-grid">
           <div>
             <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#666;">Billed To (Customer):</div>
-            <div style="font-size:14px; font-weight:bold;">${bill.customer.name || 'Walk-in Customer'}</div>
-            <div>Mobile: ${bill.customer.phone || 'N/A'}</div>
+            <div style="font-size:14px; font-weight:bold;">${bill.customer.name || '-'}</div>
+            <div>Mobile / Phone: <b>${bill.customer.phone || '-'}</b></div>
             <div>Address: ${bill.customer.address || 'Tamil Nadu'}</div>
           </div>
           <div>

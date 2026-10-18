@@ -36,12 +36,31 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"siraazhi-pos/db"
 	"siraazhi-pos/handlers"
 	"siraazhi-pos/web"
 )
+
+func isServerRunning(port int) bool {
+	client := http.Client{
+		Timeout: 400 * time.Millisecond,
+	}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/api/settings", port))
+	if err == nil {
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}
+	// Fallback TCP dial check
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 250*time.Millisecond)
+	if err == nil {
+		_ = conn.Close()
+		return true
+	}
+	return false
+}
 
 func main() {
 	// 1. Command-line flags
@@ -50,7 +69,21 @@ func main() {
 	dbPath := flag.String("db", "", "Path to SQLite database file (default data/pos.db)")
 	flag.Parse()
 
-	// 2. Resolve portable data directory relative to executable
+	localURL := fmt.Sprintf("http://localhost:%d", *port)
+
+	// 2. Single-Instance Check:
+	// If the server is already active on this port (e.g. background service running or shortcut re-clicked),
+	// DO NOT fail with 'bind: address already in use'.
+	// Instead, simply bring up / reopen the Native Desktop Window and exit the secondary launcher process!
+	if isServerRunning(*port) {
+		if !*headless {
+			openNativeAppWindow(localURL)
+			time.Sleep(500 * time.Millisecond)
+		}
+		return
+	}
+
+	// 3. Resolve portable data directory relative to executable
 	execDir, err := os.Executable()
 	if err != nil {
 		execDir = "."
@@ -86,6 +119,8 @@ func main() {
 	mux.HandleFunc("/api/bills", handlers.HandleBills)
 	mux.HandleFunc("/api/bills/", handlers.HandleBillByID)
 
+	mux.HandleFunc("/api/customers", handlers.HandleCustomers)
+
 	mux.HandleFunc("/api/inventory/adjust", handlers.HandleStockAdjust)
 	mux.HandleFunc("/api/inventory/production", handlers.HandleProduction)
 	mux.HandleFunc("/api/inventory/moves", handlers.HandleStockMoves)
@@ -113,16 +148,35 @@ func main() {
 	rootHandler := handlers.CORSMiddleware(handlers.MasterRoleMiddleware(mux))
 
 	// 5. Discover Local LAN IP addresses for mobile terminal access
-	localURL := fmt.Sprintf("http://localhost:%d", *port)
 	fmt.Printf("\n [Master System] Active on: %s\n", localURL)
 	fmt.Println(" [Mobile Access] Shop Floor & Tablets on Wi-Fi can connect via:")
 
-	addrs, err := net.InterfaceAddrs()
+	ifaces, err := net.Interfaces()
 	if err == nil {
-		for _, addr := range addrs {
-			if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
-				if ipNet.IP.To4() != nil {
-					fmt.Printf("   -> http://%s:%d  (Staff Billing Terminal)\n", ipNet.IP.String(), *port)
+		for _, iface := range ifaces {
+			if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			name := strings.ToLower(iface.Name)
+			isWiFi := strings.Contains(name, "wi-fi") || strings.Contains(name, "wifi") || strings.Contains(name, "wlan")
+			isEthernet := (strings.Contains(name, "ethernet") || strings.Contains(name, "eth")) && !strings.Contains(name, "vethernet")
+
+			if strings.Contains(name, "virtual") || strings.Contains(name, "vethernet") ||
+				strings.Contains(name, "wsl") || strings.Contains(name, "bluetooth") || strings.Contains(name, "*") {
+				continue
+			}
+			if !isWiFi && !isEthernet {
+				continue
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
+					if ip4 := ipNet.IP.To4(); ip4 != nil && !strings.HasPrefix(ip4.String(), "169.254.") {
+						fmt.Printf("   -> http://%s:%d  (Staff Terminal via %s)\n", ip4.String(), *port, iface.Name)
+					}
 				}
 			}
 		}

@@ -1,0 +1,28 @@
+================================================================================
+  SIRAAZHI PRO POS — COUNTER BILLING KEYBOARD SHORTCUTS
+  Vanur Farmer Producer Company Limited
+================================================================================
+
+  KEY        ACTION                                DESCRIPTION
+  ---------  ------------------------------------  -----------------------------
+  [F2]       Focus Barcode Scanner / SKU Lookup    Instantly focus the barcode
+                                                   search field on the POS screen
+  
+  [F3]       Select & Replace Barcode              Highlights search bar content
+                                                   for immediate next scan
+
+  [F4]       Toggle GST Invoice Mode               Switch between:
+                                                   • GST Tax Invoice (with CGST/SGST)
+                                                   • Retail Cash Memo (No Tax)
+
+  [F10]      Checkout & Instant Print Bill         Finalizes the active cart and
+                                                   sends print job to default printer
+
+  [Esc]      Close Modals / Clear Search           Closes open dialogs, payment
+                                                   popups, or product editors
+
+  [Ctrl+P]   Print Selected Layout                 Opens browser printer dialog
+
+================================================================================
+  Store Helpline: +91 94432 10987 | Vanur FPC Ltd
+================================================================================

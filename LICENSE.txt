@@ -1,0 +1,18 @@
+================================================================================
+  SIRAAZHI PRO POS — COMMERCIAL SOFTWARE LICENSE
+  Copyright (c) 2026 Vanur Farmer Producer Company Limited. All rights reserved.
+================================================================================
+
+Permission is hereby granted to Vanur Farmer Producer Company Limited and its
+authorized retail branches, franchises, and mobile counter operators to use,
+run, and deploy this software for commercial point-of-sale billing, inventory
+management, and financial reporting.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+================================================================================

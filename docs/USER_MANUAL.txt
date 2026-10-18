@@ -1,0 +1,58 @@
+================================================================================
+  SIRAAZHI PRO POS — STORE USER MANUAL & OPERATIONS GUIDE
+  Vanur Farmer Producer Company Limited (VFPC Ltd)
+================================================================================
+
+1. OVERVIEW
+   Siraazhi Pro POS is an enterprise point-of-sale, inventory tracking, and GST
+   invoicing software engineered specifically for traditional cold-pressed oil
+   producers and retail outlets.
+
+2. GETTING STARTED
+   - Double-click the "Siraazhi Pro POS" shortcut on your Desktop.
+   - The native desktop application window will open automatically.
+   - If the window is closed, double-clicking the Desktop shortcut will instantly
+     reopen the POS without restarting the server or port conflicts.
+
+3. COUNTER BILLING WORKFLOW
+   Step 1: Click any oil SKU card on screen OR scan barcode (or press [F2]).
+   Step 2: Adjust quantity if needed using the [+] and [-] buttons.
+   Step 3: Toggle GST Mode:
+           - Green Toggle ON  = GST Tax Invoice (with CGST 2.5% + SGST 2.5%)
+           - Gray Toggle OFF = Retail Cash Memo (Zero Tax)
+   Step 4: Enter customer details (Name, Mobile, optional GSTIN for B2B bills).
+   Step 5: Select payment method (Cash, UPI / GPay, Card, Credit).
+   Step 6: Click "Print Bill" or press [F10]. The receipt prints immediately.
+
+4. MULTI-PRINTER ENGINE
+   - 80mm Thermal: Standard 3-inch roll printer (TVS, Epson, Xprinter, Thermal 80).
+   - 58mm Thermal: Compact 2-inch handheld/Bluetooth roll printer.
+   - A4 Invoice: Full-page office laser/inkjet printer with legal GST tax breakdown.
+   - A5 Slip: Half-page delivery slip.
+   - PDF Download: Generates vector PDF directly in your Downloads folder.
+
+5. INVENTORY & PRODUCTION MANAGEMENT
+   - Add Production Batch: When fresh oil is crushed, credit the quantity to
+     instantly update live stock.
+   - Physical Stock Audit: Record stock adjustments with notes (spillage/sample).
+   - Low Stock Alerts: SKUs below threshold (e.g. 5 bottles) display warning badges.
+
+6. RAW MATERIAL PROCUREMENT & OPERATING EXPENSES
+   - Purchases: Log copra, groundnut pods, sesame seeds, and bottle procurement.
+   - Expenses: Record daily mill crushing charges, labour, electricity, and rent.
+
+7. GSTR-1 TAX REPORTS & EXCEL EXPORTS
+   - Open Reports tab -> select date range -> click "Export to Excel (.xlsx)".
+   - Generates official CA filing sheets with B2B, B2C Large, B2C Small, and
+     HSN Summary tables compatible with the GST offline portal.
+
+8. MOBILE STAFF BILLING (WI-FI TERMINALS)
+   - Staff on mobile phones or tablets connected to the shop Wi-Fi can open
+     the URL shown under Network Settings (e.g. http://192.168.1.5:8080).
+   - Staff terminals operate in Restricted Billing Mode:
+     Can add items and print bills, but CANNOT view expenses, delete bills,
+     or modify product master data.
+
+================================================================================
+  Vanur Farmer Producer Company Ltd • Vanur, Villupuram District, Tamil Nadu
+================================================================================

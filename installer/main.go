@@ -38,6 +38,18 @@ import (
 //go:embed siraazhi-pos.exe
 var embeddedBinary []byte
 
+//go:embed uninstall.exe
+var embeddedUninstaller []byte
+
+//go:embed app.ico
+var embeddedIcon []byte
+
+//go:embed README.txt
+var embeddedReadme []byte
+
+//go:embed LICENSE.txt
+var embeddedLicense []byte
+
 var (
 	user32           = syscall.NewLazyDLL("user32.dll")
 	shell32          = syscall.NewLazyDLL("shell32.dll")
@@ -103,15 +115,23 @@ func main() {
 	_ = os.MkdirAll(dataDir, 0755)
 
 	targetExe := filepath.Join(installDir, "siraazhi-pos.exe")
+	targetUninstaller := filepath.Join(installDir, "uninstall.exe")
+	targetIcon := filepath.Join(installDir, "app.ico")
+	targetReadme := filepath.Join(installDir, "README.txt")
+	targetLicense := filepath.Join(installDir, "LICENSE.txt")
 
 	// 2. Terminate any running instances before overwriting
 	exec.Command("taskkill", "/f", "/im", "siraazhi-pos.exe").Run()
 
-	// 3. Write embedded executable
+	// 3. Write embedded executable and components
 	if err := os.WriteFile(targetExe, embeddedBinary, 0755); err != nil {
 		messageBox("Installation Error", fmt.Sprintf("Failed to write to %s:\n%v", targetExe, err), MB_ICONERROR)
 		return
 	}
+	_ = os.WriteFile(targetUninstaller, embeddedUninstaller, 0755)
+	_ = os.WriteFile(targetIcon, embeddedIcon, 0644)
+	_ = os.WriteFile(targetReadme, embeddedReadme, 0644)
+	_ = os.WriteFile(targetLicense, embeddedLicense, 0644)
 
 	// 4. Create Desktop & Start Menu Shortcuts using PowerShell
 	psScript := fmt.Sprintf(`
@@ -126,14 +146,37 @@ func main() {
 		$s1.Save();
 
 		$startMenu = [Environment]::GetFolderPath('CommonStartMenu');
-		$s2 = $ws.CreateShortcut("$startMenu\Programs\Siraazhi Pro POS.lnk");
+		$programsFolder = "$startMenu\Programs\SiraazhiPOS";
+		if (-not (Test-Path -Path $programsFolder)) {
+			New-Item -ItemType Directory -Path $programsFolder -Force | Out-Null;
+		}
+
+		$s2 = $ws.CreateShortcut("$programsFolder\Siraazhi Pro POS.lnk");
 		$s2.TargetPath = '%s';
 		$s2.Arguments = '-port 8080 -db ""%s\pos.db""';
 		$s2.WorkingDirectory = '%s';
 		$s2.IconLocation = '%s,0';
 		$s2.Description = 'Siraazhi Pro POS — Billing & Inventory Suite';
 		$s2.Save();
-	`, targetExe, dataDir, installDir, targetExe, targetExe, dataDir, installDir, targetExe)
+
+		$s3 = $ws.CreateShortcut("$programsFolder\Uninstall Siraazhi Pro POS.lnk");
+		$s3.TargetPath = '%s';
+		$s3.WorkingDirectory = '%s';
+		$s3.IconLocation = '%s,0';
+		$s3.Description = 'Uninstall Siraazhi Pro POS';
+		$s3.Save();
+
+		$s4 = $ws.CreateShortcut("$startMenu\Programs\Siraazhi Pro POS.lnk");
+		$s4.TargetPath = '%s';
+		$s4.Arguments = '-port 8080 -db ""%s\pos.db""';
+		$s4.WorkingDirectory = '%s';
+		$s4.IconLocation = '%s,0';
+		$s4.Description = 'Siraazhi Pro POS — Billing & Inventory Suite';
+		$s4.Save();
+	`, targetExe, dataDir, installDir, targetIcon,
+		targetExe, dataDir, installDir, targetIcon,
+		targetUninstaller, installDir, targetIcon,
+		targetExe, dataDir, installDir, targetIcon)
 
 	exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript).Run()
 
@@ -147,12 +190,19 @@ func main() {
 	exec.Command("reg", "add", regUninstall, "/v", "DisplayVersion", "/t", "REG_SZ", "/d", "1.0.0", "/f").Run()
 	exec.Command("reg", "add", regUninstall, "/v", "Publisher", "/t", "REG_SZ", "/d", "Vanur Farmer Producer Company Limited", "/f").Run()
 	exec.Command("reg", "add", regUninstall, "/v", "InstallLocation", "/t", "REG_SZ", "/d", installDir, "/f").Run()
+	exec.Command("reg", "add", regUninstall, "/v", "DisplayIcon", "/t", "REG_SZ", "/d", targetIcon, "/f").Run()
+	exec.Command("reg", "add", regUninstall, "/v", "UninstallString", "/t", "REG_SZ", "/d", fmt.Sprintf("\"%s\"", targetUninstaller), "/f").Run()
+	exec.Command("reg", "add", regUninstall, "/v", "QuietUninstallString", "/t", "REG_SZ", "/d", fmt.Sprintf("\"%s\"", targetUninstaller), "/f").Run()
+	exec.Command("reg", "add", regUninstall, "/v", "EstimatedSize", "/t", "REG_DWORD", "/d", "32000", "/f").Run()
+	exec.Command("reg", "add", regUninstall, "/v", "NoModify", "/t", "REG_DWORD", "/d", "1", "/f").Run()
+	exec.Command("reg", "add", regUninstall, "/v", "NoRepair", "/t", "REG_DWORD", "/d", "1", "/f").Run()
 
 	// 7. Show success confirmation
 	messageBox(
 		"Setup Complete",
 		"✅ Siraazhi Pro POS has been installed successfully!\n\n"+
 			"• Installed Location: "+installDir+"\n"+
+			"• Uninstaller Available: "+targetUninstaller+"\n"+
 			"• Desktop Shortcut: Siraazhi Pro POS\n"+
 			"• Background Service: Active on port 8080\n\n"+
 			"Launching Siraazhi Pro POS now...",

@@ -80,19 +80,51 @@
 
         <!-- Right: Real-time Cart & Checkout Terminal -->
         <div class="pos-cart-panel">
+          
+          <!-- Multi-Bill Active Tabs Bar -->
+          <div class="bill-tabs-bar">
+            <div class="bill-tabs-list" id="billTabsList">
+              <!-- Dynamically populated bill tabs: Bill 1, Bill 2, etc. -->
+            </div>
+            <button type="button" class="add-bill-tab-btn" id="addBillTabBtn" onclick="addNewBillTab()" title="Open another bill tab (Ctrl+N)">
+              <span>➕</span> New Bill
+            </button>
+          </div>
+
           <div class="cart-header">
-            <h3>Current Bill / நடப்பு பில்</h3>
+            <h3 id="currentBillTitleDisplay">Bill 1 / நடப்பு பில்</h3>
             <span class="active-bill-num" id="activeBillNoPreview">VFPC/2026-27/----</span>
           </div>
 
-          <!-- Customer Input Box -->
-          <div class="customer-row">
-            <input type="text" id="custName" placeholder="Customer Name / வாடிக்கையாளர் பெயர்" value="Walk-in">
-            <input type="tel" id="custPhone" placeholder="Mobile / தொலைபேசி">
+          <!-- Customer Input Box with Instant Autocomplete (Compulsory Name & Phone) -->
+          <div class="customer-box-container" id="customerBoxContainer">
+            <div class="customer-row">
+              <div class="input-with-icon" style="flex:1.2; position:relative;">
+                <span class="field-icon">👤</span>
+                <input type="text" id="custName" placeholder="Customer Name * (Compulsory)" value="" autocomplete="off" oninput="onCustomerSearchInput('name')" onfocus="onCustomerSearchFocus('name')">
+              </div>
+              <div class="input-with-icon" style="flex:1; position:relative;">
+                <span class="field-icon">📞</span>
+                <input type="tel" id="custPhone" placeholder="Mobile No * (Compulsory)" value="" autocomplete="off" oninput="onCustomerSearchInput('phone')" onfocus="onCustomerSearchFocus('phone')">
+              </div>
+            </div>
+
+            <!-- Instant Autocomplete Dropdown -->
+            <div class="customer-dropdown" id="customerDropdown" style="display:none;">
+              <div class="dropdown-header">
+                <span>⚡ Existing Customers / வாடிக்கையாளர்</span>
+                <button type="button" class="close-dropdown-btn" onclick="closeCustomerDropdown()">✕</button>
+              </div>
+              <div class="dropdown-list" id="customerDropdownList">
+                <!-- Suggestions injected dynamically -->
+              </div>
+            </div>
           </div>
+
+          <!-- Optional Customer Details (GSTIN & Address) -->
           <div class="customer-row sub-row" id="gstDetailsRow" style="display:none;">
-            <input type="text" id="custGstin" placeholder="Customer GSTIN (for B2B)">
-            <input type="text" id="custAddress" placeholder="Address & City">
+            <input type="text" id="custGstin" placeholder="Customer GSTIN (Optional B2B)">
+            <input type="text" id="custAddress" placeholder="Address & City (Optional)">
           </div>
 
           <!-- Invoice Settings Bar -->
