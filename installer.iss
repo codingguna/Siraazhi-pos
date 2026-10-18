@@ -5,7 +5,7 @@
 #define MyAppName "Siraazhi Pro POS"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "Vanur Farmer Producer Company Limited"
-#define MyAppURL "https://vanur-fpc.org"
+#define MyAppURL "https://siraazhi.netlify.app"
 #define MyAppExeName "siraazhi-pos.exe"
 
 [Setup]

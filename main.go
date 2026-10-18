@@ -1,24 +1,26 @@
 /* ==========================================================================
-   Siraazhi Pro POS — Main Application Entrypoint
+   Siraazhi Pro POS — Main Application Entrypoint & Native Windows Window Mode
    
    WHAT IT IS:
      The central controller of the Siraazhi Pro POS executable:
-     - Parses command-line flags (-port, -headless, -service).
+     - Parses command-line flags (-port, -headless, -db).
      - Initializes the embedded SQLite database engine (zero CGO, zero DLLs).
      - Binds the complete REST API and static embedded web assets.
-     - Automatically launches the default web browser on Windows desktop startup.
-     - Supports running as a silent background Windows Service.
+     - Launches a DEDICATED NATIVE DESKTOP WINDOW (frameless, no address bar,
+       no browser tabs, real desktop application feel with taskbar integration).
+     - Supports running as a silent background Windows Service for mobile/tablet terminals.
 
    HOW IT WORKS:
      1. Resolves binary directory so data/pos.db is always stored portably.
      2. Runs database migrations and seeds initial products (Coconut, Groundnut, Sesame).
      3. Configures standard Go http.ServeMux with CORS and Master/Staff role security.
      4. Discovers local network IPs to display connect links for phones/tablets.
-     5. Launches the user's browser in a background goroutine.
+     5. Launches the POS in a Native Windows App Window using Windows Edge/Chrome
+        App Mode (--app=http://localhost:8080).
      6. Starts the HTTP listener on port 8080 (or custom -port).
 
    DATA FLOW:
-     Main Entry -> DB Init -> Route Registration -> Browser Auto-Launch -> HTTP Listen & Serve
+     Main Entry -> DB Init -> Route Registration -> Native Desktop App Window Launch -> HTTP Listen & Serve
    ========================================================================== */
 
 package main
@@ -44,7 +46,7 @@ import (
 func main() {
 	// 1. Command-line flags
 	port := flag.Int("port", 8080, "HTTP server port (default 8080)")
-	headless := flag.Bool("headless", false, "Run in background without opening browser")
+	headless := flag.Bool("headless", false, "Run in background without opening desktop window")
 	dbPath := flag.String("db", "", "Path to SQLite database file (default data/pos.db)")
 	flag.Parse()
 
@@ -127,11 +129,11 @@ func main() {
 	}
 	fmt.Println("==================================================================")
 
-	// 6. Automatically open browser on host PC if not running headless
+	// 6. Automatically open dedicated Native Desktop Window on host PC if not running headless
 	if !*headless {
 		go func() {
 			time.Sleep(600 * time.Millisecond)
-			openBrowser(localURL)
+			openNativeAppWindow(localURL)
 		}()
 	}
 
@@ -142,19 +144,48 @@ func main() {
 	}
 }
 
-// openBrowser launches the default web browser on Windows/macOS/Linux.
-// Flow: identifies runtime OS -> triggers OS shell open command -> user sees POS screen.
-func openBrowser(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default:
-		cmd = exec.Command("xdg-open", url)
+// openNativeAppWindow launches the POS in a dedicated native desktop application window.
+//
+// WHAT IT DOES:
+//   Opens a frameless, standalone desktop window without browser tabs, URL bar, or navigation buttons.
+//
+// HOW IT WORKS:
+//   1. Uses Microsoft Edge or Google Chrome Application Mode (--app=http://localhost:8080).
+//   2. This runs inside the system's native WebView engine with custom window geometry (1280x820).
+//   3. Sits on the Windows Taskbar with its own application icon.
+//   4. Falls back to standard browser protocol handler if neither browser is found.
+func openNativeAppWindow(url string) {
+	if runtime.GOOS == "windows" {
+		// Try Microsoft Edge Application Mode (Standard on all Windows 10 & 11 PCs)
+		edgePaths := []string{
+			os.Getenv("ProgramFiles(x86)") + `\Microsoft\Edge\Application\msedge.exe`,
+			os.Getenv("ProgramFiles") + `\Microsoft\Edge\Application\msedge.exe`,
+		}
+		for _, path := range edgePaths {
+			if _, err := os.Stat(path); err == nil {
+				cmd := exec.Command(path, fmt.Sprintf("--app=%s", url), "--window-size=1280,820")
+				if err := cmd.Start(); err == nil {
+					return
+				}
+			}
+		}
+
+		// Try Google Chrome Application Mode
+		chromePaths := []string{
+			os.Getenv("ProgramFiles") + `\Google\Chrome\Application\chrome.exe`,
+			os.Getenv("ProgramFiles(x86)") + `\Google\Chrome\Application\chrome.exe`,
+			os.Getenv("LocalAppData") + `\Google\Chrome\Application\chrome.exe`,
+		}
+		for _, path := range chromePaths {
+			if _, err := os.Stat(path); err == nil {
+				cmd := exec.Command(path, fmt.Sprintf("--app=%s", url), "--window-size=1280,820")
+				if err := cmd.Start(); err == nil {
+					return
+				}
+			}
+		}
 	}
-	if err := cmd.Start(); err != nil {
-		log.Printf("Could not auto-launch browser: %v (Open manually at %s)", err, url)
-	}
+
+	// Fallback to default browser
+	exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 }
