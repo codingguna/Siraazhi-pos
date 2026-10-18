@@ -1,0 +1,252 @@
+/* ==========================================================================
+   Siraazhi Pro POS — Multi-Machine Print Engine Stylesheet
+   Supports: 80mm Thermal, 58mm Thermal, A4 Office Tax Invoice, A5 Delivery Slip
+   ========================================================================== */
+
+@media print {
+  /* Hide all application chrome */
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .app-header,
+  .nav-tabs,
+  .main-content,
+  .modal-overlay {
+    display: none !important;
+  }
+
+  .print-container {
+    display: block !important;
+    margin: 0 auto;
+    padding: 0;
+  }
+
+  /* --------------------------------------------------------------------------
+     1. 80mm THERMAL RECEIPT (Standard 3-inch POS Printer)
+     -------------------------------------------------------------------------- */
+  .receipt-80mm {
+    width: 72mm;
+    max-width: 72mm;
+    margin: 0 auto;
+    padding: 4mm 0;
+    font-family: 'Courier New', Courier, monospace, 'Nirmala UI', sans-serif;
+    font-size: 11.5px;
+    line-height: 1.25;
+    color: #000;
+  }
+
+  .receipt-80mm .center { text-align: center; }
+  .receipt-80mm .right { text-align: right; }
+  .receipt-80mm .left { text-align: left; }
+  .receipt-80mm .bold { font-weight: bold; }
+
+  .receipt-80mm .header-title {
+    font-size: 14px;
+    font-weight: 900;
+  }
+
+  .receipt-80mm .header-sub {
+    font-size: 10px;
+    margin: 2px 0;
+  }
+
+  .receipt-80mm .dashed-line {
+    border-top: 1px dashed #000;
+    margin: 4px 0;
+  }
+
+  .receipt-80mm table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+
+  .receipt-80mm th,
+  .receipt-80mm td {
+    padding: 2px 0;
+    vertical-align: top;
+  }
+
+  .receipt-80mm .grand-total-box {
+    font-size: 14px;
+    font-weight: bold;
+    border-top: 1px dashed #000;
+    border-bottom: 1px dashed #000;
+    padding: 4px 0;
+    margin: 4px 0;
+  }
+
+  /* --------------------------------------------------------------------------
+     2. 58mm THERMAL RECEIPT (Portable 2-inch Bluetooth/Handheld Printer)
+     -------------------------------------------------------------------------- */
+  .receipt-58mm {
+    width: 48mm;
+    max-width: 48mm;
+    margin: 0 auto;
+    padding: 2mm 0;
+    font-family: 'Courier New', Courier, monospace, 'Nirmala UI', sans-serif;
+    font-size: 9.5px;
+    line-height: 1.15;
+    color: #000;
+  }
+
+  .receipt-58mm .center { text-align: center; }
+  .receipt-58mm .right { text-align: right; }
+  .receipt-58mm .bold { font-weight: bold; }
+
+  .receipt-58mm .header-title {
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .receipt-58mm .dashed-line {
+    border-top: 1px dashed #000;
+    margin: 3px 0;
+  }
+
+  .receipt-58mm table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9px;
+  }
+
+  .receipt-58mm th,
+  .receipt-58mm td {
+    padding: 1px 0;
+  }
+
+  /* --------------------------------------------------------------------------
+     3. A4 FULL CORPORATE TAX INVOICE
+     -------------------------------------------------------------------------- */
+  .invoice-a4 {
+    width: 100%;
+    max-width: 200mm;
+    margin: 0 auto;
+    padding: 10mm 12mm;
+    font-family: 'Segoe UI', Nirmala UI, Arial, sans-serif;
+    font-size: 12px;
+    color: #000;
+    background: #fff;
+  }
+
+  .invoice-a4 .header-block {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 2px solid #000;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+  }
+
+  .invoice-a4 h1 {
+    font-size: 18px;
+    margin: 0 0 2px 0;
+    font-weight: 900;
+  }
+
+  .invoice-a4 .badge-invoice {
+    background: #000;
+    color: #fff;
+    padding: 4px 10px;
+    font-weight: 800;
+    font-size: 14px;
+    display: inline-block;
+  }
+
+  .invoice-a4 .meta-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 12px;
+    border: 1px solid #000;
+    padding: 8px;
+    margin-bottom: 12px;
+  }
+
+  .invoice-a4 table.items-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+  }
+
+  .invoice-a4 table.items-table th,
+  .invoice-a4 table.items-table td {
+    border: 1px solid #000;
+    padding: 6px 8px;
+    font-size: 11.5px;
+  }
+
+  .invoice-a4 table.items-table th {
+    background-color: #f0f0f0;
+    font-weight: 700;
+  }
+
+  .invoice-a4 .totals-block {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+  }
+
+  .invoice-a4 .tax-summary-table {
+    width: 55%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+
+  .invoice-a4 .tax-summary-table th,
+  .invoice-a4 .tax-summary-table td {
+    border: 1px solid #666;
+    padding: 3px 5px;
+    text-align: right;
+  }
+
+  .invoice-a4 .tax-summary-table th {
+    background: #f7f7f7;
+    text-align: center;
+  }
+
+  .invoice-a4 .final-calc {
+    width: 40%;
+    text-align: right;
+    font-size: 12px;
+  }
+
+  .invoice-a4 .grand-total-row {
+    font-size: 16px;
+    font-weight: 900;
+    border-top: 2px solid #000;
+    border-bottom: 2px solid #000;
+    padding: 4px 0;
+    margin: 6px 0;
+  }
+
+  .invoice-a4 .sign-block {
+    margin-top: 30px;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 10px;
+  }
+
+  .invoice-a4 .sign-block div {
+    text-align: center;
+    border-top: 1px solid #000;
+    padding-top: 6px;
+    width: 180px;
+  }
+
+  /* --------------------------------------------------------------------------
+     4. A5 COMPACT DELIVERY SLIP
+     -------------------------------------------------------------------------- */
+  .invoice-a5 {
+    width: 140mm;
+    margin: 0 auto;
+    padding: 6mm;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    border: 1px dashed #666;
+  }
+}
