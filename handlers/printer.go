@@ -47,10 +47,13 @@ func HandlePrinterTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Interface string `json:"interface"` // "spooler" or "network"
-		Target    string `json:"target"`    // Printer Name or IP
-		Port      int    `json:"port"`
-		PaperSize string `json:"paperSize"` // "80mm" or "58mm"
+		Interface   string `json:"interface"`   // "spooler" or "network"
+		Target      string `json:"target"`      // Printer Name or IP
+		Port        int    `json:"port"`
+		PrinterType string `json:"printerType"` // "thermal" or "document"
+		PaperSize   string `json:"paperSize"`   // "80mm", "58mm", "a4", "a5", "letter"
+		Orientation string `json:"orientation"` // "portrait" or "landscape"
+		ColorMode   string `json:"colorMode"`   // "color" or "monochrome"
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -64,7 +67,23 @@ func HandlePrinterTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	settings, _ := db.GetSettings()
-	err := printer.PrintTestSlip(req.Interface, req.Target, req.Port, req.PaperSize, &settings)
+	if req.PrinterType == "" {
+		req.PrinterType = settings.PrinterType
+	}
+	if req.PaperSize == "" {
+		req.PaperSize = settings.PaperSize
+		if req.PaperSize == "" {
+			req.PaperSize = settings.ThermalPaperSize
+		}
+	}
+	if req.Orientation == "" {
+		req.Orientation = settings.Orientation
+	}
+	if req.ColorMode == "" {
+		req.ColorMode = settings.ColorMode
+	}
+
+	err := printer.PrintTestSlip(req.Interface, req.Target, req.Port, req.PaperSize, req.Orientation, req.ColorMode, req.PrinterType, &settings)
 	if err != nil {
 		ErrorJSON(w, http.StatusInternalServerError, fmt.Sprintf("Test print failed: %v", err))
 		return

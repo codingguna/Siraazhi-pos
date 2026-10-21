@@ -143,21 +143,38 @@ func copyFile(src, dst string) error {
 	return err
 }
 
+func isRegistryInstalled() bool {
+	cmd := exec.Command("reg", "query", `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\SiraazhiPOS`)
+	return cmd.Run() == nil
+}
+
 // backupDatabase creates an automatic timestamped backup of the database before any modify/repair/install.
 func backupDatabase(dataDir, installDir, actionName string) string {
-	backupDir := filepath.Join(os.Getenv("ProgramData"), "SiraazhiPOS", "backups")
+	appDataFolder := filepath.Dir(dataDir)
+	backupDir := filepath.Join(appDataFolder, "backups")
 	_ = os.MkdirAll(backupDir, 0755)
 
 	targetDb := filepath.Join(dataDir, "pos.db")
+	programDataDb := filepath.Join(os.Getenv("ProgramData"), "SiraazhiPOS", "data", "pos.db")
 	oldInstallDb := filepath.Join(installDir, "data", "pos.db")
 
 	srcDb := ""
 	if fi, err := os.Stat(targetDb); err == nil && fi.Size() > 0 {
 		srcDb = targetDb
+	} else if fi, err := os.Stat(programDataDb); err == nil && fi.Size() > 0 {
+		srcDb = programDataDb
+		// Migrate to AppData
+		_ = os.MkdirAll(dataDir, 0755)
+		_ = copyFile(programDataDb, targetDb)
+		_ = copyFile(programDataDb+"-wal", targetDb+"-wal")
+		_ = copyFile(programDataDb+"-shm", targetDb+"-shm")
 	} else if fi, err := os.Stat(oldInstallDb); err == nil && fi.Size() > 0 {
 		srcDb = oldInstallDb
-		// Migrate to ProgramData so it is standard
+		// Migrate to AppData
+		_ = os.MkdirAll(dataDir, 0755)
 		_ = copyFile(oldInstallDb, targetDb)
+		_ = copyFile(oldInstallDb+"-wal", targetDb+"-wal")
+		_ = copyFile(oldInstallDb+"-shm", targetDb+"-shm")
 	}
 
 	if srcDb == "" {
@@ -253,7 +270,17 @@ func main() {
 		programFiles = `C:\Program Files`
 	}
 	installDir := filepath.Join(programFiles, "SiraazhiPOS")
-	dataDir := filepath.Join(os.Getenv("ProgramData"), "SiraazhiPOS", "data")
+
+	appData := os.Getenv("APPDATA")
+	if appData == "" {
+		userProfile := os.Getenv("USERPROFILE")
+		if userProfile != "" {
+			appData = filepath.Join(userProfile, "AppData", "Roaming")
+		} else {
+			appData = filepath.Join(os.Getenv("ProgramData"), "SiraazhiPOS")
+		}
+	}
+	dataDir := filepath.Join(appData, "SiraazhiPOS", "data")
 
 	targetExe := filepath.Join(installDir, "siraazhi-pos.exe")
 	targetUninstaller := filepath.Join(installDir, "uninstall.exe")
@@ -261,9 +288,11 @@ func main() {
 	targetReadme := filepath.Join(installDir, "README.txt")
 	targetLicense := filepath.Join(installDir, "LICENSE.txt")
 
-	// Detect if Siraazhi Pro POS is already installed on the computer
+	// Detect if Siraazhi Pro POS is actively installed on the computer
+	// Both the executable file AND the Windows Uninstall registry key must be present!
+	// If uninstalled previously, it will proceed directly with a clean fresh installation.
 	isAlreadyInstalled := false
-	if fi, err := os.Stat(targetExe); err == nil && fi.Size() > 0 {
+	if fi, err := os.Stat(targetExe); err == nil && fi.Size() > 0 && isRegistryInstalled() {
 		isAlreadyInstalled = true
 	}
 

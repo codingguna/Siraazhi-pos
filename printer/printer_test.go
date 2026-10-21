@@ -117,3 +117,43 @@ func TestGetInstalledPrinters(t *testing.T) {
 		t.Logf("Found %d installed printers: %v", len(printers), printers)
 	}
 }
+
+func TestBuildDocumentText(t *testing.T) {
+	settings := &db.Settings{
+		CompanyName: "Vanur FPC Ltd",
+		BrandEn:     "Siraazhi",
+	}
+
+	bill := &db.Bill{
+		BillNo: "TEST-A4-001",
+		Date:   "2026-10-21",
+		Items: []db.BillItem{
+			{NameEn: "Coconut Oil", Qty: 2, Price: 250, Amount: 500},
+		},
+		GrandTotal: 500,
+		Paid:       500,
+	}
+
+	docA4 := BuildDocumentText(bill, settings, "a4")
+	if !strings.Contains(docA4, "TEST-A4-001") || !strings.Contains(docA4, "Coconut Oil") {
+		t.Errorf("BuildDocumentText failed for A4")
+	}
+
+	testDoc := BuildTestDocumentText("HP Smart Tank 525", "a4", "portrait", "color", settings)
+	if !strings.Contains(testDoc, "HP Smart Tank 525") || !strings.Contains(testDoc, "VERIFICATION RESULTS") {
+		t.Errorf("BuildTestDocumentText failed")
+	}
+}
+
+func TestIsThermalPOSPrinter(t *testing.T) {
+	if IsThermalPOSPrinter("HP Smart Tank 520_540 series") {
+		t.Errorf("HP Smart Tank should not be classified as a thermal printer")
+	}
+	if !IsThermalPOSPrinter("POS-80") {
+		t.Errorf("POS-80 should be classified as a thermal printer")
+	}
+	if !IsThermalPOSPrinter("TVS RP 3200") {
+		t.Errorf("TVS RP 3200 should be classified as a thermal printer")
+	}
+}
+

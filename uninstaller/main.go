@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -53,11 +54,13 @@ func isElevated() bool {
 	return err == nil
 }
 
-func runAsAdmin() {
+func runAsAdmin(extraArgs ...string) {
 	verb, _ := syscall.UTF16PtrFromString("runas")
 	exe, _ := os.Executable()
 	exePtr, _ := syscall.UTF16PtrFromString(exe)
-	procShellExecute.Call(0, uintptr(unsafe.Pointer(verb)), uintptr(unsafe.Pointer(exePtr)), 0, 0, 1)
+	argStr := strings.Join(extraArgs, " ")
+	argPtr, _ := syscall.UTF16PtrFromString(argStr)
+	procShellExecute.Call(0, uintptr(unsafe.Pointer(verb)), uintptr(unsafe.Pointer(exePtr)), uintptr(unsafe.Pointer(argPtr)), 0, 1)
 }
 
 func copyFile(src, dst string) error {
@@ -78,18 +81,85 @@ func copyFile(src, dst string) error {
 	return err
 }
 
+func copyDBFiles(srcDB, dstDB string) {
+	_ = copyFile(srcDB, dstDB)
+	_ = copyFile(srcDB+"-wal", dstDB+"-wal")
+	_ = copyFile(srcDB+"-shm", dstDB+"-shm")
+}
+
 func main() {
-	if !isElevated() {
-		runAsAdmin()
+	exePath, err := os.Executable()
+	if err != nil {
+		exePath = os.Args[0]
+	}
+
+	tempDir := os.TempDir()
+	isFromTemp := false
+	var passedInstallDir string
+
+	for i, arg := range os.Args[1:] {
+		if arg == "--from-temp" {
+			isFromTemp = true
+			if i+1 < len(os.Args[1:]) {
+				passedInstallDir = os.Args[1:][i+1]
+			}
+			break
+		}
+	}
+
+	// If running directly inside Program Files, copy ourselves to %TEMP%
+	// and launch from there so Program Files can be completely deleted without file locks!
+	if !isFromTemp && !strings.HasPrefix(strings.ToLower(exePath), strings.ToLower(tempDir)) {
+		tempExe := filepath.Join(tempDir, "siraazhi_uninstall_worker.exe")
+		_ = copyFile(exePath, tempExe)
+
+		installDir := filepath.Dir(exePath)
+		cmd := exec.Command(tempExe, "--from-temp", installDir)
+		cmd.Dir = tempDir
+		_ = cmd.Start()
 		return
 	}
+
+	if !isElevated() {
+		runAsAdmin(os.Args[1:]...)
+		return
+	}
+
+	installDir := passedInstallDir
+	if installDir == "" {
+		programFiles := os.Getenv("ProgramFiles")
+		if programFiles == "" {
+			programFiles = `C:\Program Files`
+		}
+		installDir = filepath.Join(programFiles, "SiraazhiPOS")
+	}
+
+	// Resolve user AppData path
+	appData := os.Getenv("APPDATA")
+	if appData == "" {
+		userProfile := os.Getenv("USERPROFILE")
+		if userProfile != "" {
+			appData = filepath.Join(userProfile, "AppData", "Roaming")
+		} else {
+			appData = filepath.Join(os.Getenv("ProgramData"), "SiraazhiPOS")
+		}
+	}
+
+	appDataDir := filepath.Join(appData, "SiraazhiPOS", "data")
+	backupDir := filepath.Join(appData, "SiraazhiPOS", "backups")
+	_ = os.MkdirAll(appDataDir, 0755)
+	_ = os.MkdirAll(backupDir, 0755)
+
+	appDataDb := filepath.Join(appDataDir, "pos.db")
+	programDataDb := filepath.Join(os.Getenv("ProgramData"), "SiraazhiPOS", "data", "pos.db")
+	installDb := filepath.Join(installDir, "data", "pos.db")
 
 	choice := messageBox(
 		"Siraazhi Pro POS — Uninstaller",
 		"Are you sure you want to uninstall Siraazhi Pro POS from your computer?\n\n"+
 			"🛡️ ZERO DATA LOSS GUARANTEE:\n"+
 			"Your complete sales history, invoices, inventory, and shop settings in:\n"+
-			"C:\\ProgramData\\SiraazhiPOS\\data\\pos.db\n"+
+			appDataDb+"\n"+
 			"will be SAFELY PRESERVED and will NOT be deleted.\n\n"+
 			"If you reinstall in the future, all your data will be automatically available.\n\n"+
 			"Click [Yes] to proceed with uninstalling program files, or [No] to cancel.",
@@ -102,29 +172,22 @@ func main() {
 
 	// 1. Terminate running POS processes
 	exec.Command("taskkill", "/f", "/im", "siraazhi-pos.exe").Run()
+	time.Sleep(300 * time.Millisecond)
 
 	// 2. Safety Migration & Backup of Database before removing program files
-	exePath, _ := os.Executable()
-	installDir := filepath.Dir(exePath)
-	dataDir := filepath.Join(os.Getenv("ProgramData"), "SiraazhiPOS", "data")
-	backupDir := filepath.Join(os.Getenv("ProgramData"), "SiraazhiPOS", "backups")
-	_ = os.MkdirAll(dataDir, 0755)
-	_ = os.MkdirAll(backupDir, 0755)
-
-	installDb := filepath.Join(installDir, "data", "pos.db")
-	programDataDb := filepath.Join(dataDir, "pos.db")
-
-	// If a DB exists in Program Files, rescue it to ProgramData so it is never deleted by rmdir
-	if fi, err := os.Stat(installDb); err == nil && fi.Size() > 0 {
-		if _, err2 := os.Stat(programDataDb); os.IsNotExist(err2) {
-			_ = copyFile(installDb, programDataDb)
+	// If pos.db exists in Program Files or ProgramData but not in AppData, migrate to AppData now
+	if _, err := os.Stat(appDataDb); os.IsNotExist(err) {
+		if fi, err := os.Stat(programDataDb); err == nil && fi.Size() > 0 {
+			copyDBFiles(programDataDb, appDataDb)
+		} else if fi, err := os.Stat(installDb); err == nil && fi.Size() > 0 {
+			copyDBFiles(installDb, appDataDb)
 		}
 	}
 
-	// Create automatic timestamped backup of the database
-	if fi, err := os.Stat(programDataDb); err == nil && fi.Size() > 0 {
+	// Create automatic timestamped safety backup in AppData
+	if fi, err := os.Stat(appDataDb); err == nil && fi.Size() > 0 {
 		ts := time.Now().Format("20060102_150405")
-		_ = copyFile(programDataDb, filepath.Join(backupDir, fmt.Sprintf("pos_backup_pre_uninstall_%s.db", ts)))
+		_ = copyFile(appDataDb, filepath.Join(backupDir, fmt.Sprintf("pos_backup_pre_uninstall_%s.db", ts)))
 	}
 
 	// 3. Remove Desktop & Start Menu Shortcuts
@@ -143,18 +206,29 @@ func main() {
 	// 5. Remove Control Panel Registration
 	exec.Command("reg", "delete", `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\SiraazhiPOS`, "/f").Run()
 
+	// 6. Completely Remove Program Files Folder
+	// Because we are running from %TEMP%, installDir has no open handles from uninstall.exe
+	_ = os.RemoveAll(installDir)
+	// Fallback PowerShell command to wipe any remaining files in installDir
+	psClean := fmt.Sprintf(`
+		Start-Sleep -Milliseconds 500;
+		if (Test-Path '%s') {
+			Remove-Item -Path '%s' -Recurse -Force -ErrorAction SilentlyContinue;
+		}
+	`, installDir, installDir)
+	exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psClean).Run()
+
 	messageBox(
 		"Uninstall Complete",
 		"✅ Siraazhi Pro POS has been uninstalled successfully.\n\n"+
+			"• Program files removed from: "+installDir+"\n"+
+			"• Shortcuts and auto-start removed\n\n"+
 			"🛡️ All sales data, bills, and settings were safely preserved in:\n"+
-			"C:\\ProgramData\\SiraazhiPOS\\data\\pos.db\n\n"+
+			appDataDb+"\n\n"+
 			"An automatic safety backup was also saved to:\n"+
-			"C:\\ProgramData\\SiraazhiPOS\\backups\\\n\n"+
+			backupDir+"\n\n"+
 			"You can reinstall at any time without losing any data.",
 		MB_ICONINFO,
 	)
-
-	// 6. Cleanup Program Files folder after exit
-	cmdDelete := fmt.Sprintf(`timeout /t 1 /nobreak >nul & for /l %%x in (1,1,10) do (rmdir /s /q "%s" >nul 2>&1 & if not exist "%s" exit)`, installDir, installDir)
-	exec.Command("cmd", "/c", "start", "/b", "cmd", "/c", cmdDelete).Start()
 }
+

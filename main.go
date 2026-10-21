@@ -28,6 +28,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -93,7 +94,7 @@ func main() {
 
 	actualDBPath := *dbPath
 	if actualDBPath == "" {
-		actualDBPath = filepath.Join(execDir, "data", "pos.db")
+		actualDBPath = resolveAppDataDatabasePath(execDir)
 	}
 
 	fmt.Println("==================================================================")
@@ -248,3 +249,77 @@ func openNativeAppWindow(url string) {
 	// Fallback to default browser
 	exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 }
+
+// resolveAppDataDatabasePath returns the persistent SQLite database path inside the current user's AppData directory.
+// It also checks for and auto-migrates existing databases from older locations (%ProgramData% or local ./data)
+// so user data is never lost across reinstalls, upgrades, or directory relocations.
+func resolveAppDataDatabasePath(execDir string) string {
+	appData := os.Getenv("APPDATA")
+	if appData == "" {
+		userProfile := os.Getenv("USERPROFILE")
+		if userProfile != "" {
+			appData = filepath.Join(userProfile, "AppData", "Roaming")
+		} else {
+			appData = execDir
+		}
+	}
+
+	targetDir := filepath.Join(appData, "SiraazhiPOS", "data")
+	targetDB := filepath.Join(targetDir, "pos.db")
+
+	// If pos.db already exists in AppData, use it directly.
+	if fi, err := os.Stat(targetDB); err == nil && fi.Size() > 0 {
+		return targetDB
+	}
+
+	// Ensure target directory exists
+	_ = os.MkdirAll(targetDir, 0755)
+
+	// Check candidate legacy locations for migration
+	candidates := []string{}
+
+	// 1. Check %ProgramData%\SiraazhiPOS\data\pos.db
+	programData := os.Getenv("ProgramData")
+	if programData != "" {
+		candidates = append(candidates, filepath.Join(programData, "SiraazhiPOS", "data", "pos.db"))
+	} else {
+		candidates = append(candidates, `C:\ProgramData\SiraazhiPOS\data\pos.db`)
+	}
+
+	// 2. Check local execution directory ./data/pos.db
+	candidates = append(candidates, filepath.Join(execDir, "data", "pos.db"))
+
+	for _, cand := range candidates {
+		if fi, err := os.Stat(cand); err == nil && fi.Size() > 0 {
+			log.Printf("[Migration] Found existing database at %s. Migrating to AppData: %s", cand, targetDB)
+			copyDBFiles(cand, targetDB)
+			return targetDB
+		}
+	}
+
+	return targetDB
+}
+
+// copyDBFiles copies pos.db as well as SQLite WAL and SHM journal files if present
+func copyDBFiles(srcDB, dstDB string) {
+	copySingleFile(srcDB, dstDB)
+	copySingleFile(srcDB+"-wal", dstDB+"-wal")
+	copySingleFile(srcDB+"-shm", dstDB+"-shm")
+}
+
+func copySingleFile(src, dst string) {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return
+	}
+	defer dstFile.Close()
+
+	_, _ = io.Copy(dstFile, srcFile)
+}
+

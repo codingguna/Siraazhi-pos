@@ -797,7 +797,7 @@ function recalcCart() {
  */
 async function checkoutBill(printFormat) {
   if (!CART.length) {
-    alert('Please add at least one item to the cart.');
+    showToast('Please add at least one item to the cart.', 'warning', 3000);
     return;
   }
 
@@ -806,12 +806,12 @@ async function checkoutBill(printFormat) {
 
   // Validate compulsory customer details
   if (!custName) {
-    alert('⚠️ Customer Name is COMPULSORY. Please enter customer name.');
+    showToast('⚠️ Customer Name is COMPULSORY', 'warning', 3500);
     $('custName').focus();
     return;
   }
   if (!custPhone) {
-    alert('⚠️ Customer Mobile Phone Number is COMPULSORY. Please enter mobile number.');
+    showToast('⚠️ Customer Mobile Phone Number is COMPULSORY', 'warning', 3500);
     $('custPhone').focus();
     return;
   }
@@ -844,7 +844,7 @@ async function checkoutBill(printFormat) {
     let bill;
     if (isEditing) {
       bill = await api('PUT', `/api/bills/${activeTab.editingBillId}`, payload);
-      alert(`✅ Bill ${bill.billNo} updated successfully!`);
+      showToast(`✅ Bill ${bill.billNo} updated`, 'success', 3000);
     } else {
       bill = await api('POST', '/api/bills', payload);
     }
@@ -859,7 +859,7 @@ async function checkoutBill(printFormat) {
     if (printFormat === 'pdf') {
       PDFEngine.saveBillPDF(bill, SETTINGS);
     } else if (IS_MASTER_MODE) {
-      if (printFormat === 'a4' || printFormat === 'a5' || !SETTINGS.printerInterface || SETTINGS.printerInterface === 'browser') {
+      if (SETTINGS.printerInterface === 'browser') {
         PrintEngine.print(bill, printFormat, SETTINGS);
       } else {
         await printBillDirect(bill, printFormat);
@@ -899,7 +899,7 @@ async function checkoutBill(printFormat) {
       loadBills();
     }
   } catch (err) {
-    alert('❌ Bill Creation Failed: ' + err.message);
+    showToast('❌ Bill Creation Failed: ' + err.message, 'danger', 4000);
   }
 }
 
@@ -1458,7 +1458,7 @@ async function editExistingBill(id) {
 
     switchTab('pos');
   } catch (err) {
-    alert('Failed to load bill for editing: ' + err.message);
+    showToast('Failed to load bill for editing: ' + err.message, 'danger', 4000);
   }
 }
 
@@ -1466,7 +1466,7 @@ async function reprintBill(id, format) {
   try {
     const bill = await api('GET', `/api/bills/${id}`);
     if (IS_MASTER_MODE) {
-      if (format === 'a4' || format === 'a5' || !SETTINGS.printerInterface || SETTINGS.printerInterface === 'browser') {
+      if (SETTINGS.printerInterface === 'browser') {
         PrintEngine.print(bill, format, SETTINGS);
       } else {
         await printBillDirect(bill, format);
@@ -1480,7 +1480,7 @@ async function reprintBill(id, format) {
       showToast(`✅ Bill ${bill.billNo} sent to Master Print Queue!`, 'success', 4000);
     }
   } catch (err) {
-    alert('Failed to fetch bill for printing: ' + err.message);
+    showToast('Failed to fetch bill for printing: ' + err.message, 'danger', 4000);
   }
 }
 
@@ -1498,7 +1498,7 @@ async function reprintLastBill(format) {
     }
   }
   if (!LAST_BILL) {
-    alert('No recent bill to reprint.');
+    showToast('No recent bill to reprint.', 'warning', 3000);
     return;
   }
   reprintBill(LAST_BILL.id, format || 'default');
@@ -1509,7 +1509,7 @@ async function downloadBillPDF(id) {
     const bill = await api('GET', `/api/bills/${id}`);
     PDFEngine.saveBillPDF(bill, SETTINGS);
   } catch (err) {
-    alert('Failed to generate PDF: ' + err.message);
+    showToast('Failed to generate PDF: ' + err.message, 'danger', 4000);
   }
 }
 
@@ -1707,7 +1707,11 @@ function populateSettingsForm() {
   if ($('setPrinterTarget')) $('setPrinterTarget').value = s.printerTarget || '';
   if ($('setPrinterIP')) $('setPrinterIP').value = (s.printerInterface === 'network' ? s.printerTarget : '') || '';
   if ($('setPrinterPort')) $('setPrinterPort').value = s.printerPort || 9100;
-  if ($('setThermalPaperSize')) $('setThermalPaperSize').value = s.thermalPaperSize || s.thermalSize || '80mm';
+  if ($('setPrinterType')) $('setPrinterType').value = s.printerType || 'thermal';
+  onPrinterTypeChange();
+  if ($('setPaperSize')) $('setPaperSize').value = s.paperSize || s.thermalPaperSize || s.thermalSize || (s.printerType === 'document' ? 'a4' : '80mm');
+  if ($('setOrientation')) $('setOrientation').value = s.orientation || 'portrait';
+  if ($('setColorMode')) $('setColorMode').value = s.colorMode || 'color';
   if ($('setPrintCopies')) $('setPrintCopies').value = s.printCopies || 1;
   if ($('setAutoCut')) $('setAutoCut').checked = (s.autoCut !== false);
   if ($('setCashDrawer')) $('setCashDrawer').checked = (s.cashDrawer === true);
@@ -1771,8 +1775,12 @@ async function saveSettingsForm() {
     printerInterface: printerInterface,
     printerTarget: printerTarget,
     printerPort: parseInt($('setPrinterPort') ? $('setPrinterPort').value : '9100', 10) || 9100,
-    thermalPaperSize: $('setThermalPaperSize') ? $('setThermalPaperSize').value : '80mm',
-    thermalSize: $('setThermalPaperSize') ? $('setThermalPaperSize').value : '80mm',
+    printerType: $('setPrinterType') ? $('setPrinterType').value : (SETTINGS.printerType || 'thermal'),
+    paperSize: $('setPaperSize') ? $('setPaperSize').value : (SETTINGS.paperSize || '80mm'),
+    orientation: $('setOrientation') ? $('setOrientation').value : (SETTINGS.orientation || 'portrait'),
+    colorMode: $('setColorMode') ? $('setColorMode').value : (SETTINGS.colorMode || 'color'),
+    thermalPaperSize: $('setPaperSize') ? $('setPaperSize').value : '80mm',
+    thermalSize: $('setPaperSize') ? $('setPaperSize').value : '80mm',
     printCopies: parseInt($('setPrintCopies') ? $('setPrintCopies').value : '1', 10) || 1,
     autoCut: $('setAutoCut') ? $('setAutoCut').checked : true,
     cashDrawer: $('setCashDrawer') ? $('setCashDrawer').checked : false,
@@ -1793,15 +1801,65 @@ async function saveSettingsForm() {
     applySettingsToUI();
     recalcCart();
     populateSettingsForm();
-    alert('✅ Settings saved & synchronized with Billing Counter.');
+    showToast('✅ Settings saved & synchronized with Billing Counter.', 'success', 3000);
   } catch (err) {
-    alert('Failed to save settings: ' + err.message);
+    showToast('❌ Failed to save settings: ' + err.message, 'danger', 4000);
   }
 }
 
 // --------------------------------------------------------------------------
 // Hardware Multi-Printer UI Handlers & Direct Print Dispatcher
 // --------------------------------------------------------------------------
+
+function onPrinterTypeChange() {
+  const pType = $('setPrinterType') ? $('setPrinterType').value : 'thermal';
+  const paperSelect = $('setPaperSize');
+  const docSettings = $('boxDocumentSettings');
+  const thermalSettings = $('boxThermalSettings');
+
+  if (docSettings) docSettings.style.display = (pType === 'document') ? 'flex' : 'none';
+  if (thermalSettings) thermalSettings.style.display = (pType === 'thermal') ? 'flex' : 'none';
+
+  if (paperSelect) {
+    const curVal = paperSelect.value;
+    if (pType === 'thermal') {
+      paperSelect.innerHTML = `
+        <option value="80mm">Standard 80mm Roll (3-inch — Preferred)</option>
+        <option value="58mm">Compact 58mm Roll (2-inch portable)</option>
+      `;
+      if (curVal === '58mm') paperSelect.value = '58mm';
+      else paperSelect.value = '80mm';
+    } else {
+      paperSelect.innerHTML = `
+        <option value="a4">Standard A4 Sheet (210 x 297 mm)</option>
+        <option value="a5">Compact A5 Half Sheet (148 x 210 mm)</option>
+        <option value="letter">Letter Sheet (8.5 x 11 in)</option>
+      `;
+      if (curVal === 'a5' || curVal === 'letter') paperSelect.value = curVal;
+      else paperSelect.value = 'a4';
+    }
+  }
+}
+
+function onPrinterSelectChange() {
+  const select = $('setPrinterTarget');
+  if (!select || !select.value) return;
+  const name = select.value.toLowerCase();
+  const typeSelect = $('setPrinterType');
+  if (!typeSelect) return;
+
+  // Auto-detect standard office / inkjet / laserjet desktop printers (like HP Smart Tank)
+  const isDesktop = name.includes('smart tank') || name.includes('laserjet') || name.includes('deskjet') ||
+                    name.includes('ink tank') || name.includes('epson l') || name.includes('canon g') ||
+                    name.includes('brother dcp') || name.includes('pdf') || name.includes('xps');
+
+  if (isDesktop) {
+    typeSelect.value = 'document';
+  } else {
+    typeSelect.value = 'thermal';
+  }
+  onPrinterTypeChange();
+}
 
 async function loadInstalledPrintersList() {
   try {
@@ -1868,7 +1926,7 @@ function toggleSecPrinterTargetUI() {
 async function testHardwarePrinterSlip() {
   const iface = $('setPrinterInterface') ? $('setPrinterInterface').value : 'browser';
   if (iface === 'browser') {
-    alert('Please select "Windows USB / Driver Spooler" or "Network LAN / Wi-Fi Printer" to test direct hardware printing.');
+    showToast('⚠️ Please select Windows USB or Network printer first', 'warning', 3500);
     return;
   }
 
@@ -1876,36 +1934,42 @@ async function testHardwarePrinterSlip() {
   if (iface === 'spooler') {
     target = $('setPrinterTarget') ? $('setPrinterTarget').value.trim() : '';
     if (!target) {
-      alert('Please select a target Windows Printer first.');
+      showToast('⚠️ Please select a Windows Printer first', 'warning', 3500);
       return;
     }
   } else if (iface === 'network') {
     target = $('setPrinterIP') ? $('setPrinterIP').value.trim() : '';
     if (!target) {
-      alert('Please enter the Printer IP Address first.');
+      showToast('⚠️ Please enter Printer IP Address first', 'warning', 3500);
       return;
     }
   }
 
   const port = parseInt($('setPrinterPort') ? $('setPrinterPort').value : '9100', 10) || 9100;
-  const paperSize = $('setThermalPaperSize') ? $('setThermalPaperSize').value : '80mm';
+  const printerType = $('setPrinterType') ? $('setPrinterType').value : (SETTINGS.printerType || 'thermal');
+  const paperSize = $('setPaperSize') ? $('setPaperSize').value : (SETTINGS.paperSize || '80mm');
+  const orientation = $('setOrientation') ? $('setOrientation').value : (SETTINGS.orientation || 'portrait');
+  const colorMode = $('setColorMode') ? $('setColorMode').value : (SETTINGS.colorMode || 'color');
 
   try {
-    showToast('Sending test receipt to printer...', 'info', 3000);
+    showToast('🖨 Sending test receipt in background...', 'info', 2500);
     const res = await api('POST', '/api/printers/test', {
       target: target,
       interface: iface,
       port: port,
-      paperSize: paperSize
+      printerType: printerType,
+      paperSize: paperSize,
+      orientation: orientation,
+      colorMode: colorMode
     });
-    alert(`✅ Test Print Successful!\nTarget: ${target} (${iface})\nHardware receipt has been dispatched.`);
+    showToast(`🖨 Test print sent to ${target}`, 'success', 3500);
   } catch (err) {
-    alert(`❌ Test Print Failed: ${err.message}\n\nPlease check printer USB connection, driver name, or network IP.`);
+    showToast(`❌ Test Print Failed: ${err.message}`, 'danger', 5000);
   }
 }
 
 async function printBillDirect(bill, format) {
-  if (!SETTINGS.printerInterface || SETTINGS.printerInterface === 'browser') {
+  if (SETTINGS.printerInterface === 'browser') {
     PrintEngine.print(bill, format, SETTINGS);
     return;
   }
@@ -1914,13 +1978,12 @@ async function printBillDirect(bill, format) {
     const res = await api('POST', '/api/print-direct', {
       bill: bill,
       billId: bill.id,
-      format: format || SETTINGS.thermalPaperSize || '80mm'
+      format: format || SETTINGS.thermalPaperSize || SETTINGS.paperSize || '80mm'
     });
-    showToast(`🖨 Bill ${bill.billNo} sent to hardware printer.`, 'success', 3500);
+    showToast(`🖨 Bill ${bill.billNo} printed`, 'success', 3000);
   } catch (err) {
-    console.warn('Hardware direct print failed, falling back to browser print dialog:', err);
-    showToast(`⚠️ Hardware print error: ${err.message}. Opening print preview...`, 'warning', 4000);
-    PrintEngine.print(bill, format, SETTINGS);
+    console.warn('Hardware direct print failed:', err);
+    showToast(`⚠️ Print error: ${err.message}`, 'warning', 4000);
   }
 }
 
@@ -2074,7 +2137,7 @@ async function checkMasterPrintQueue() {
       for (const job of res.jobs) {
         if (job.status === 'pending' && job.bill) {
           // Trigger print on Master System's physical hardware printer or browser preview
-          if (job.format === 'a4' || job.format === 'a5' || !SETTINGS.printerInterface || SETTINGS.printerInterface === 'browser') {
+          if (SETTINGS.printerInterface === 'browser') {
             PrintEngine.print(job.bill, job.format, SETTINGS);
           } else {
             await printBillDirect(job.bill, job.format);
@@ -2156,10 +2219,10 @@ async function executeManualPrintJob(jobId) {
     const res = await api('GET', '/api/print-queue');
     const job = (res.jobs || []).find(j => j.id === jobId);
     if (!job || !job.bill) {
-      alert('Job or bill data not found');
+      showToast('Job or bill data not found', 'warning', 3000);
       return;
     }
-    if (job.format === 'a4' || job.format === 'a5' || !SETTINGS.printerInterface || SETTINGS.printerInterface === 'browser') {
+    if (SETTINGS.printerInterface === 'browser') {
       PrintEngine.print(job.bill, job.format, SETTINGS);
     } else {
       await printBillDirect(job.bill, job.format);
@@ -2168,7 +2231,7 @@ async function executeManualPrintJob(jobId) {
     loadPrintQueueModalData();
     checkMasterPrintQueue();
   } catch (err) {
-    alert('Print error: ' + err.message);
+    showToast('Print error: ' + err.message, 'danger', 4000);
   }
 }
 
