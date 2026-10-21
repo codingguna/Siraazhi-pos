@@ -33,11 +33,47 @@ echo.
 
 set "INSTALL_DIR=%ProgramFiles%\SiraazhiPOS"
 set "DATA_DIR=%ProgramData%\SiraazhiPOS\data"
+set "BACKUP_DIR=%ProgramData%\SiraazhiPOS\backups"
 
-:: 1. Create Directories
-echo [1/6] Creating Program Directories...
+if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%" >nul 2>&1
+
+:: Check if already installed
+if exist "%INSTALL_DIR%\siraazhi-pos.exe" (
+    echo ================================================================
+    echo  EXISTING INSTALLATION DETECTED IN:
+    echo  %INSTALL_DIR%
+    echo ================================================================
+    echo  Please choose an action:
+    echo.
+    echo   [1] MODIFY / UPDATE  - Update old files with new updated version
+    echo   [2] REPAIR           - Scan files and fix any broken/missing files
+    echo   [3] CANCEL           - Exit setup without making changes
+    echo.
+    echo  Note: Your database and sales data will be safely preserved.
+    echo ================================================================
+    set /p "MAINT_CHOICE=Enter your choice [1, 2, or 3]: "
+    if "%MAINT_CHOICE%"=="3" (
+        echo Setup cancelled by user.
+        exit /b 0
+    )
+    if "%MAINT_CHOICE%"=="2" (
+        echo.
+        echo Starting Repair Mode...
+    ) else (
+        echo.
+        echo Starting Modify / Update Mode...
+    )
+)
+
+:: 1. Create Directories & Safety Backup
+echo [1/6] Creating Program Directories & Safety Backup...
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
+
+:: Automatic timestamped DB safety backup
+if exist "%DATA_DIR%\pos.db" (
+    copy /y "%DATA_DIR%\pos.db" "%BACKUP_DIR%\pos_backup_%date:~-4,4%%date:~-7,2%%date:~-10,2%.db" >nul 2>&1
+)
 
 :: 2. Copy Executable & Assets
 echo [2/6] Copying Software Files...
@@ -47,7 +83,7 @@ copy /y "app.ico" "%INSTALL_DIR%\app.ico" >nul 2>&1
 copy /y "start_silent.vbs" "%INSTALL_DIR%\start_silent.vbs" >nul
 copy /y "README.md" "%INSTALL_DIR%\README.md" >nul
 
-:: Copy initial DB if none exists in ProgramData
+:: Copy initial DB ONLY IF none exists in ProgramData
 if not exist "%DATA_DIR%\pos.db" (
     if exist "data\pos.db" (
         copy /y "data\pos.db" "%DATA_DIR%\pos.db" >nul

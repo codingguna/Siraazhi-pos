@@ -114,6 +114,14 @@ func HandleRestore(w http.ResponseWriter, r *http.Request) {
 		_ = db.SaveExpense(e)
 	}
 
+	// Restore historical bills and stock moves ledger
+	if len(data.Bills) > 0 || len(data.StockMoves) > 0 {
+		if err := db.RestoreBillsAndMoves(data.Bills, data.StockMoves); err != nil {
+			ErrorJSON(w, http.StatusInternalServerError, "Failed to restore bills/moves: "+err.Error())
+			return
+		}
+	}
+
 	JSON(w, http.StatusOK, map[string]interface{}{
 		"ok":       true,
 		"message":  "Database successfully restored",

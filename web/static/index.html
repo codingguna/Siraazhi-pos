@@ -10,8 +10,8 @@
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/print.css" media="print">
-  <!-- SheetJS for offline native Excel (.xlsx) export -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- SheetJS for offline native Excel (.xlsx) export (100% offline) -->
+  <script src="js/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -41,8 +41,8 @@
 
   <!-- NAVIGATION TABS -->
   <nav class="nav-tabs" id="navTabs">
-    <button data-tab="pos" class="active">🧾 POS Billing (F2)</button>
-    <button data-tab="dash">📊 Dashboard</button>
+    <button data-tab="dash" class="active">📊 Dashboard</button>
+    <button data-tab="pos">🧾 POS Billing (F2)</button>
     <button data-tab="inventory">🛢 Stock & Catalog</button>
     <button data-tab="production">🏭 Batch Crushing</button>
     <button data-tab="purchases">🌾 Procurement</button>
@@ -56,7 +56,7 @@
   <main class="main-content">
 
     <!-- 1. POS BILLING SECTION -->
-    <section id="tab-pos" class="tab-pane active">
+    <section id="tab-pos" class="tab-pane">
       
       <!-- Mobile View Switcher (Visible on mobile/tablets <= 850px) -->
       <div class="mobile-pos-switcher" id="mobilePosSwitcher">
@@ -149,9 +149,9 @@
           <!-- Invoice Settings Bar -->
           <div class="invoice-config-bar">
             <label class="toggle-control">
-              <input type="checkbox" id="gstToggle" checked onchange="toggleGSTMode()">
+              <input type="checkbox" id="gstToggle" onchange="toggleGSTMode()">
               <span class="toggle-slider"></span>
-              <span class="toggle-label" id="gstToggleLabel"><b>GST Invoice</b> (Tax split)</span>
+              <span class="toggle-label" id="gstToggleLabel"><b>Cash Bill</b> (No tax)</span>
             </label>
             <div class="date-badge">
               <input type="date" id="billDate">
@@ -230,9 +230,10 @@
             <!-- Print Format Quick Switchers -->
             <div class="reprint-quick-bar">
               <span class="mini-label">Printer Preset:</span>
-              <button class="chip-btn" onclick="checkoutBill('80mm')">80mm Thermal</button>
-              <button class="chip-btn" onclick="checkoutBill('58mm')">58mm Thermal</button>
-              <button class="chip-btn" onclick="checkoutBill('a4')">A4 Invoice</button>
+              <button class="chip-btn" onclick="checkoutBill('80mm')" title="Checkout & Print 80mm">80mm Thermal</button>
+              <button class="chip-btn" onclick="checkoutBill('58mm')" title="Checkout & Print 58mm">58mm Thermal</button>
+              <button class="chip-btn" onclick="checkoutBill('a4')" title="Checkout & Print A4">A4 Invoice</button>
+              <button class="chip-btn" style="background:#e0f2fe; color:#0369a1; font-weight:700;" onclick="reprintLastBill()" title="Reprint Last Bill">🔄 Reprint Last</button>
             </div>
           </div>
 
@@ -255,7 +256,7 @@
     </section>
 
     <!-- 2. DASHBOARD SECTION -->
-    <section id="tab-dash" class="tab-pane">
+    <section id="tab-dash" class="tab-pane active">
       <div class="dash-grid">
         <div class="kpi-card">
           <div class="kpi-icon">💰</div>
@@ -690,7 +691,7 @@
         </div>
 
         <div class="panel-box">
-          <h3>🖨 Multi-Printer Settings</h3>
+          <h3>🖨 Multi-Printer & Billing Defaults</h3>
           <div class="form-grid">
             <div class="form-group">
               <label>Default Counter Printer Machine:</label>
@@ -702,12 +703,24 @@
               </select>
             </div>
             <div class="form-group">
-              <label>Default Bill Mode:</label>
+              <label>Default Bill Mode (POS Counter):</label>
               <select id="setDefaultGSTMode">
-                <option value="true">GST Tax Invoice by default</option>
-                <option value="false">Non-GST Cash Bill by default</option>
+                <option value="true">GST Tax Invoice by default (Recommended for GST filers)</option>
+                <option value="false">Non-GST Cash Bill by default (Retail memo)</option>
               </select>
             </div>
+
+            <h3 style="margin-top:15px;">🔐 Master Terminal Security & Staff PIN</h3>
+            <div class="form-group">
+              <label>Master Admin PIN (Resettable):</label>
+              <div style="display:flex; gap:8px;">
+                <input type="text" id="setMasterPin" placeholder="e.g. 1234" maxlength="10" style="max-width:180px; font-weight:bold; font-size:15px; letter-spacing:2px;">
+                <button type="button" class="btn btn-secondary" onclick="generateRandomPin()" title="Generate random 4-digit PIN">🎲 Random</button>
+              </div>
+              <small class="muted-text">Used to unlock full management (reports, expenses, stock, cancellations) on mobile and Wi-Fi staff devices. Default: <b>1234</b>.</small>
+            </div>
+
+            <button class="btn btn-primary" style="margin-top:10px; width:100%;" onclick="saveSettingsForm()">💾 Save All Configuration & Printer Defaults</button>
           </div>
 
           <h3 style="margin-top:25px;">💾 Data Backup & Disaster Recovery</h3>

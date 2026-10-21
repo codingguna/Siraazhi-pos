@@ -266,6 +266,7 @@ func seedDefaults() error {
 			PayModes:       []string{"Cash", "UPI", "Card", "Credit"},
 			ThermalSize:    "80mm",
 			DefaultPrinter: "80mm",
+			MasterPin:      "1234",
 		}
 		data, _ := json.Marshal(defSettings)
 		_, err := DB.Exec("INSERT INTO settings (id, data) VALUES (1, ?)", string(data))
@@ -327,12 +328,27 @@ func GetSettings() (Settings, error) {
 		return s, err
 	}
 	err = json.Unmarshal([]byte(raw), &s)
+	if strings.TrimSpace(s.MasterPin) == "" {
+		s.MasterPin = "1234"
+	}
 	return s, err
+}
+
+// GetMasterPin returns the active Master Admin PIN (defaults to "1234").
+func GetMasterPin() string {
+	s, err := GetSettings()
+	if err != nil || strings.TrimSpace(s.MasterPin) == "" {
+		return "1234"
+	}
+	return strings.TrimSpace(s.MasterPin)
 }
 
 // SaveSettings updates business configuration in settings table.
 // Flow: marshals struct to JSON -> executes SQL update.
 func SaveSettings(s Settings) error {
+	if strings.TrimSpace(s.MasterPin) == "" {
+		s.MasterPin = "1234"
+	}
 	data, err := json.Marshal(s)
 	if err != nil {
 		return err
@@ -521,7 +537,7 @@ func CreateBill(bill Bill) (Bill, error) {
 	custName := strings.TrimSpace(bill.Customer.Name)
 	custPhone := strings.TrimSpace(bill.Customer.Phone)
 	if custPhone != "" || (custName != "" && !strings.EqualFold(custName, "Walk-in")) {
-		_ = SaveCustomer(bill.Customer)
+		_ = saveCustomerLocked(bill.Customer)
 	}
 
 	return bill, nil
@@ -671,7 +687,7 @@ func UpdateBill(bill Bill) (Bill, error) {
 	custName := strings.TrimSpace(bill.Customer.Name)
 	custPhone := strings.TrimSpace(bill.Customer.Phone)
 	if custPhone != "" || (custName != "" && !strings.EqualFold(custName, "Walk-in")) {
-		_ = SaveCustomer(bill.Customer)
+		_ = saveCustomerLocked(bill.Customer)
 	}
 
 	return bill, nil
@@ -766,7 +782,7 @@ func GetBills(from, to string) ([]Bill, error) {
 	}
 	defer rows.Close()
 
-	var list []Bill
+	list := make([]Bill, 0)
 	for rows.Next() {
 		var b Bill
 		var gstOnInt int
@@ -865,7 +881,7 @@ func GetStockMoves(limit int) ([]StockMove, error) {
 	}
 	defer rows.Close()
 
-	var list []StockMove
+	list := make([]StockMove, 0)
 	for rows.Next() {
 		var sm StockMove
 		if err := rows.Scan(&sm.ID, &sm.Date, &sm.ProductID, &sm.Type, &sm.Qty, &sm.Note, &sm.Ref, &sm.CreatedAt); err == nil {
@@ -895,7 +911,7 @@ func GetPurchases() ([]Purchase, error) {
 	}
 	defer rows.Close()
 
-	var list []Purchase
+	list := make([]Purchase, 0)
 	for rows.Next() {
 		var p Purchase
 		if err := rows.Scan(&p.ID, &p.Date, &p.Supplier, &p.Item, &p.Qty, &p.Unit, &p.Cost, &p.Note, &p.CreatedAt); err == nil {
@@ -931,7 +947,7 @@ func GetExpenses() ([]Expense, error) {
 	}
 	defer rows.Close()
 
-	var list []Expense
+	list := make([]Expense, 0)
 	for rows.Next() {
 		var e Expense
 		if err := rows.Scan(&e.ID, &e.Date, &e.Head, &e.Amount, &e.Note, &e.CreatedAt); err == nil {
@@ -951,6 +967,7 @@ func DeleteExpense(id string) error {
 // Flow: runs SQL aggregations for today and month sales -> sums stock valuation -> lists low stock SKUs.
 func GetDashboard() (DashboardStats, error) {
 	var s DashboardStats
+	s.LowStockItems = make([]Product, 0)
 	today := time.Now().Format("2006-01-02")
 	month := time.Now().Format("2006-01")
 
@@ -986,6 +1003,12 @@ func GetDashboard() (DashboardStats, error) {
 // SaveCustomer creates or updates a customer profile.
 // Automatically called whenever a bill is generated with customer details.
 func SaveCustomer(c Customer) error {
+	lock.Lock()
+	defer lock.Unlock()
+	return saveCustomerLocked(c)
+}
+
+func saveCustomerLocked(c Customer) error {
 	name := strings.TrimSpace(c.Name)
 	phone := strings.TrimSpace(c.Phone)
 	if name == "" && phone == "" {
@@ -994,9 +1017,6 @@ func SaveCustomer(c Customer) error {
 	if strings.EqualFold(name, "Walk-in") && phone == "" {
 		return nil
 	}
-
-	lock.Lock()
-	defer lock.Unlock()
 
 	if c.ID == "" {
 		c.ID = GenID("c")
@@ -1065,4 +1085,86 @@ func SearchCustomers(query string, limit int) ([]Customer, error) {
 		}
 	}
 	return list, nil
+}
+
+// RestoreBillsAndMoves imports historical bills and stock audit ledger entries from a backup.
+func RestoreBillsAndMoves(bills []Bill, moves []StockMove) error {
+	lock.Lock()
+	defer lock.Unlock()
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, b := range bills {
+		gstOnInt := 0
+		if b.GSTOn {
+			gstOnInt = 1
+		}
+		_, err := tx.Exec(`INSERT INTO bills 
+			(id, bill_no, date, customer_name, customer_phone, customer_address, customer_gstin, customer_state, 
+			 subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, note, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				bill_no = excluded.bill_no,
+				date = excluded.date,
+				customer_name = excluded.customer_name,
+				customer_phone = excluded.customer_phone,
+				customer_address = excluded.customer_address,
+				customer_gstin = excluded.customer_gstin,
+				customer_state = excluded.customer_state,
+				subtotal = excluded.subtotal,
+				discount = excluded.discount,
+				taxable = excluded.taxable,
+				gst_on = excluded.gst_on,
+				gst_amt = excluded.gst_amt,
+				cgst = excluded.cgst,
+				sgst = excluded.sgst,
+				igst = excluded.igst,
+				grand_total = excluded.grand_total,
+				pay_mode = excluded.pay_mode,
+				paid = excluded.paid,
+				balance = excluded.balance,
+				note = excluded.note`,
+			b.ID, b.BillNo, b.Date, b.Customer.Name, b.Customer.Phone, b.Customer.Address, b.Customer.Gstin, b.Customer.State,
+			b.Subtotal, b.Discount, b.Taxable, gstOnInt, b.GSTAmt, b.CGST, b.SGST, b.IGST, b.GrandTotal, b.PayMode, b.Paid, b.Balance, b.Note, b.CreatedAt,
+		)
+		if err != nil {
+			return err
+		}
+
+		// Delete and reinsert items for this bill to avoid duplication
+		_, _ = tx.Exec("DELETE FROM bill_items WHERE bill_id = ?", b.ID)
+		for _, it := range b.Items {
+			_, err = tx.Exec(`INSERT INTO bill_items 
+				(bill_id, product_id, name_en, name_ta, hsn, barcode, qty, price, gst_pct, amount, gst_portion)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				b.ID, it.ProductID, it.NameEn, it.NameTa, it.HSN, it.Barcode, it.Qty, it.Price, it.GSTPct, it.Amount, it.GSTPortion,
+			)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	for _, m := range moves {
+		_, err := tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				date = excluded.date,
+				product_id = excluded.product_id,
+				type = excluded.type,
+				qty = excluded.qty,
+				note = excluded.note,
+				ref = excluded.ref`,
+			m.ID, m.Date, m.ProductID, m.Type, m.Qty, m.Note, m.Ref, m.CreatedAt,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }

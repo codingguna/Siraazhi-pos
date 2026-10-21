@@ -1355,6 +1355,15 @@ body {
   pointer-events: none;
 }
 
+@media print {
+  .toast-container,
+  .toast-message,
+  #toastNotificationContainer {
+    display: none !important;
+    visibility: hidden !important;
+  }
+}
+
 .toast-message {
   pointer-events: auto;
   background: #1e293b;

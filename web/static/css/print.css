@@ -12,11 +12,16 @@
     padding: 0 !important;
   }
 
+  body > *:not(.print-container),
   .app-header,
   .nav-tabs,
   .main-content,
-  .modal-overlay {
+  .modal-overlay,
+  .toast-container,
+  .toast-message,
+  #toastNotificationContainer {
     display: none !important;
+    visibility: hidden !important;
   }
 
   .print-container {

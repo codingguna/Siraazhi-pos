@@ -23,6 +23,19 @@ reg delete "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" /v "SiraazhiPOS"
 echo Removing Control Panel Registration...
 reg delete "HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\SiraazhiPOS" /f >nul 2>&1
 
+echo Safeguarding database and creating backup...
+if not exist "%ProgramData%\SiraazhiPOS\data" mkdir "%ProgramData%\SiraazhiPOS\data" >nul 2>&1
+if not exist "%ProgramData%\SiraazhiPOS\backups" mkdir "%ProgramData%\SiraazhiPOS\backups" >nul 2>&1
+if exist "%ProgramFiles%\SiraazhiPOS\data\pos.db" (
+    if not exist "%ProgramData%\SiraazhiPOS\data\pos.db" (
+        copy /y "%ProgramFiles%\SiraazhiPOS\data\pos.db" "%ProgramData%\SiraazhiPOS\data\pos.db" >nul 2>&1
+    )
+    copy /y "%ProgramFiles%\SiraazhiPOS\data\pos.db" "%ProgramData%\SiraazhiPOS\backups\pos_backup_uninstall.db" >nul 2>&1
+)
+if exist "%ProgramData%\SiraazhiPOS\data\pos.db" (
+    copy /y "%ProgramData%\SiraazhiPOS\data\pos.db" "%ProgramData%\SiraazhiPOS\backups\pos_backup_uninstall.db" >nul 2>&1
+)
+
 echo Removing Program Files...
 rmdir /s /q "%ProgramFiles%\SiraazhiPOS" >nul 2>&1
 

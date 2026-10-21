@@ -267,6 +267,23 @@ func HandleBillByID(w http.ResponseWriter, r *http.Request) {
 			ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
+
+		// Master PIN verification is strictly required to cancel/delete a bill
+		adminToken := r.Header.Get("X-Admin-Token")
+		if adminToken == "" {
+			var body struct {
+				PIN string `json:"pin"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			adminToken = body.PIN
+		}
+
+		activePIN := db.GetMasterPin()
+		if strings.TrimSpace(adminToken) != strings.TrimSpace(activePIN) {
+			ErrorJSON(w, http.StatusUnauthorized, "Master PIN required to cancel bill")
+			return
+		}
+
 		if err := db.CancelBill(id); err != nil {
 			ErrorJSON(w, http.StatusInternalServerError, "Failed to cancel bill: "+err.Error())
 			return
@@ -384,6 +401,28 @@ func HandleBillByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		JSON(w, http.StatusOK, savedBill)
+
+	case http.MethodDelete:
+		adminToken := r.Header.Get("X-Admin-Token")
+		if adminToken == "" {
+			var body struct {
+				PIN string `json:"pin"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			adminToken = body.PIN
+		}
+
+		activePIN := db.GetMasterPin()
+		if strings.TrimSpace(adminToken) != strings.TrimSpace(activePIN) {
+			ErrorJSON(w, http.StatusUnauthorized, "Master PIN required to delete bill")
+			return
+		}
+
+		if err := db.CancelBill(id); err != nil {
+			ErrorJSON(w, http.StatusInternalServerError, "Failed to delete bill: "+err.Error())
+			return
+		}
+		JSON(w, http.StatusOK, map[string]bool{"ok": true})
 
 	default:
 		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")

@@ -317,7 +317,10 @@ const PrintEngine = {
     if (!container) return;
 
     let html = '';
-    const mode = format || (settings && settings.defaultPrinter) || '80mm';
+    let mode = format;
+    if (!mode || mode === 'default') {
+      mode = (settings && settings.defaultPrinter) || '80mm';
+    }
 
     switch (mode) {
       case '58mm':
@@ -334,6 +337,10 @@ const PrintEngine = {
         html = this.render80mm(bill, settings);
         break;
     }
+
+    // Clear any active toast notifications before triggering system print dialog
+    const toastBox = document.getElementById('toastNotificationContainer');
+    if (toastBox) toastBox.innerHTML = '';
 
     container.innerHTML = html;
     setTimeout(() => {

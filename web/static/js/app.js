@@ -38,7 +38,8 @@ let PRODUCTS = [];
 let ALL_BILLS = [];
 let ACTIVE_CATEGORY = 'all';
 let IS_MASTER_MODE = true; // Determined dynamically below
-const DEFAULT_MASTER_PIN = '822035';
+const DEFAULT_MASTER_PIN = '1234';
+let LAST_BILL = null;
 
 // Multi-Bill State Management (Hold & Resume Active Carts)
 let BILL_TABS = [
@@ -47,7 +48,7 @@ let BILL_TABS = [
     title: 'Bill 1',
     cart: [],
     customer: { name: '', phone: '', gstin: '', address: '' },
-    gstOn: true,
+    gstOn: false,
     discount: 0,
     paid: '',
     payMode: 'Cash'
@@ -104,16 +105,17 @@ async function initApp() {
   $('filterFrom').value = firstOfMonth;
   $('filterTo').value = today;
 
-  determineRoleMode();
   setupKeyboardShortcuts();
 
   try {
     SETTINGS = await api('GET', '/api/settings');
     PRODUCTS = await api('GET', '/api/products');
     
-    // Apply default GST toggle from settings
-    $('gstToggle').checked = SETTINGS.gstDefaultOn !== false;
-    toggleGSTMode();
+    // Determine Master vs Staff mode with up-to-date settings & PIN
+    determineRoleMode();
+
+    // Apply and synchronize default settings to UI and billing counter
+    applySettingsToUI();
 
     renderProductsGrid();
     renderCart();
@@ -129,6 +131,9 @@ async function initApp() {
       loadBills();
       loadGSTR1Report();
       populateSettingsForm();
+      switchTab('dash');
+    } else {
+      switchTab('pos');
     }
   } catch (err) {
     console.error('Initialization error:', err);
@@ -150,9 +155,10 @@ function determineRoleMode() {
                       window.location.protocol === 'file:';
   
   const savedToken = localStorage.getItem('siraazhi_admin_token');
+  const validPin = (SETTINGS && SETTINGS.masterPin) ? SETTINGS.masterPin : DEFAULT_MASTER_PIN;
 
   // Master mode if running locally on host PC or valid unlock token present
-  if (isLocalHost || savedToken === DEFAULT_MASTER_PIN) {
+  if (isLocalHost || (savedToken && (savedToken === validPin || savedToken === DEFAULT_MASTER_PIN))) {
     enableMasterMode();
   } else {
     enableClientStaffMode();
@@ -233,11 +239,13 @@ function enableMasterMode() {
  */
 function promptMasterPin() {
   const pin = prompt('Enter Master Admin PIN to unlock full management & reports:');
-  if (pin === DEFAULT_MASTER_PIN) {
+  if (!pin) return;
+  const validPin = (SETTINGS && SETTINGS.masterPin) ? SETTINGS.masterPin : DEFAULT_MASTER_PIN;
+  if (pin === validPin) {
     localStorage.setItem('siraazhi_admin_token', pin);
     alert('✅ Master Access Granted.');
     location.reload();
-  } else if (pin !== null) {
+  } else {
     alert('❌ Invalid PIN. Client billing mode remains active.');
   }
 }
@@ -272,6 +280,9 @@ function switchTab(tabId) {
 
   // Trigger data refreshes on tab activation
   if (tabId === 'pos') {
+    if (CART.length === 0) {
+      applySettingsToUI();
+    }
     setTimeout(() => $('barcodeScanInput').focus(), 100);
   } else if (tabId === 'dash') {
     loadDashboard();
@@ -461,11 +472,13 @@ function removeFromCart(index) {
 }
 
 function clearCart() {
+  const isGstDefault = SETTINGS && SETTINGS.gstDefaultOn === true;
   if (BILL_TABS[ACTIVE_BILL_INDEX]) {
     BILL_TABS[ACTIVE_BILL_INDEX].cart = [];
     BILL_TABS[ACTIVE_BILL_INDEX].customer = { name: '', phone: '', gstin: '', address: '' };
     BILL_TABS[ACTIVE_BILL_INDEX].discount = 0;
     BILL_TABS[ACTIVE_BILL_INDEX].paid = '';
+    BILL_TABS[ACTIVE_BILL_INDEX].gstOn = isGstDefault;
   }
   CART = BILL_TABS[ACTIVE_BILL_INDEX].cart;
   if ($('billDiscount')) $('billDiscount').value = 0;
@@ -474,6 +487,10 @@ function clearCart() {
   if ($('custGstin')) $('custGstin').value = '';
   if ($('custAddress')) $('custAddress').value = '';
   if ($('billPaid')) $('billPaid').value = '';
+  if ($('gstToggle')) {
+    $('gstToggle').checked = isGstDefault;
+    toggleGSTMode();
+  }
   renderCart();
   renderBillTabs();
 }
@@ -510,12 +527,13 @@ function renderBillTabs() {
 function addNewBillTab() {
   saveCurrentBillTabForm();
   const nextId = BILL_TABS.length > 0 ? Math.max(...BILL_TABS.map(b => b.id)) + 1 : 1;
+  const isGstDefault = SETTINGS && SETTINGS.gstDefaultOn === true;
   const newBill = {
     id: nextId,
     title: `Bill ${nextId}`,
     cart: [],
     customer: { name: '', phone: '', gstin: '', address: '' },
-    gstOn: $('gstToggle') ? $('gstToggle').checked : true,
+    gstOn: isGstDefault,
     discount: 0,
     paid: '',
     payMode: 'Cash'
@@ -587,7 +605,9 @@ function loadActiveBillTabForm() {
   if ($('billPaid')) $('billPaid').value = b.paid || '';
   if ($('billPayMode')) $('billPayMode').value = b.payMode || 'Cash';
   if ($('gstToggle')) {
-    $('gstToggle').checked = b.gstOn !== false;
+    const isGstDefault = SETTINGS && SETTINGS.gstDefaultOn === true;
+    const tabGst = (b.gstOn !== undefined) ? b.gstOn : isGstDefault;
+    $('gstToggle').checked = tabGst;
     toggleGSTMode();
   }
 }
@@ -688,12 +708,17 @@ document.addEventListener('click', (e) => {
  * toggleGSTMode switches between Tax Invoice (with GST breakdown) and Cash Bill.
  */
 function toggleGSTMode() {
-  const isGst = $('gstToggle').checked;
-  $('gstToggleLabel').innerHTML = isGst ? 
-    '<b>GST Invoice</b> (Tax split)' : 
-    '<b>Cash Bill</b> (No tax)';
-  $('gstDetailsRow').style.display = isGst ? 'flex' : 'none';
-  $('taxBreakdownRow').style.display = isGst ? 'flex' : 'none';
+  const isGst = $('gstToggle') ? $('gstToggle').checked : false;
+  if (BILL_TABS && BILL_TABS[ACTIVE_BILL_INDEX]) {
+    BILL_TABS[ACTIVE_BILL_INDEX].gstOn = isGst;
+  }
+  if ($('gstToggleLabel')) {
+    $('gstToggleLabel').innerHTML = isGst ? 
+      '<b>GST Invoice</b> (Tax split)' : 
+      '<b>Cash Bill</b> (No tax)';
+  }
+  if ($('gstDetailsRow')) $('gstDetailsRow').style.display = isGst ? 'flex' : 'none';
+  if ($('taxBreakdownRow')) $('taxBreakdownRow').style.display = isGst ? 'flex' : 'none';
   recalcCart();
 }
 
@@ -825,13 +850,17 @@ async function checkoutBill(printFormat) {
     PRODUCTS = await api('GET', '/api/products');
     renderProductsGrid();
 
+    LAST_BILL = bill;
+
     // Print or PDF Export
     if (printFormat === 'pdf') {
       PDFEngine.saveBillPDF(bill, SETTINGS);
       showToast(`📄 PDF for Bill ${bill.billNo} saved!`);
     } else if (IS_MASTER_MODE) {
       PrintEngine.print(bill, printFormat, SETTINGS);
-      showToast(`✅ Bill ${bill.billNo} Created & Printed!`);
+      setTimeout(() => {
+        showToast(`✅ Bill ${bill.billNo} Created & Printed!`);
+      }, 500);
     } else {
       // Remote Mobile / Tablet Terminal Mode:
       // Send print job to Master System Print Queue!
@@ -1174,7 +1203,12 @@ async function loadStockMoves() {
   if (!IS_MASTER_MODE) return;
   try {
     const moves = await api('GET', '/api/inventory/moves?limit=100');
-    $('stockMovesBody').innerHTML = moves.map(m => {
+    const list = moves || [];
+    if (!list.length) {
+      $('stockMovesBody').innerHTML = `<tr><td colspan="5" class="center muted-text" style="padding:16px;">No stock movements recorded yet</td></tr>`;
+      return;
+    }
+    $('stockMovesBody').innerHTML = list.map(m => {
       const p = PRODUCTS.find(x => x.id === m.productId);
       return `
         <tr>
@@ -1199,7 +1233,11 @@ async function loadStockMoves() {
 async function loadPurchases() {
   if (!IS_MASTER_MODE) return;
   try {
-    const list = await api('GET', '/api/purchases');
+    const list = await api('GET', '/api/purchases') || [];
+    if (!list.length) {
+      $('purchasesTableBody').innerHTML = `<tr><td colspan="6" class="center muted-text" style="padding:16px;">No procurement entries recorded yet</td></tr>`;
+      return;
+    }
     $('purchasesTableBody').innerHTML = list.map(p => `
       <tr>
         <td>${p.date}</td>
@@ -1259,7 +1297,11 @@ async function deletePurchase(id) {
 async function loadExpenses() {
   if (!IS_MASTER_MODE) return;
   try {
-    const list = await api('GET', '/api/expenses');
+    const list = await api('GET', '/api/expenses') || [];
+    if (!list.length) {
+      $('expensesTableBody').innerHTML = `<tr><td colspan="5" class="center muted-text" style="padding:16px;">No operational overheads recorded yet</td></tr>`;
+      return;
+    }
     $('expensesTableBody').innerHTML = list.map(e => `
       <tr>
         <td>${e.date}</td>
@@ -1322,8 +1364,12 @@ async function loadBills() {
     if (from) q.push(`from=${from}`);
     if (to) q.push(`to=${to}`);
 
-    ALL_BILLS = await api('GET', '/api/bills' + (q.length ? '?' + q.join('&') : ''));
+    ALL_BILLS = (await api('GET', '/api/bills' + (q.length ? '?' + q.join('&') : ''))) || [];
     const tbody = $('billsTableBody');
+    if (!ALL_BILLS.length) {
+      tbody.innerHTML = `<tr><td colspan="9" class="center muted-text" style="padding:24px;">No invoices found for the selected period</td></tr>`;
+      return;
+    }
 
     tbody.innerHTML = ALL_BILLS.map(b => `
       <tr>
@@ -1432,6 +1478,26 @@ async function reprintBill(id, format) {
   }
 }
 
+async function reprintLastBill(format) {
+  if (!LAST_BILL) {
+    if (ALL_BILLS && ALL_BILLS.length > 0) {
+      LAST_BILL = ALL_BILLS[0];
+    } else {
+      try {
+        const recent = await api('GET', '/api/bills?limit=1');
+        if (recent && recent.length > 0) {
+          LAST_BILL = recent[0];
+        }
+      } catch (e) {}
+    }
+  }
+  if (!LAST_BILL) {
+    alert('No recent bill to reprint.');
+    return;
+  }
+  reprintBill(LAST_BILL.id, format || 'default');
+}
+
 async function downloadBillPDF(id) {
   try {
     const bill = await api('GET', `/api/bills/${id}`);
@@ -1442,9 +1508,40 @@ async function downloadBillPDF(id) {
 }
 
 async function cancelBill(id) {
-  if (!confirm('⚠️ Are you sure you want to cancel this bill? Stock will be automatically restored.')) return;
+  const pin = prompt('🔐 Master PIN Required\nPlease enter Master PIN to cancel/delete this bill:');
+  if (pin === null) return; // User pressed Cancel
+
+  const enteredPin = pin.trim();
+  if (!enteredPin) {
+    alert('❌ Master PIN cannot be empty. Deletion aborted.');
+    return;
+  }
+
+  const validPin = (SETTINGS && SETTINGS.masterPin) ? SETTINGS.masterPin : DEFAULT_MASTER_PIN;
+  if (enteredPin !== validPin) {
+    alert('❌ Invalid Master PIN. Bill cancellation aborted.');
+    return;
+  }
+
+  if (!confirm('⚠️ Are you sure you want to cancel this bill? Stock will be automatically restored to inventory.')) {
+    return;
+  }
+
   try {
-    await api('POST', `/api/bills/${id}/cancel`);
+    const res = await fetch(`/api/bills/${id}/cancel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Token': enteredPin
+      },
+      body: JSON.stringify({ pin: enteredPin })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+
     alert('✅ Bill cancelled and stock restored to inventory.');
     loadBills();
     loadDashboard();
@@ -1549,6 +1646,38 @@ function exportGSTR1Excel() {
 // --------------------------------------------------------------------------
 // 11. Settings & Multi-Device Wi-Fi Setup
 // --------------------------------------------------------------------------
+function applySettingsToUI() {
+  const isGstDefault = SETTINGS && SETTINGS.gstDefaultOn === true;
+
+  // 1. Update POS Counter GST toggle state
+  if ($('gstToggle')) {
+    $('gstToggle').checked = isGstDefault;
+    toggleGSTMode();
+  }
+
+  // 2. Synchronize all empty bill tabs with default GST mode
+  if (BILL_TABS && BILL_TABS.length) {
+    BILL_TABS.forEach(tab => {
+      if (!tab.cart || tab.cart.length === 0) {
+        tab.gstOn = isGstDefault;
+      }
+    });
+    if (BILL_TABS[ACTIVE_BILL_INDEX] && (!BILL_TABS[ACTIVE_BILL_INDEX].cart || BILL_TABS[ACTIVE_BILL_INDEX].cart.length === 0)) {
+      BILL_TABS[ACTIVE_BILL_INDEX].gstOn = isGstDefault;
+    }
+  }
+
+  // 3. Update brand titles in header
+  const brandTamil = document.querySelector('.brand-tamil');
+  if (brandTamil && SETTINGS.brandEn) {
+    brandTamil.innerHTML = `${SETTINGS.brandTa || 'சீராழி'} <span class="brand-en">${SETTINGS.brandEn}</span>`;
+  }
+  const brandSub = document.querySelector('.brand-sub');
+  if (brandSub && SETTINGS.companyName) {
+    brandSub.textContent = `${SETTINGS.companyName} • ${SETTINGS.tagline || 'Billing, Inventory & Multi-Print Suite'}`;
+  }
+}
+
 function populateSettingsForm() {
   const s = SETTINGS;
   $('setCompany').value = s.companyName || '';
@@ -1564,10 +1693,20 @@ function populateSettingsForm() {
   $('setFooterEn').value = s.footerNoteEn || '';
   $('setFooterTa').value = s.footerNoteTa || '';
   $('setDefaultPrinter').value = s.defaultPrinter || '80mm';
-  $('setDefaultGSTMode').value = s.gstDefaultOn !== false ? 'true' : 'false';
+  $('setDefaultGSTMode').value = (s.gstDefaultOn === true) ? 'true' : 'false';
+  if ($('setMasterPin')) $('setMasterPin').value = s.masterPin || '1234';
+}
+
+function generateRandomPin() {
+  const pin = Math.floor(1000 + Math.random() * 9000).toString();
+  if ($('setMasterPin')) {
+    $('setMasterPin').value = pin;
+    showToast(`🎲 Generated new PIN: ${pin}. Click Save to apply.`, 'info', 4000);
+  }
 }
 
 async function saveSettingsForm() {
+  const masterPin = ($('setMasterPin') ? $('setMasterPin').value.trim() : '') || (SETTINGS.masterPin || '1234');
   const payload = {
     ...SETTINGS,
     companyName: $('setCompany').value.trim(),
@@ -1583,12 +1722,19 @@ async function saveSettingsForm() {
     footerNoteEn: $('setFooterEn').value.trim(),
     footerNoteTa: $('setFooterTa').value.trim(),
     defaultPrinter: $('setDefaultPrinter').value,
-    gstDefaultOn: $('setDefaultGSTMode').value === 'true'
+    gstDefaultOn: $('setDefaultGSTMode').value === 'true',
+    masterPin: masterPin
   };
 
   try {
     SETTINGS = await api('PUT', '/api/settings', payload);
-    alert('✅ Settings saved successfully.');
+    if (IS_MASTER_MODE && SETTINGS.masterPin) {
+      localStorage.setItem('siraazhi_admin_token', SETTINGS.masterPin);
+    }
+    applySettingsToUI();
+    recalcCart();
+    populateSettingsForm();
+    alert('✅ Settings saved & synchronized with Billing Counter.');
   } catch (err) {
     alert('Failed to save settings: ' + err.message);
   }

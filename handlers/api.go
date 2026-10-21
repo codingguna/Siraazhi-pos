@@ -29,6 +29,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"siraazhi-pos/db"
 	"strings"
 )
 
@@ -89,7 +90,8 @@ func MasterRoleMiddleware(next http.Handler) http.Handler {
 
 		isLocalhost := host == "127.0.0.1" || host == "::1" || host == "localhost"
 		adminToken := r.Header.Get("X-Admin-Token")
-		hasMasterAuth := isLocalhost || adminToken == MasterAdminPIN
+		activePIN := db.GetMasterPin()
+		hasMasterAuth := isLocalhost || (adminToken != "" && adminToken == activePIN)
 
 		path := r.URL.Path
 		method := r.Method
@@ -117,8 +119,8 @@ func MasterRoleMiddleware(next http.Handler) http.Handler {
 		if strings.HasPrefix(path, "/api/purchases") || strings.HasPrefix(path, "/api/expenses") {
 			isProtectedAdminAction = true
 		}
-		// 6. Bill cancellation (only master can cancel a bill and reverse stock)
-		if strings.HasSuffix(path, "/cancel") {
+		// 6. Bill cancellation or modification (only master can modify or cancel a bill)
+		if strings.HasSuffix(path, "/cancel") || (strings.HasPrefix(path, "/api/bills/") && (method == http.MethodPut || method == http.MethodDelete)) {
 			isProtectedAdminAction = true
 		}
 		// 7. Full financial sales reports and GSTR-1 tax export

@@ -44,6 +44,7 @@ type Settings struct {
 	PayModes       []string `json:"payModes"`
 	ThermalSize    string   `json:"thermalSize"`    // "80mm" or "58mm"
 	DefaultPrinter string   `json:"defaultPrinter"` // "80mm", "58mm", "a4", "a5"
+	MasterPin      string   `json:"masterPin"`      // Resettable Master Admin PIN (default "1234")
 }
 
 // Product represents an individual inventory SKU in the store catalog.
