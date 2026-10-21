@@ -691,23 +691,132 @@
         </div>
 
         <div class="panel-box">
-          <h3>🖨 Multi-Printer & Billing Defaults</h3>
+          <h3>🖨 Hardware Printer Properties & Multi-Printer Setup</h3>
+          <p class="muted-text" style="font-size:12px; margin-bottom:12px;">
+            Configure direct silent printing to physical USB or Network thermal printers. Bills print directly from software without opening browser dialogs.
+          </p>
+
           <div class="form-grid">
+            <!-- Connection Mode -->
             <div class="form-group">
-              <label>Default Counter Printer Machine:</label>
-              <select id="setDefaultPrinter">
-                <option value="80mm">Standard 80mm Thermal POS (3-inch roll)</option>
-                <option value="58mm">Compact 58mm Thermal POS (2-inch portable roll)</option>
-                <option value="a4">Office A4 Tax Invoice (Laser / Inkjet)</option>
-                <option value="a5">A5 Landscape / Delivery Slip</option>
+              <label>Primary Printer Connection Interface:</label>
+              <select id="setPrinterInterface" onchange="togglePrinterInterfaceUI()">
+                <option value="browser">🌐 Browser Dialog (Manual window.print)</option>
+                <option value="spooler">🔌 Windows USB / Driver Spooler (Direct Silent Hardware Print)</option>
+                <option value="network">📡 Network LAN / Wi-Fi Printer (Direct Raw TCP Socket)</option>
               </select>
             </div>
+
+            <!-- Windows Spooler Target -->
+            <div class="form-group" id="groupSpoolerPrinter" style="display:none;">
+              <label>Target Windows Thermal Printer:</label>
+              <div style="display:flex; gap:8px;">
+                <select id="setPrinterTarget" style="flex:1;">
+                  <option value="">-- Select Installed Windows Printer --</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="loadInstalledPrintersList()" title="Refresh printers">🔄 Refresh</button>
+              </div>
+              <small class="muted-text">Auto-detected Windows printers on Master PC (POS-80, TVS, Epson, etc.).</small>
+            </div>
+
+            <!-- Network Target -->
+            <div class="form-row" id="groupNetworkPrinter" style="display:none;">
+              <div class="form-group flex-2">
+                <label>Printer IP Address:</label>
+                <input type="text" id="setPrinterIP" placeholder="e.g. 192.168.1.150">
+              </div>
+              <div class="form-group">
+                <label>Port:</label>
+                <input type="number" id="setPrinterPort" placeholder="9100" value="9100">
+              </div>
+            </div>
+
+            <!-- Receipt Preset -->
+            <div class="form-row">
+              <div class="form-group">
+                <label>Thermal Paper Preset:</label>
+                <select id="setThermalPaperSize">
+                  <option value="80mm">Standard 80mm Roll (48 Columns)</option>
+                  <option value="58mm">Compact 58mm Roll (32 Columns)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Print Copies:</label>
+                <select id="setPrintCopies">
+                  <option value="1">1 Copy (Customer)</option>
+                  <option value="2">2 Copies (Customer + Shop)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Hardware Actions Toggles -->
+            <div class="form-row" style="margin-top:4px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="setAutoCut" checked> ✂️ Auto-Cut Paper
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="setCashDrawer"> 💵 Kick Cash Drawer
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="setAutoPrintMobile" checked> ⚡ Direct Auto-Print Mobile Bills
+              </label>
+            </div>
+
+            <!-- Test Print Button -->
+            <div style="margin-top:6px;">
+              <button type="button" class="btn btn-secondary" onclick="testHardwarePrinterSlip()">🖨 Send Test Receipt to Hardware</button>
+            </div>
+
+            <div style="margin:14px 0; border-top:1px dashed #cbd5e1;"></div>
+
+            <!-- Secondary Multi-Printer (Dispatch / Packaging) -->
             <div class="form-group">
-              <label>Default Bill Mode (POS Counter):</label>
-              <select id="setDefaultGSTMode">
-                <option value="true">GST Tax Invoice by default (Recommended for GST filers)</option>
-                <option value="false">Non-GST Cash Bill by default (Retail memo)</option>
-              </select>
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:700;">
+                <input type="checkbox" id="setSecPrinterEnabled" onchange="toggleSecPrinterUI()"> 📦 Enable Secondary Printer (Dispatch / Packaging / Kitchen)
+              </label>
+            </div>
+
+            <div id="groupSecPrinter" style="display:none; padding:12px; background:#f8fafc; border-radius:6px; border:1px solid #e2e8f0; margin-bottom:12px;">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Secondary Interface:</label>
+                  <select id="setSecPrinterInterface" onchange="toggleSecPrinterTargetUI()">
+                    <option value="spooler">Windows Driver / USB</option>
+                    <option value="network">Network LAN / Wi-Fi</option>
+                  </select>
+                </div>
+                <div class="form-group flex-2" id="secPrinterSpoolerBox">
+                  <label>Secondary Printer Name:</label>
+                  <select id="setSecPrinterTarget">
+                    <option value="">-- Select Secondary Printer --</option>
+                  </select>
+                </div>
+                <div class="form-group flex-2" id="secPrinterNetworkBox" style="display:none;">
+                  <label>Secondary IP Address:</label>
+                  <input type="text" id="setSecPrinterIP" placeholder="192.168.1.160">
+                </div>
+              </div>
+            </div>
+
+            <div style="margin:14px 0; border-top:1px dashed #cbd5e1;"></div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Default Counter Printer Machine:</label>
+                <select id="setDefaultPrinter">
+                  <option value="80mm">Standard 80mm Thermal POS (3-inch roll)</option>
+                  <option value="58mm">Compact 58mm Thermal POS (2-inch portable roll)</option>
+                  <option value="a4">Office A4 Tax Invoice (Laser / Inkjet)</option>
+                  <option value="a5">A5 Landscape / Delivery Slip</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Default Bill Mode (POS Counter):</label>
+                <select id="setDefaultGSTMode">
+                  <option value="true">GST Tax Invoice by default</option>
+                  <option value="false">Non-GST Cash Bill by default</option>
+                </select>
+              </div>
             </div>
 
             <h3 style="margin-top:15px;">🔐 Master Terminal Security & Staff PIN</h3>
@@ -720,7 +829,7 @@
               <small class="muted-text">Used to unlock full management (reports, expenses, stock, cancellations) on mobile and Wi-Fi staff devices. Default: <b>1234</b>.</small>
             </div>
 
-            <button class="btn btn-primary" style="margin-top:10px; width:100%;" onclick="saveSettingsForm()">💾 Save All Configuration & Printer Defaults</button>
+            <button class="btn btn-primary" style="margin-top:10px; width:100%;" onclick="saveSettingsForm()">💾 Save All Configuration & Printer Properties</button>
           </div>
 
           <h3 style="margin-top:25px;">💾 Data Backup & Disaster Recovery</h3>

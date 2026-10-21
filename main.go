@@ -142,6 +142,9 @@ func main() {
 	mux.HandleFunc("/api/network-info", handlers.HandleNetworkInfo(*port))
 	mux.HandleFunc("/api/print-queue", handlers.HandlePrintQueue)
 	mux.HandleFunc("/api/print-queue/", handlers.HandlePrintJobAction)
+	mux.HandleFunc("/api/printers", handlers.HandlePrinters)
+	mux.HandleFunc("/api/printers/test", handlers.HandlePrinterTest)
+	mux.HandleFunc("/api/print-direct", handlers.HandlePrintDirect)
 
 	// Embedded static web frontend (//go:embed static/*)
 	mux.Handle("/", web.Handler())

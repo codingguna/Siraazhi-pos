@@ -45,6 +45,21 @@ type Settings struct {
 	ThermalSize    string   `json:"thermalSize"`    // "80mm" or "58mm"
 	DefaultPrinter string   `json:"defaultPrinter"` // "80mm", "58mm", "a4", "a5"
 	MasterPin      string   `json:"masterPin"`      // Resettable Master Admin PIN (default "1234")
+
+	// Hardware Printer Configuration (Direct Zero-Dialog Printing & Multi-Printer)
+	PrinterInterface          string `json:"printerInterface"`          // "spooler" (Windows USB/driver), "network" (LAN TCP/IP), "browser" (manual dialog)
+	PrinterTarget             string `json:"printerTarget"`             // Windows printer name (e.g. "POS-80") or IP ("192.168.1.150")
+	PrinterPort               int    `json:"printerPort"`               // Port for network printer (default 9100)
+	ThermalPaperSize          string `json:"thermalPaperSize"`          // "80mm", "58mm"
+	AutoCut                   bool   `json:"autoCut"`                   // Feed and cut paper automatically
+	OpenCashDrawer            bool   `json:"cashDrawer"`                // Send pulse to cash drawer kick pin
+	PrintCopies               int    `json:"printCopies"`               // Number of copies (default 1)
+	AutoPrintMobile           bool   `json:"autoPrintMobile"`           // Instantly print mobile/tablet orders without manual approval
+	A4PrinterName             string `json:"a4PrinterName"`             // Designated Windows printer for A4 corporate invoices
+	SecondaryPrinterEnabled   bool   `json:"secPrinterEnabled"`         // Enable duplicate slip to secondary printer
+	SecondaryPrinterInterface string `json:"secPrinterInterface"`       // "spooler" or "network"
+	SecondaryPrinterTarget    string `json:"secPrinterTarget"`          // Secondary printer name or IP
+	SecondaryPrinterPort      int    `json:"secPrinterPort"`            // Secondary network port
 }
 
 // Product represents an individual inventory SKU in the store catalog.

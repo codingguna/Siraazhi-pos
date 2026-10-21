@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"siraazhi-pos/db"
+	"siraazhi-pos/printer"
 )
 
 // PrintJob represents a single invoice queued for physical hardware printing.
@@ -214,10 +215,23 @@ func HandlePrintQueue(w http.ResponseWriter, r *http.Request) {
 		}
 
 		job := globalPrintQueue.Enqueue(targetBill, req.Format, clientIP)
+
+		// Check if direct hardware printing is configured
+		settings, errSettings := db.GetSettings()
+		directPrinted := false
+		if errSettings == nil && printer.IsHardwarePrintingActive(&settings) && settings.AutoPrintMobile {
+			res := printer.PrintBillToHardware(targetBill, req.Format, &settings)
+			if res.Success && res.DirectPrint {
+				globalPrintQueue.MarkCompleted(job.ID)
+				directPrinted = true
+			}
+		}
+
 		JSON(w, http.StatusCreated, map[string]interface{}{
-			"success": true,
-			"message": "Bill added to Master System Print Queue",
-			"job":     job,
+			"success":       true,
+			"directPrinted": directPrinted,
+			"message":       "Bill processed by Master Print Queue",
+			"job":           job,
 		})
 
 	case http.MethodDelete:

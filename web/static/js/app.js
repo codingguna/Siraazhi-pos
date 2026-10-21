@@ -299,6 +299,9 @@ function switchTab(tabId) {
     loadBills();
   } else if (tabId === 'gstr1') {
     loadGSTR1Report();
+  } else if (tabId === 'settings') {
+    populateSettingsForm();
+    loadInstalledPrintersList();
   }
 }
 
@@ -856,7 +859,11 @@ async function checkoutBill(printFormat) {
     if (printFormat === 'pdf') {
       PDFEngine.saveBillPDF(bill, SETTINGS);
     } else if (IS_MASTER_MODE) {
-      PrintEngine.print(bill, printFormat, SETTINGS);
+      if (printFormat === 'a4' || printFormat === 'a5' || !SETTINGS.printerInterface || SETTINGS.printerInterface === 'browser') {
+        PrintEngine.print(bill, printFormat, SETTINGS);
+      } else {
+        await printBillDirect(bill, printFormat);
+      }
     } else {
       // Remote Mobile / Tablet Terminal Mode:
       // Send print job to Master System Print Queue!
@@ -1459,7 +1466,11 @@ async function reprintBill(id, format) {
   try {
     const bill = await api('GET', `/api/bills/${id}`);
     if (IS_MASTER_MODE) {
-      PrintEngine.print(bill, format, SETTINGS);
+      if (format === 'a4' || format === 'a5' || !SETTINGS.printerInterface || SETTINGS.printerInterface === 'browser') {
+        PrintEngine.print(bill, format, SETTINGS);
+      } else {
+        await printBillDirect(bill, format);
+      }
     } else {
       await api('POST', '/api/print-queue', {
         billId: bill.id,
@@ -1674,7 +1685,7 @@ function applySettingsToUI() {
 }
 
 function populateSettingsForm() {
-  const s = SETTINGS;
+  const s = SETTINGS || {};
   $('setCompany').value = s.companyName || '';
   $('setBrandEn').value = s.brandEn || '';
   $('setBrandTa').value = s.brandTa || '';
@@ -1690,6 +1701,26 @@ function populateSettingsForm() {
   $('setDefaultPrinter').value = s.defaultPrinter || '80mm';
   $('setDefaultGSTMode').value = (s.gstDefaultOn === true) ? 'true' : 'false';
   if ($('setMasterPin')) $('setMasterPin').value = s.masterPin || '1234';
+
+  // Hardware Printer Configuration (Direct Silent Hardware Printing)
+  if ($('setPrinterInterface')) $('setPrinterInterface').value = s.printerInterface || 'browser';
+  if ($('setPrinterTarget')) $('setPrinterTarget').value = s.printerTarget || '';
+  if ($('setPrinterIP')) $('setPrinterIP').value = (s.printerInterface === 'network' ? s.printerTarget : '') || '';
+  if ($('setPrinterPort')) $('setPrinterPort').value = s.printerPort || 9100;
+  if ($('setThermalPaperSize')) $('setThermalPaperSize').value = s.thermalPaperSize || s.thermalSize || '80mm';
+  if ($('setPrintCopies')) $('setPrintCopies').value = s.printCopies || 1;
+  if ($('setAutoCut')) $('setAutoCut').checked = (s.autoCut !== false);
+  if ($('setCashDrawer')) $('setCashDrawer').checked = (s.cashDrawer === true);
+  if ($('setAutoPrintMobile')) $('setAutoPrintMobile').checked = (s.autoPrintMobile !== false);
+
+  // Secondary Multi-Printer Configuration (Dispatch / Packaging)
+  if ($('setSecPrinterEnabled')) $('setSecPrinterEnabled').checked = (s.secPrinterEnabled === true);
+  if ($('setSecPrinterInterface')) $('setSecPrinterInterface').value = s.secPrinterInterface || 'spooler';
+  if ($('setSecPrinterTarget')) $('setSecPrinterTarget').value = s.secPrinterTarget || '';
+  if ($('setSecPrinterIP')) $('setSecPrinterIP').value = (s.secPrinterInterface === 'network' ? s.secPrinterTarget : '') || '';
+
+  togglePrinterInterfaceUI();
+  toggleSecPrinterUI();
 }
 
 function generateRandomPin() {
@@ -1702,6 +1733,22 @@ function generateRandomPin() {
 
 async function saveSettingsForm() {
   const masterPin = ($('setMasterPin') ? $('setMasterPin').value.trim() : '') || (SETTINGS.masterPin || '1234');
+  const printerInterface = $('setPrinterInterface') ? $('setPrinterInterface').value : (SETTINGS.printerInterface || 'browser');
+  let printerTarget = '';
+  if (printerInterface === 'spooler') {
+    printerTarget = $('setPrinterTarget') ? $('setPrinterTarget').value.trim() : '';
+  } else if (printerInterface === 'network') {
+    printerTarget = $('setPrinterIP') ? $('setPrinterIP').value.trim() : '';
+  }
+
+  const secInterface = $('setSecPrinterInterface') ? $('setSecPrinterInterface').value : 'spooler';
+  let secTarget = '';
+  if (secInterface === 'spooler') {
+    secTarget = $('setSecPrinterTarget') ? $('setSecPrinterTarget').value.trim() : '';
+  } else if (secInterface === 'network') {
+    secTarget = $('setSecPrinterIP') ? $('setSecPrinterIP').value.trim() : '';
+  }
+
   const payload = {
     ...SETTINGS,
     companyName: $('setCompany').value.trim(),
@@ -1718,7 +1765,24 @@ async function saveSettingsForm() {
     footerNoteTa: $('setFooterTa').value.trim(),
     defaultPrinter: $('setDefaultPrinter').value,
     gstDefaultOn: $('setDefaultGSTMode').value === 'true',
-    masterPin: masterPin
+    masterPin: masterPin,
+
+    // Hardware Printer Config
+    printerInterface: printerInterface,
+    printerTarget: printerTarget,
+    printerPort: parseInt($('setPrinterPort') ? $('setPrinterPort').value : '9100', 10) || 9100,
+    thermalPaperSize: $('setThermalPaperSize') ? $('setThermalPaperSize').value : '80mm',
+    thermalSize: $('setThermalPaperSize') ? $('setThermalPaperSize').value : '80mm',
+    printCopies: parseInt($('setPrintCopies') ? $('setPrintCopies').value : '1', 10) || 1,
+    autoCut: $('setAutoCut') ? $('setAutoCut').checked : true,
+    cashDrawer: $('setCashDrawer') ? $('setCashDrawer').checked : false,
+    autoPrintMobile: $('setAutoPrintMobile') ? $('setAutoPrintMobile').checked : true,
+
+    // Secondary Printer Config
+    secPrinterEnabled: $('setSecPrinterEnabled') ? $('setSecPrinterEnabled').checked : false,
+    secPrinterInterface: secInterface,
+    secPrinterTarget: secTarget,
+    secPrinterPort: 9100
   };
 
   try {
@@ -1732,6 +1796,131 @@ async function saveSettingsForm() {
     alert('✅ Settings saved & synchronized with Billing Counter.');
   } catch (err) {
     alert('Failed to save settings: ' + err.message);
+  }
+}
+
+// --------------------------------------------------------------------------
+// Hardware Multi-Printer UI Handlers & Direct Print Dispatcher
+// --------------------------------------------------------------------------
+
+async function loadInstalledPrintersList() {
+  try {
+    const res = await api('GET', '/api/printers');
+    const printers = (res && res.printers) || [];
+    const select = $('setPrinterTarget');
+    const secSelect = $('setSecPrinterTarget');
+
+    const currentPrimary = (SETTINGS && SETTINGS.printerTarget) || (select ? select.value : '');
+    const currentSec = (SETTINGS && SETTINGS.secPrinterTarget) || (secSelect ? secSelect.value : '');
+
+    if (select) {
+      if (printers.length === 0) {
+        select.innerHTML = '<option value="">-- No Windows Printers Detected (Use Network IP or Browser) --</option>';
+      } else {
+        select.innerHTML = '<option value="">-- Select Installed Windows Printer --</option>' +
+          printers.map(p => `<option value="${escapeHtml(p)}" ${p === currentPrimary ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('');
+      }
+    }
+
+    if (secSelect) {
+      if (printers.length === 0) {
+        secSelect.innerHTML = '<option value="">-- No Windows Printers Detected --</option>';
+      } else {
+        secSelect.innerHTML = '<option value="">-- Select Secondary Printer --</option>' +
+          printers.map(p => `<option value="${escapeHtml(p)}" ${p === currentSec ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('');
+      }
+    }
+  } catch (err) {
+    console.warn('Could not enumerate printers:', err);
+  }
+}
+
+function togglePrinterInterfaceUI() {
+  const iface = $('setPrinterInterface') ? $('setPrinterInterface').value : 'browser';
+  const spoolerBox = $('groupSpoolerPrinter');
+  const netBox = $('groupNetworkPrinter');
+
+  if (spoolerBox) spoolerBox.style.display = (iface === 'spooler') ? 'block' : 'none';
+  if (netBox) netBox.style.display = (iface === 'network') ? 'flex' : 'none';
+
+  if (iface === 'spooler') {
+    loadInstalledPrintersList();
+  }
+}
+
+function toggleSecPrinterUI() {
+  const enabled = $('setSecPrinterEnabled') && $('setSecPrinterEnabled').checked;
+  const group = $('groupSecPrinter');
+  if (group) group.style.display = enabled ? 'block' : 'none';
+  if (enabled) {
+    toggleSecPrinterTargetUI();
+  }
+}
+
+function toggleSecPrinterTargetUI() {
+  const iface = $('setSecPrinterInterface') ? $('setSecPrinterInterface').value : 'spooler';
+  const spoolerBox = $('secPrinterSpoolerBox');
+  const netBox = $('secPrinterNetworkBox');
+  if (spoolerBox) spoolerBox.style.display = (iface === 'spooler') ? 'block' : 'none';
+  if (netBox) netBox.style.display = (iface === 'network') ? 'block' : 'none';
+}
+
+async function testHardwarePrinterSlip() {
+  const iface = $('setPrinterInterface') ? $('setPrinterInterface').value : 'browser';
+  if (iface === 'browser') {
+    alert('Please select "Windows USB / Driver Spooler" or "Network LAN / Wi-Fi Printer" to test direct hardware printing.');
+    return;
+  }
+
+  let target = '';
+  if (iface === 'spooler') {
+    target = $('setPrinterTarget') ? $('setPrinterTarget').value.trim() : '';
+    if (!target) {
+      alert('Please select a target Windows Printer first.');
+      return;
+    }
+  } else if (iface === 'network') {
+    target = $('setPrinterIP') ? $('setPrinterIP').value.trim() : '';
+    if (!target) {
+      alert('Please enter the Printer IP Address first.');
+      return;
+    }
+  }
+
+  const port = parseInt($('setPrinterPort') ? $('setPrinterPort').value : '9100', 10) || 9100;
+  const paperSize = $('setThermalPaperSize') ? $('setThermalPaperSize').value : '80mm';
+
+  try {
+    showToast('Sending test receipt to printer...', 'info', 3000);
+    const res = await api('POST', '/api/printers/test', {
+      target: target,
+      interface: iface,
+      port: port,
+      paperSize: paperSize
+    });
+    alert(`✅ Test Print Successful!\nTarget: ${target} (${iface})\nHardware receipt has been dispatched.`);
+  } catch (err) {
+    alert(`❌ Test Print Failed: ${err.message}\n\nPlease check printer USB connection, driver name, or network IP.`);
+  }
+}
+
+async function printBillDirect(bill, format) {
+  if (!SETTINGS.printerInterface || SETTINGS.printerInterface === 'browser') {
+    PrintEngine.print(bill, format, SETTINGS);
+    return;
+  }
+
+  try {
+    const res = await api('POST', '/api/print-direct', {
+      bill: bill,
+      billId: bill.id,
+      format: format || SETTINGS.thermalPaperSize || '80mm'
+    });
+    showToast(`🖨 Bill ${bill.billNo} sent to hardware printer.`, 'success', 3500);
+  } catch (err) {
+    console.warn('Hardware direct print failed, falling back to browser print dialog:', err);
+    showToast(`⚠️ Hardware print error: ${err.message}. Opening print preview...`, 'warning', 4000);
+    PrintEngine.print(bill, format, SETTINGS);
   }
 }
 
@@ -1884,8 +2073,12 @@ async function checkMasterPrintQueue() {
     if (autoPrint && res.jobs && res.jobs.length > 0) {
       for (const job of res.jobs) {
         if (job.status === 'pending' && job.bill) {
-          // Trigger print on Master System's physical hardware printer
-          PrintEngine.print(job.bill, job.format, SETTINGS);
+          // Trigger print on Master System's physical hardware printer or browser preview
+          if (job.format === 'a4' || job.format === 'a5' || !SETTINGS.printerInterface || SETTINGS.printerInterface === 'browser') {
+            PrintEngine.print(job.bill, job.format, SETTINGS);
+          } else {
+            await printBillDirect(job.bill, job.format);
+          }
           // Mark completed in queue
           await api('POST', `/api/print-queue/${job.id}/complete`);
           showToast(`🔔 Remote Bill #${job.billNo} received & sent to printer!`, 'info', 4000);
@@ -1966,7 +2159,11 @@ async function executeManualPrintJob(jobId) {
       alert('Job or bill data not found');
       return;
     }
-    PrintEngine.print(job.bill, job.format, SETTINGS);
+    if (job.format === 'a4' || job.format === 'a5' || !SETTINGS.printerInterface || SETTINGS.printerInterface === 'browser') {
+      PrintEngine.print(job.bill, job.format, SETTINGS);
+    } else {
+      await printBillDirect(job.bill, job.format);
+    }
     await api('POST', `/api/print-queue/${job.id}/complete`);
     loadPrintQueueModalData();
     checkMasterPrintQueue();
