@@ -855,12 +855,8 @@ async function checkoutBill(printFormat) {
     // Print or PDF Export
     if (printFormat === 'pdf') {
       PDFEngine.saveBillPDF(bill, SETTINGS);
-      showToast(`📄 PDF for Bill ${bill.billNo} saved!`);
     } else if (IS_MASTER_MODE) {
       PrintEngine.print(bill, printFormat, SETTINGS);
-      setTimeout(() => {
-        showToast(`✅ Bill ${bill.billNo} Created & Printed!`);
-      }, 500);
     } else {
       // Remote Mobile / Tablet Terminal Mode:
       // Send print job to Master System Print Queue!
@@ -1464,7 +1460,6 @@ async function reprintBill(id, format) {
     const bill = await api('GET', `/api/bills/${id}`);
     if (IS_MASTER_MODE) {
       PrintEngine.print(bill, format, SETTINGS);
-      showToast(`🖨️ Printing Bill ${bill.billNo}...`);
     } else {
       await api('POST', '/api/print-queue', {
         billId: bill.id,
@@ -1975,7 +1970,6 @@ async function executeManualPrintJob(jobId) {
     await api('POST', `/api/print-queue/${job.id}/complete`);
     loadPrintQueueModalData();
     checkMasterPrintQueue();
-    showToast(`🖨️ Printed Bill #${job.billNo}`);
   } catch (err) {
     alert('Print error: ' + err.message);
   }

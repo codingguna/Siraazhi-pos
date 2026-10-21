@@ -38,15 +38,16 @@ const PrintEngine = {
    */
   render80mm(bill, settings) {
     const s = settings || {};
-    const itemsHtml = bill.items.map(it => `
+    const cust = (bill && bill.customer) || {};
+    const itemsHtml = (bill.items || []).map(it => `
       <tr>
-        <td colspan="4" class="bold">${it.nameEn} <span style="font-size:10px;">(${it.nameTa || ''})</span></td>
+        <td colspan="4" class="bold">${it.nameEn || ''} <span style="font-size:10px;">(${it.nameTa || ''})</span></td>
       </tr>
       <tr>
         <td style="width:25%">${it.hsn || '-'}</td>
-        <td class="center" style="width:25%">${it.qty}</td>
-        <td class="right" style="width:25%">${Number(it.price).toFixed(2)}</td>
-        <td class="right bold" style="width:25%">${Number(it.amount).toFixed(2)}</td>
+        <td class="center" style="width:25%">${it.qty || 0}</td>
+        <td class="right" style="width:25%">${Number(it.price || 0).toFixed(2)}</td>
+        <td class="right bold" style="width:25%">${Number(it.amount || 0).toFixed(2)}</td>
       </tr>
     `).join('');
 
@@ -73,9 +74,9 @@ const PrintEngine = {
         </div>
 
         <div style="margin:4px 0; font-size:11px;">
-          <div><b>Bill No:</b> ${bill.billNo} &nbsp;&nbsp; <b>Date:</b> ${bill.date}</div>
-          <div><b>Customer:</b> ${bill.customer.name || '-'} ${bill.customer.phone ? ' | <b>Mob:</b> ' + bill.customer.phone : ''}</div>
-          ${bill.customer.gstin ? `<div><b>Cust GSTIN:</b> ${bill.customer.gstin}</div>` : ''}
+          <div><b>Bill No:</b> ${bill.billNo || ''} &nbsp;&nbsp; <b>Date:</b> ${bill.date || ''}</div>
+          <div><b>Customer:</b> ${cust.name || '-'} ${cust.phone ? ' | <b>Mob:</b> ' + cust.phone : ''}</div>
+          ${cust.gstin ? `<div><b>Cust GSTIN:</b> ${cust.gstin}</div>` : ''}
         </div>
 
         <div class="dashed-line"></div>
@@ -104,7 +105,7 @@ const PrintEngine = {
         </div>
 
         <div class="right" style="font-size:11px;">
-          Paid (${bill.payMode}): ${this.formatINR(bill.paid)} &nbsp;|&nbsp; Balance: ${this.formatINR(bill.balance)}
+          Paid (${bill.payMode || 'Cash'}): ${this.formatINR(bill.paid)} &nbsp;|&nbsp; Balance: ${this.formatINR(bill.balance)}
         </div>
 
         ${taxBreakdown}
@@ -124,14 +125,15 @@ const PrintEngine = {
    */
   render58mm(bill, settings) {
     const s = settings || {};
-    const itemsHtml = bill.items.map(it => `
+    const cust = (bill && bill.customer) || {};
+    const itemsHtml = (bill.items || []).map(it => `
       <tr>
-        <td colspan="3" class="bold">${it.nameEn}</td>
+        <td colspan="3" class="bold">${it.nameEn || ''}</td>
       </tr>
       <tr>
-        <td>${it.qty} x ${Number(it.price).toFixed(0)}</td>
+        <td>${it.qty || 0} x ${Number(it.price || 0).toFixed(0)}</td>
         <td class="center">${it.hsn || ''}</td>
-        <td class="right bold">${Number(it.amount).toFixed(2)}</td>
+        <td class="right bold">${Number(it.amount || 0).toFixed(2)}</td>
       </tr>
     `).join('');
 
@@ -144,8 +146,8 @@ const PrintEngine = {
           ${bill.gstOn && s.gstin ? `<div style="font-size:8px;">GSTIN: ${s.gstin}</div>` : ''}
           <div class="dashed-line"></div>
           <div class="bold">${bill.gstOn ? 'TAX INVOICE' : 'CASH BILL'}</div>
-          <div style="font-size:8px;">${bill.billNo} • ${bill.date}</div>
-          <div style="font-size:8px;"><b>Cust:</b> ${bill.customer.name || '-'} ${bill.customer.phone ? '• 📞 ' + bill.customer.phone : ''}</div>
+          <div style="font-size:8px;">${bill.billNo || ''} • ${bill.date || ''}</div>
+          <div style="font-size:8px;"><b>Cust:</b> ${cust.name || '-'} ${cust.phone ? '• 📞 ' + cust.phone : ''}</div>
         </div>
 
         <div class="dashed-line"></div>
@@ -167,7 +169,7 @@ const PrintEngine = {
           TOTAL: ${this.formatINR(bill.grandTotal)}
         </div>
         <div class="right" style="font-size:8.5px;">
-          ${bill.payMode}: ${this.formatINR(bill.paid)}
+          ${bill.payMode || 'Cash'}: ${this.formatINR(bill.paid)}
         </div>
 
         <div class="dashed-line"></div>
@@ -184,15 +186,16 @@ const PrintEngine = {
    */
   renderA4(bill, settings) {
     const s = settings || {};
-    const rows = bill.items.map((it, idx) => `
+    const cust = (bill && bill.customer) || {};
+    const rows = (bill.items || []).map((it, idx) => `
       <tr>
         <td class="center" style="width:5%">${idx + 1}</td>
         <td style="width:40%">
-          <b>${it.nameEn}</b><br>
+          <b>${it.nameEn || ''}</b><br>
           <small style="color:#444;">${it.nameTa || ''}</small>
         </td>
         <td class="center" style="width:12%">${it.hsn || '-'}</td>
-        <td class="center" style="width:8%">${it.qty}</td>
+        <td class="center" style="width:8%">${it.qty || 0}</td>
         <td class="right" style="width:15%">${this.formatINR(it.price)}</td>
         <td class="right" style="width:20%"><b>${this.formatINR(it.amount)}</b></td>
       </tr>
@@ -238,9 +241,9 @@ const PrintEngine = {
           <div style="text-align:right;">
             <div class="badge-invoice">${bill.gstOn ? 'TAX INVOICE' : 'RETAIL CASH BILL'}</div>
             <div style="margin-top:6px; font-size:13px;">
-              Invoice No: <b>${bill.billNo}</b><br>
-              Date: <b>${bill.date}</b><br>
-              Mode: <b>${bill.payMode}</b>
+              Invoice No: <b>${bill.billNo || ''}</b><br>
+              Date: <b>${bill.date || ''}</b><br>
+              Mode: <b>${bill.payMode || 'Cash'}</b>
             </div>
           </div>
         </div>
@@ -248,13 +251,13 @@ const PrintEngine = {
         <div class="meta-grid">
           <div>
             <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#666;">Billed To (Customer):</div>
-            <div style="font-size:14px; font-weight:bold;">${bill.customer.name || '-'}</div>
-            <div>Mobile / Phone: <b>${bill.customer.phone || '-'}</b></div>
-            <div>Address: ${bill.customer.address || 'Tamil Nadu'}</div>
+            <div style="font-size:14px; font-weight:bold;">${cust.name || '-'}</div>
+            <div>Mobile / Phone: <b>${cust.phone || '-'}</b></div>
+            <div>Address: ${cust.address || 'Tamil Nadu'}</div>
           </div>
           <div>
-            ${bill.customer.gstin ? `<div>Customer GSTIN: <b>${bill.customer.gstin}</b></div>` : '<div>Customer Type: <b>Consumer / Unregistered</b></div>'}
-            <div>Place of Supply: <b>${bill.customer.state || 'Tamil Nadu (33)'}</b></div>
+            ${cust.gstin ? `<div>Customer GSTIN: <b>${cust.gstin}</b></div>` : '<div>Customer Type: <b>Consumer / Unregistered</b></div>'}
+            <div>Place of Supply: <b>${cust.state || 'Tamil Nadu (33)'}</b></div>
           </div>
         </div>
 
@@ -338,13 +341,27 @@ const PrintEngine = {
         break;
     }
 
-    // Clear any active toast notifications before triggering system print dialog
+    // Completely wipe and suppress any toast notifications before triggering system print dialog
     const toastBox = document.getElementById('toastNotificationContainer');
-    if (toastBox) toastBox.innerHTML = '';
+    if (toastBox) {
+      toastBox.innerHTML = '';
+      toastBox.style.setProperty('display', 'none', 'important');
+    }
 
     container.innerHTML = html;
+
+    const restoreToasts = () => {
+      if (toastBox) {
+        toastBox.style.removeProperty('display');
+      }
+      window.removeEventListener('afterprint', restoreToasts);
+    };
+    window.addEventListener('afterprint', restoreToasts);
+
     setTimeout(() => {
       window.print();
+      // Secondary fallback cleanup in case afterprint doesn't fire
+      setTimeout(restoreToasts, 2000);
     }, 150);
   }
 };

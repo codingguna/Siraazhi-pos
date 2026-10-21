@@ -11,10 +11,11 @@
           `Invoice_<BillNo>_<CustomerName>` (which becomes the default PDF file name).
         - Injects corporate A4 tax invoice markup with FSSAI, GSTIN, HSN table, and sign-offs.
         - Automatically triggers `window.print()` targeting 'Save as PDF'.
+        - Includes an in-page fallback if pop-ups are blocked by the browser.
      2. saveSalesSummaryPDF(bills, settings):
         - Formats the complete sales register into an A4 landscape executive report.
         - Summarizes net turnover, total GST collected, and individual bill statuses.
-        - Triggers instant PDF printing.
+        - Triggers instant PDF printing with in-page fallback.
 
    FLOW:
      Bill Object -> HTML Document Template -> Styled Browser Window -> Trigger Print / Save PDF
@@ -22,8 +23,191 @@
 
 const PDFEngine = {
   /**
+   * Escape HTML utility to prevent syntax breakages
+   */
+  esc(str) {
+    return String(str || '').replace(/[&<>'"]/g, tag => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;'
+    }[tag] || tag));
+  },
+
+  /**
+   * getA4Styles returns complete self-contained styles for vector A4 corporate invoices.
+   * Eliminates dependencies on external network stylesheets so white-page issues never occur.
+   */
+  getA4Styles() {
+    return `
+      @page {
+        size: A4 portrait;
+        margin: 8mm 10mm;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        background: #fff;
+        color: #000;
+        font-family: 'Segoe UI', Nirmala UI, Arial, sans-serif;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .print-container,
+      .invoice-pdf-container {
+        display: block !important;
+        visibility: visible !important;
+        width: 100%;
+        margin: 0 auto;
+        padding: 0;
+      }
+      .invoice-a4 {
+        display: block !important;
+        visibility: visible !important;
+        width: 100%;
+        max-width: 190mm;
+        margin: 0 auto;
+        padding: 8mm 10mm;
+        font-family: 'Segoe UI', Nirmala UI, Arial, sans-serif;
+        font-size: 12px;
+        color: #000;
+        background: #fff;
+      }
+      .invoice-a4 .header-block {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 2px solid #000;
+        padding-bottom: 8px;
+        margin-bottom: 10px;
+      }
+      .invoice-a4 h1 {
+        font-size: 18px;
+        margin: 0 0 2px 0;
+        font-weight: 900;
+      }
+      .invoice-a4 .badge-invoice {
+        background: #000;
+        color: #fff;
+        padding: 4px 10px;
+        font-weight: 800;
+        font-size: 14px;
+        display: inline-block;
+      }
+      .invoice-a4 .meta-grid {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 12px;
+        border: 1px solid #000;
+        padding: 8px;
+        margin-bottom: 12px;
+      }
+      .invoice-a4 table.items-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 12px;
+      }
+      .invoice-a4 table.items-table th,
+      .invoice-a4 table.items-table td {
+        border: 1px solid #000;
+        padding: 6px 8px;
+        font-size: 11.5px;
+      }
+      .invoice-a4 table.items-table th {
+        background-color: #f0f0f0;
+        font-weight: 700;
+      }
+      .invoice-a4 .totals-block {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 20px;
+      }
+      .invoice-a4 .tax-summary-table {
+        width: 55%;
+        border-collapse: collapse;
+        font-size: 10px;
+      }
+      .invoice-a4 .tax-summary-table th,
+      .invoice-a4 .tax-summary-table td {
+        border: 1px solid #666;
+        padding: 3px 5px;
+        text-align: right;
+      }
+      .invoice-a4 .tax-summary-table th {
+        background: #f7f7f7;
+        text-align: center;
+      }
+      .invoice-a4 .final-calc {
+        width: 40%;
+        text-align: right;
+        font-size: 12px;
+      }
+      .invoice-a4 .grand-total-row {
+        font-size: 16px;
+        font-weight: 900;
+        border-top: 2px solid #000;
+        border-bottom: 2px solid #000;
+        padding: 4px 0;
+        margin: 6px 0;
+      }
+      .invoice-a4 .sign-block {
+        margin-top: 28px;
+        display: flex;
+        justify-content: space-between;
+        padding: 0 10px;
+      }
+      .invoice-a4 .sign-block div {
+        text-align: center;
+        border-top: 1px solid #000;
+        padding-top: 6px;
+        width: 180px;
+      }
+      .pdf-actions-bar {
+        position: fixed;
+        top: 15px;
+        right: 15px;
+        display: flex;
+        gap: 10px;
+        z-index: 10000;
+      }
+      .pdf-btn {
+        background: #1b5e20;
+        color: #fff;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        border: none;
+        font-size: 13px;
+      }
+      .pdf-btn:hover {
+        background: #144917;
+      }
+      @media print {
+        .pdf-actions-bar,
+        .pdf-btn,
+        .toast-container,
+        .toast-message,
+        #toastNotificationContainer {
+          display: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
+          height: 0 !important;
+          width: 0 !important;
+        }
+      }
+    `;
+  },
+
+  /**
    * saveBillPDF generates a standalone vector invoice ready for saving as PDF or sharing.
-   * Flow: constructs document title -> opens window -> writes A4 template -> triggers print.
+   * Flow: constructs document title -> opens preview window or in-page fallback -> triggers print.
    */
   saveBillPDF(bill, settings) {
     if (!bill) {
@@ -32,68 +216,66 @@ const PDFEngine = {
     }
 
     const s = settings || {};
-    const win = window.open('', '_blank', 'width=850,height=900');
-    if (!win) {
-      alert('Pop-up blocked! Please allow pop-ups to save PDF.');
+    const cust = (bill && bill.customer) || {};
+    const cleanBillNo = (bill.billNo || 'INVOICE').replace(/[\/\\]/g, '_');
+    const cleanCustomer = (cust.name || 'Walkin').replace(/\s+/g, '_');
+    const pdfTitle = `Invoice_${cleanBillNo}_${cleanCustomer}`;
+
+    const invoiceHtml = PrintEngine.renderA4(bill, s);
+
+    // Try opening dedicated printable preview window
+    let win = null;
+    try {
+      win = window.open('', '_blank', 'width=880,height=920');
+    } catch (e) {
+      win = null;
+    }
+
+    // Check if pop-up was blocked or not allowed in current webview/app mode
+    if (!win || win.closed || typeof win.document === 'undefined') {
+      // Seamless Fallback: Print directly using the main window's #printContainer
+      // so the user ALWAYS gets the PDF save dialog, even if pop-ups are blocked!
+      const originalTitle = document.title;
+      document.title = pdfTitle;
+      PrintEngine.print(bill, 'a4', s);
+      setTimeout(() => {
+        document.title = originalTitle;
+      }, 3000);
       return;
     }
 
-    const cleanBillNo = (bill.billNo || 'INVOICE').replace(/[\/\\]/g, '_');
-    const cleanCustomer = (bill.customer.name || 'Walkin').replace(/\s+/g, '_');
-    const pdfTitle = `Invoice_${cleanBillNo}_${cleanCustomer}`;
     win.document.title = pdfTitle;
 
-    const htmlContent = `
+    const fullDoc = `
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
       <head>
         <meta charset="utf-8">
         <title>${pdfTitle}</title>
-        <link rel="stylesheet" href="/css/print.css">
         <style>
-          body {
-            margin: 0;
-            padding: 20px;
-            font-family: 'Segoe UI', Nirmala UI, Arial, sans-serif;
-            background: #fff;
-            color: #000;
-          }
-          @page {
-            size: A4 portrait;
-            margin: 10mm;
-          }
-          .pdf-actions {
-            position: fixed;
-            top: 15px;
-            right: 15px;
-            background: #1b5e20;
-            color: #fff;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            border: none;
-            z-index: 1000;
-          }
-          @media print {
-            .pdf-actions { display: none !important; }
-          }
+          ${this.getA4Styles()}
         </style>
       </head>
       <body>
-        <button class="pdf-actions" onclick="window.print()">📥 Click to Save / Print PDF</button>
-        ${PrintEngine.renderA4(bill, s)}
+        <div class="pdf-actions-bar">
+          <button class="pdf-btn" onclick="window.print()">📥 Click to Save as PDF / Print</button>
+          <button class="pdf-btn" style="background:#555;" onclick="window.close()">✕ Close</button>
+        </div>
+        <div id="printContainer" class="print-container invoice-pdf-container">
+          ${invoiceHtml}
+        </div>
         <script>
-          setTimeout(() => {
-            window.print();
-          }, 400);
+          window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => { window.print(); }, 250);
+          });
+          setTimeout(() => { window.print(); }, 400);
         </script>
       </body>
       </html>
     `;
 
-    win.document.write(htmlContent);
+    win.document.open();
+    win.document.write(fullDoc);
     win.document.close();
   },
 
@@ -108,59 +290,70 @@ const PDFEngine = {
     }
 
     const s = settings || {};
-    const win = window.open('', '_blank', 'width=900,height=900');
-    if (!win) return;
-
     const pdfTitle = `Sales_Summary_Report_${new Date().toISOString().slice(0, 10)}`;
-    win.document.title = pdfTitle;
 
     const totalSales = bills.reduce((acc, b) => acc + (b.grandTotal || 0), 0);
     const totalGst = bills.filter(b => b.gstOn).reduce((acc, b) => acc + (b.gstAmt || 0), 0);
 
-    const rows = bills.map((b, i) => `
-      <tr>
-        <td style="border:1px solid #ddd; padding:6px; text-align:center;">${i + 1}</td>
-        <td style="border:1px solid #ddd; padding:6px;"><b>${b.billNo}</b></td>
-        <td style="border:1px solid #ddd; padding:6px;">${b.date}</td>
-        <td style="border:1px solid #ddd; padding:6px;">${b.customer.name}</td>
-        <td style="border:1px solid #ddd; padding:6px; text-align:center;">${b.payMode}</td>
-        <td style="border:1px solid #ddd; padding:6px; text-align:right;">₹${b.subtotal.toFixed(2)}</td>
-        <td style="border:1px solid #ddd; padding:6px; text-align:right;">₹${b.gstAmt.toFixed(2)}</td>
-        <td style="border:1px solid #ddd; padding:6px; text-align:right; font-weight:bold;">₹${b.grandTotal.toFixed(2)}</td>
-      </tr>
-    `).join('');
+    const rows = bills.map((b, i) => {
+      const cust = (b.customer && b.customer.name) || '-';
+      const sub = Number(b.subtotal || 0).toFixed(2);
+      const gst = Number(b.gstAmt || 0).toFixed(2);
+      const total = Number(b.grandTotal || 0).toFixed(2);
+      return `
+        <tr>
+          <td style="border:1px solid #999; padding:5px 6px; text-align:center;">${i + 1}</td>
+          <td style="border:1px solid #999; padding:5px 6px;"><b>${this.esc(b.billNo || '')}</b></td>
+          <td style="border:1px solid #999; padding:5px 6px;">${this.esc(b.date || '')}</td>
+          <td style="border:1px solid #999; padding:5px 6px;">${this.esc(cust)}</td>
+          <td style="border:1px solid #999; padding:5px 6px; text-align:center;">${this.esc(b.payMode || 'Cash')}</td>
+          <td style="border:1px solid #999; padding:5px 6px; text-align:right;">₹${sub}</td>
+          <td style="border:1px solid #999; padding:5px 6px; text-align:right;">₹${gst}</td>
+          <td style="border:1px solid #999; padding:5px 6px; text-align:right; font-weight:bold;">₹${total}</td>
+        </tr>
+      `;
+    }).join('');
 
-    const html = `
+    const htmlContent = `
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
       <head>
         <meta charset="utf-8">
         <title>${pdfTitle}</title>
         <style>
-          body { font-family: sans-serif; padding: 20px; font-size: 12px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-          th { background: #f0f0f0; border: 1px solid #ddd; padding: 8px; text-align: left; }
-          .header { text-align: center; border-bottom: 2px solid #1b5e20; padding-bottom: 10px; }
-          .total-box { margin-top: 15px; text-align: right; font-size: 14px; font-weight: bold; }
-          @page { size: A4 landscape; margin: 10mm; }
+          @page { size: A4 landscape; margin: 8mm 10mm; }
+          * { box-sizing: border-box; }
+          body { font-family: 'Segoe UI', Nirmala UI, Arial, sans-serif; padding: 10px; font-size: 11px; color:#000; background:#fff; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th { background: #e2e8f0; border: 1px solid #999; padding: 6px; font-size: 11px; text-align: left; }
+          .header { text-align: center; border-bottom: 2px solid #1b5e20; padding-bottom: 8px; margin-bottom: 8px; }
+          .header h2 { margin: 0 0 4px 0; font-size: 16px; font-weight: 900; }
+          .total-box { margin-top: 12px; text-align: right; font-size: 13px; font-weight: bold; border-top: 2px solid #000; padding-top: 6px; }
+          .pdf-actions-bar { position: fixed; top: 10px; right: 10px; display: flex; gap: 8px; z-index: 1000; }
+          .pdf-btn { background: #1b5e20; color: #fff; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; border: none; font-size: 12px; }
+          @media print { .pdf-actions-bar { display: none !important; } }
         </style>
       </head>
       <body>
+        <div class="pdf-actions-bar">
+          <button class="pdf-btn" onclick="window.print()">📥 Click to Save / Print PDF</button>
+          <button class="pdf-btn" style="background:#555;" onclick="window.close()">✕ Close</button>
+        </div>
         <div class="header">
-          <h2>${s.companyName || 'VANUR FARMER PRODUCER COMPANY LTD'}</h2>
+          <h2>${this.esc(s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED')}</h2>
           <div>SALES REGISTER REPORT • Generated: ${new Date().toLocaleString()}</div>
         </div>
         <table>
           <thead>
             <tr>
-              <th>#</th>
-              <th>Bill No</th>
-              <th>Date</th>
-              <th>Customer</th>
-              <th>Pay Mode</th>
-              <th style="text-align:right;">Subtotal</th>
-              <th style="text-align:right;">GST</th>
-              <th style="text-align:right;">Grand Total</th>
+              <th style="width:5%; text-align:center;">#</th>
+              <th style="width:18%;">Bill No</th>
+              <th style="width:12%;">Date</th>
+              <th style="width:25%;">Customer</th>
+              <th style="width:10%; text-align:center;">Pay Mode</th>
+              <th style="width:10%; text-align:right;">Subtotal</th>
+              <th style="width:10%; text-align:right;">GST</th>
+              <th style="width:10%; text-align:right;">Grand Total</th>
             </tr>
           </thead>
           <tbody>
@@ -171,13 +364,38 @@ const PDFEngine = {
           Total Bills: ${bills.length} &nbsp;|&nbsp; Total GST: ₹${totalGst.toFixed(2)} &nbsp;|&nbsp; Net Sales: ₹${totalSales.toFixed(2)}
         </div>
         <script>
+          window.addEventListener('DOMContentLoaded', () => { setTimeout(() => { window.print(); }, 250); });
           setTimeout(() => { window.print(); }, 400);
         </script>
       </body>
       </html>
     `;
 
-    win.document.write(html);
+    let win = null;
+    try {
+      win = window.open('', '_blank', 'width=950,height=800');
+    } catch (e) {
+      win = null;
+    }
+
+    if (!win || win.closed || typeof win.document === 'undefined') {
+      // In-page fallback
+      const originalTitle = document.title;
+      document.title = pdfTitle;
+      const container = document.getElementById('printContainer');
+      if (container) {
+        container.innerHTML = htmlContent;
+        setTimeout(() => {
+          window.print();
+          document.title = originalTitle;
+        }, 200);
+      }
+      return;
+    }
+
+    win.document.title = pdfTitle;
+    win.document.open();
+    win.document.write(htmlContent);
     win.document.close();
   }
 };

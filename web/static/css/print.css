@@ -12,22 +12,39 @@
     padding: 0 !important;
   }
 
-  body > *:not(.print-container),
   .app-header,
   .nav-tabs,
   .main-content,
   .modal-overlay,
+  .reprint-quick-bar,
+  .mobile-pos-switcher,
+  .mobile-floating-cart-bar,
   .toast-container,
   .toast-message,
-  #toastNotificationContainer {
+  #toastNotificationContainer,
+  .pdf-actions,
+  .pdf-actions-bar {
     display: none !important;
     visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    width: 0 !important;
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
   }
 
-  .print-container {
+  .print-container,
+  .invoice-a4,
+  .receipt-80mm,
+  .receipt-58mm,
+  .invoice-a5 {
     display: block !important;
-    margin: 0 auto;
-    padding: 0;
+    visibility: visible !important;
   }
 
   /* --------------------------------------------------------------------------
