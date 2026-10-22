@@ -34,17 +34,18 @@ import (
 
 // BackupData contains the complete database dump for portability
 type BackupData struct {
-	ExportedAt string        `json:"exportedAt"`
-	Settings   db.Settings   `json:"settings"`
-	Products   []db.Product  `json:"products"`
-	Bills      []db.Bill     `json:"bills"`
-	StockMoves []db.StockMove`json:"stockMoves"`
-	Purchases  []db.Purchase `json:"purchases"`
-	Expenses   []db.Expense  `json:"expenses"`
+	ExportedAt string         `json:"exportedAt"`
+	Settings   db.Settings    `json:"settings"`
+	Products   []db.Product   `json:"products"`
+	Customers  []db.Customer  `json:"customers"`
+	Bills      []db.Bill      `json:"bills"`
+	StockMoves []db.StockMove `json:"stockMoves"`
+	Purchases  []db.Purchase  `json:"purchases"`
+	Expenses   []db.Expense   `json:"expenses"`
 }
 
 // HandleBackup exports all data as an attachment JSON file.
-// Flow: loads settings, products, bills, stock moves, expenses -> packages into BackupData -> sets attachment headers -> streams JSON.
+// Flow: loads settings, products, customers, bills, stock moves, expenses -> packages into BackupData -> sets attachment headers -> streams JSON.
 func HandleBackup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -53,8 +54,9 @@ func HandleBackup(w http.ResponseWriter, r *http.Request) {
 
 	settings, _ := db.GetSettings()
 	products, _ := db.GetProducts()
+	customers, _ := db.SearchCustomers("", 500000)
 	bills, _ := db.GetBills("", "")
-	stockMoves, _ := db.GetStockMoves(10000)
+	stockMoves, _ := db.GetStockMoves(100000)
 	purchases, _ := db.GetPurchases()
 	expenses, _ := db.GetExpenses()
 
@@ -62,6 +64,7 @@ func HandleBackup(w http.ResponseWriter, r *http.Request) {
 		ExportedAt: time.Now().Format(time.RFC3339),
 		Settings:   settings,
 		Products:   products,
+		Customers:  customers,
 		Bills:      bills,
 		StockMoves: stockMoves,
 		Purchases:  purchases,
@@ -104,12 +107,17 @@ func HandleRestore(w http.ResponseWriter, r *http.Request) {
 		_ = db.SaveProduct(p)
 	}
 
-	// Restore purchases
+	// Restore customers
+	for _, c := range data.Customers {
+		_ = db.SaveCustomer(c)
+	}
+
+	// Restore purchases (upsert)
 	for _, p := range data.Purchases {
 		_ = db.SavePurchase(p)
 	}
 
-	// Restore expenses
+	// Restore expenses (upsert)
 	for _, e := range data.Expenses {
 		_ = db.SaveExpense(e)
 	}
@@ -123,10 +131,11 @@ func HandleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, http.StatusOK, map[string]interface{}{
-		"ok":       true,
-		"message":  "Database successfully restored",
-		"products": len(data.Products),
-		"bills":    len(data.Bills),
+		"ok":        true,
+		"message":   "Database successfully restored",
+		"products":  len(data.Products),
+		"customers": len(data.Customers),
+		"bills":     len(data.Bills),
 	})
 }
 

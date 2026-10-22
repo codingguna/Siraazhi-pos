@@ -140,10 +140,31 @@
             </div>
           </div>
 
-          <!-- Optional Customer Details (GSTIN & Address) -->
-          <div class="customer-row sub-row" id="gstDetailsRow" style="display:none;">
-            <input type="text" id="custGstin" placeholder="Customer GSTIN (Optional B2B)">
-            <input type="text" id="custAddress" placeholder="Address & City (Optional)">
+          <!-- Optional Customer Details (GSTIN, State & Address) -->
+          <div class="customer-row sub-row" id="gstDetailsRow" style="display:none; gap:6px;">
+            <input type="text" id="custGstin" placeholder="Customer GSTIN (Optional B2B)" style="flex:1.2;" oninput="onGstinInput(this.value)">
+            <select id="custState" style="flex:1; padding:6px 8px; border:1px solid var(--border-color); border-radius:4px; font-size:12px; background:var(--bg-card); color:var(--text-main);" onchange="onStateSelectChange()">
+              <option value="Tamil Nadu">33 - Tamil Nadu</option>
+              <option value="Puducherry">34 - Puducherry</option>
+              <option value="Kerala">32 - Kerala</option>
+              <option value="Karnataka">29 - Karnataka</option>
+              <option value="Andhra Pradesh">37 - Andhra Pradesh</option>
+              <option value="Telangana">36 - Telangana</option>
+              <option value="Maharashtra">27 - Maharashtra</option>
+              <option value="Delhi">07 - Delhi</option>
+              <option value="Gujarat">24 - Gujarat</option>
+              <option value="Uttar Pradesh">09 - Uttar Pradesh</option>
+              <option value="West Bengal">19 - West Bengal</option>
+              <option value="Rajasthan">08 - Rajasthan</option>
+              <option value="Madhya Pradesh">23 - Madhya Pradesh</option>
+              <option value="Haryana">06 - Haryana</option>
+              <option value="Punjab">03 - Punjab</option>
+              <option value="Bihar">10 - Bihar</option>
+              <option value="Odisha">21 - Odisha</option>
+              <option value="Goa">30 - Goa</option>
+              <option value="Other">Other State</option>
+            </select>
+            <input type="text" id="custAddress" placeholder="Address & City (Optional)" style="flex:1.5;">
           </div>
 
           <!-- Invoice Settings Bar -->
@@ -210,9 +231,18 @@
               </div>
               <div class="paid-amt-group">
                 <label>Paid (₹):</label>
-                <input type="number" id="billPaid" min="0" step="1" placeholder="Auto">
+                <input type="number" id="billPaid" min="0" step="1" placeholder="Auto" oninput="recalcCart()">
               </div>
             </div>
+
+            <!-- Quick Cash Tender Shortcuts -->
+            <div class="quick-cash-row" style="display:flex; gap:6px; margin:6px 0 4px 0;">
+              <button type="button" class="chip-btn" onclick="setQuickCash('exact')" title="Exact Bill Amount" style="flex:1; font-weight:700; background:#f1f5f9; padding:6px 4px;">Exact</button>
+              <button type="button" class="chip-btn" onclick="setQuickCash(100)" title="Add ₹100 Note" style="flex:1; padding:6px 4px;">+₹100</button>
+              <button type="button" class="chip-btn" onclick="setQuickCash(500)" title="Add ₹500 Note" style="flex:1; font-weight:700; color:#15803d; background:#ecfdf5; padding:6px 4px;">+₹500</button>
+              <button type="button" class="chip-btn" onclick="setQuickCash(1000)" title="Add ₹1000" style="flex:1; padding:6px 4px;">+₹1000</button>
+            </div>
+            <div id="billChangeDisplay" style="display:none; font-size:12px; font-weight:700; text-align:right; margin-bottom:8px;"></div>
 
             <!-- Action Buttons Grid -->
             <div class="checkout-actions">
@@ -1042,6 +1072,7 @@
   <div id="toastNotificationContainer" class="toast-container"></div>
 
   <!-- SCRIPTS -->
+  <script src="js/qrcode.min.js"></script>
   <script src="js/print.js"></script>
   <script src="js/excel.js"></script>
   <script src="js/pdf.js"></script>

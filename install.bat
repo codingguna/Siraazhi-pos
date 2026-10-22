@@ -72,7 +72,9 @@ if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
 
 :: Automatic timestamped DB safety backup
 if exist "%DATA_DIR%\pos.db" (
-    copy /y "%DATA_DIR%\pos.db" "%BACKUP_DIR%\pos_backup_%date:~-4,4%%date:~-7,2%%date:~-10,2%.db" >nul 2>&1
+    for /f "usebackq delims=" %%T in (`powershell -NoProfile -Command "Get-Date -Format 'yyyyMMdd_HHmmss'"`) do (
+        copy /y "%DATA_DIR%\pos.db" "%BACKUP_DIR%\pos_backup_%%T.db" >nul 2>&1
+    )
 )
 
 :: 2. Copy Executable & Assets

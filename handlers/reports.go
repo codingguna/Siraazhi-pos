@@ -64,6 +64,7 @@ type GSTR1Summary struct {
 		TaxableValue float64 `json:"taxableValue"`
 		CGST         float64 `json:"cgst"`
 		SGST         float64 `json:"sgst"`
+		IGST         float64 `json:"igst"`
 		TotalAmount  float64 `json:"totalAmount"`
 	} `json:"b2cSmall"`
 	HSNSummary []struct {
@@ -98,6 +99,7 @@ func HandleGSTR1Report(w http.ResponseWriter, r *http.Request) {
 		Taxable float64
 		CGST    float64
 		SGST    float64
+		IGST    float64
 		Total   float64
 	})
 
@@ -118,6 +120,11 @@ func HandleGSTR1Report(w http.ResponseWriter, r *http.Request) {
 		report.TotalTaxable += b.Taxable
 		report.TotalTax += b.GSTAmt
 		report.GrandTotal += b.GrandTotal
+
+		discRatio := 1.0
+		if b.Subtotal > 0 {
+			discRatio = b.GrandTotal / b.Subtotal
+		}
 
 		hasGSTIN := strings.TrimSpace(b.Customer.Gstin) != ""
 		if hasGSTIN {
@@ -144,26 +151,35 @@ func HandleGSTR1Report(w http.ResponseWriter, r *http.Request) {
 				IGST:          b.IGST,
 			})
 		} else {
-			// B2C Consumer aggregation
-			rate := 5.0
-			if len(b.Items) > 0 {
-				rate = b.Items[0].GSTPct
+			// B2C Consumer aggregation per item tax rate (prorated by discount)
+			for _, it := range b.Items {
+				rate := it.GSTPct
+				if _, exists := b2cByRate[rate]; !exists {
+					b2cByRate[rate] = &struct {
+						Taxable float64
+						CGST    float64
+						SGST    float64
+						IGST    float64
+						Total   float64
+					}{}
+				}
+				itemNetAmt := roundMoney(it.Amount * discRatio)
+				itemNetTax := roundMoney(it.GSTPortion * discRatio)
+				itemNetTaxable := roundMoney(itemNetAmt - itemNetTax)
+
+				b2cByRate[rate].Taxable += itemNetTaxable
+				b2cByRate[rate].Total += itemNetAmt
+				if b.IGST > 0 {
+					b2cByRate[rate].IGST += itemNetTax
+				} else {
+					cgst := roundMoney(itemNetTax / 2)
+					b2cByRate[rate].CGST += cgst
+					b2cByRate[rate].SGST += roundMoney(itemNetTax - cgst)
+				}
 			}
-			if _, exists := b2cByRate[rate]; !exists {
-				b2cByRate[rate] = &struct {
-					Taxable float64
-					CGST    float64
-					SGST    float64
-					Total   float64
-				}{}
-			}
-			b2cByRate[rate].Taxable += b.Taxable
-			b2cByRate[rate].CGST += b.CGST
-			b2cByRate[rate].SGST += b.SGST
-			b2cByRate[rate].Total += b.GrandTotal
 		}
 
-		// HSN breakdown
+		// HSN breakdown (prorated by discount and tracking IGST)
 		for _, it := range b.Items {
 			hsn := it.HSN
 			if hsn == "" {
@@ -182,12 +198,20 @@ func HandleGSTR1Report(w http.ResponseWriter, r *http.Request) {
 					Desc: it.NameEn,
 				}
 			}
+			itemNetAmt := roundMoney(it.Amount * discRatio)
+			itemNetTax := roundMoney(it.GSTPortion * discRatio)
+			itemNetTaxable := roundMoney(itemNetAmt - itemNetTax)
+
 			hsnMap[hsn].Qty += it.Qty
-			hsnMap[hsn].Total += it.Amount
-			taxablePortion := it.Amount - it.GSTPortion
-			hsnMap[hsn].Taxable += taxablePortion
-			hsnMap[hsn].CGST += it.GSTPortion / 2
-			hsnMap[hsn].SGST += it.GSTPortion / 2
+			hsnMap[hsn].Total += itemNetAmt
+			hsnMap[hsn].Taxable += itemNetTaxable
+			if b.IGST > 0 {
+				hsnMap[hsn].IGST += itemNetTax
+			} else {
+				cgst := roundMoney(itemNetTax / 2)
+				hsnMap[hsn].CGST += cgst
+				hsnMap[hsn].SGST += roundMoney(itemNetTax - cgst)
+			}
 		}
 	}
 
@@ -197,12 +221,14 @@ func HandleGSTR1Report(w http.ResponseWriter, r *http.Request) {
 			TaxableValue float64 `json:"taxableValue"`
 			CGST         float64 `json:"cgst"`
 			SGST         float64 `json:"sgst"`
+			IGST         float64 `json:"igst"`
 			TotalAmount  float64 `json:"totalAmount"`
 		}{
 			TaxRate:      rate,
 			TaxableValue: roundMoney(val.Taxable),
 			CGST:         roundMoney(val.CGST),
 			SGST:         roundMoney(val.SGST),
+			IGST:         roundMoney(val.IGST),
 			TotalAmount:  roundMoney(val.Total),
 		})
 	}

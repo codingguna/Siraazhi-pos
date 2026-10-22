@@ -42,6 +42,50 @@ const DEFAULT_MASTER_PIN = '1234';
 let LAST_BILL = null;
 
 // Multi-Bill State Management (Hold & Resume Active Carts)
+const GST_STATE_CODES = {
+  '01': 'Jammu and Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh',
+  '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan', '09': 'Uttar Pradesh',
+  '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh', '13': 'Nagaland', '14': 'Manipur',
+  '15': 'Mizoram', '16': 'Tripura', '17': 'Meghalaya', '18': 'Assam', '19': 'West Bengal',
+  '20': 'Jharkhand', '21': 'Odisha', '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat',
+  '26': 'Dadra and Nagar Haveli and Daman and Diu', '27': 'Maharashtra', '29': 'Karnataka',
+  '30': 'Goa', '31': 'Lakshadweep', '32': 'Kerala', '33': 'Tamil Nadu', '34': 'Puducherry',
+  '35': 'Andaman and Nicobar Islands', '36': 'Telangana', '37': 'Andhra Pradesh', '38': 'Ladakh'
+};
+
+function getStateFromGSTIN(gstin) {
+  if (!gstin) return null;
+  const clean = gstin.trim().toUpperCase();
+  if (clean.length >= 2) {
+    const code = clean.slice(0, 2);
+    if (GST_STATE_CODES[code]) {
+      return GST_STATE_CODES[code];
+    }
+  }
+  return null;
+}
+
+function onGstinInput(val) {
+  const derived = getStateFromGSTIN(val);
+  if (derived && $('custState')) {
+    let matched = false;
+    for (let i = 0; i < $('custState').options.length; i++) {
+      if ($('custState').options[i].value === derived) {
+        $('custState').selectedIndex = i;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      $('custState').value = 'Other';
+    }
+  }
+}
+
+function onStateSelectChange() {
+  saveCurrentBillTabForm();
+}
+
 let BILL_TABS = [
   {
     id: 1,
@@ -155,12 +199,15 @@ function determineRoleMode() {
                       window.location.protocol === 'file:';
   
   const savedToken = localStorage.getItem('siraazhi_admin_token');
-  const validPin = (SETTINGS && SETTINGS.masterPin) ? SETTINGS.masterPin : DEFAULT_MASTER_PIN;
 
-  // Master mode if running locally on host PC or valid unlock token present
-  if (isLocalHost || (savedToken && (savedToken === validPin || savedToken === DEFAULT_MASTER_PIN))) {
+  // Master mode if running locally on host PC or valid unlock token verified by server
+  if (isLocalHost || (savedToken && SETTINGS && SETTINGS.masterPin && savedToken === SETTINGS.masterPin)) {
     enableMasterMode();
   } else {
+    // If token was present but server didn't authenticate it, clean up stale token
+    if (savedToken && (!SETTINGS || !SETTINGS.masterPin)) {
+      localStorage.removeItem('siraazhi_admin_token');
+    }
     enableClientStaffMode();
   }
 }
@@ -237,16 +284,20 @@ function enableMasterMode() {
 /**
  * promptMasterPin prompts the user for admin PIN to upgrade to master mode.
  */
-function promptMasterPin() {
+async function promptMasterPin() {
   const pin = prompt('Enter Master Admin PIN to unlock full management & reports:');
   if (!pin) return;
-  const validPin = (SETTINGS && SETTINGS.masterPin) ? SETTINGS.masterPin : DEFAULT_MASTER_PIN;
-  if (pin === validPin) {
-    localStorage.setItem('siraazhi_admin_token', pin);
-    alert('✅ Master Access Granted.');
-    location.reload();
-  } else {
-    alert('❌ Invalid PIN. Client billing mode remains active.');
+  const entered = pin.trim();
+  if (!entered) return;
+  try {
+    const res = await api('POST', '/api/auth/verify', { pin: entered });
+    if (res && res.ok) {
+      localStorage.setItem('siraazhi_admin_token', entered);
+      alert('✅ Master Access Granted.');
+      location.reload();
+    }
+  } catch (err) {
+    alert('❌ ' + (err.message || 'Invalid Master PIN. Client billing mode remains active.'));
   }
 }
 
@@ -333,10 +384,21 @@ function renderProductsGrid() {
   }
 
   container.innerHTML = filtered.map(p => {
-    const isLow = p.stock <= p.lowAlert;
+    const isOut = p.stock <= 0;
+    const isLow = !isOut && p.stock <= (p.lowAlert || 5);
+    let badgeClass = '';
+    let badgeText = `Stk: ${p.stock}`;
+    if (isOut) {
+      badgeClass = 'out-of-stock';
+      badgeText = 'Out of Stock';
+    } else if (isLow) {
+      badgeClass = 'low';
+      badgeText = `Low: ${p.stock}`;
+    }
+
     return `
-      <div class="product-card" onclick="addToCart('${p.id}')">
-        <span class="prod-badge ${isLow ? 'low' : ''}">${isLow ? 'Low: ' : 'Stk: '}${p.stock}</span>
+      <div class="product-card ${isOut ? 'card-out-of-stock' : ''}" onclick="addToCart('${p.id}')">
+        <span class="prod-badge ${badgeClass}">${badgeText}</span>
         <div>
           <div class="prod-title-en">${p.nameEn}</div>
           <div class="prod-title-ta">${p.nameTa || ''}</div>
@@ -589,6 +651,7 @@ function saveCurrentBillTabForm() {
     name: $('custName') ? $('custName').value.trim() : '',
     phone: $('custPhone') ? $('custPhone').value.trim() : '',
     gstin: $('custGstin') ? $('custGstin').value.trim() : '',
+    state: $('custState') ? $('custState').value : 'Tamil Nadu',
     address: $('custAddress') ? $('custAddress').value.trim() : ''
   };
   b.discount = $('billDiscount') ? Number($('billDiscount').value) || 0 : 0;
@@ -603,6 +666,7 @@ function loadActiveBillTabForm() {
   if ($('custName')) $('custName').value = b.customer.name || '';
   if ($('custPhone')) $('custPhone').value = b.customer.phone || '';
   if ($('custGstin')) $('custGstin').value = b.customer.gstin || '';
+  if ($('custState')) $('custState').value = b.customer.state || 'Tamil Nadu';
   if ($('custAddress')) $('custAddress').value = b.customer.address || '';
   if ($('billDiscount')) $('billDiscount').value = b.discount || 0;
   if ($('billPaid')) $('billPaid').value = b.paid || '';
@@ -682,6 +746,11 @@ function selectCustomerByIndex(index) {
   $('custPhone').value = c.phone || '';
   if (c.gstin) {
     $('custGstin').value = c.gstin;
+    onGstinInput(c.gstin);
+    $('gstDetailsRow').style.display = 'flex';
+  }
+  if (c.state && $('custState')) {
+    $('custState').value = c.state;
     $('gstDetailsRow').style.display = 'flex';
   }
   if (c.address) {
@@ -788,7 +857,41 @@ function recalcCart() {
 
   if (!$('billPaid').value) {
     $('billPaid').placeholder = grandTotal.toFixed(0);
+    if ($('billChangeDisplay')) $('billChangeDisplay').style.display = 'none';
+  } else if ($('billChangeDisplay')) {
+    const paid = Number($('billPaid').value) || 0;
+    if (paid > 0) {
+      const diff = paid - grandTotal;
+      if (diff >= 0) {
+        $('billChangeDisplay').textContent = `Change to Return: ${formatINR(diff)}`;
+        $('billChangeDisplay').style.color = '#15803d';
+      } else {
+        $('billChangeDisplay').textContent = `Due Balance: ${formatINR(Math.abs(diff))}`;
+        $('billChangeDisplay').style.color = '#b91c1c';
+      }
+      $('billChangeDisplay').style.display = 'block';
+    } else {
+      $('billChangeDisplay').style.display = 'none';
+    }
   }
+}
+
+/**
+ * setQuickCash populates paid amount shortcuts (Exact, +₹100, +₹500, +₹1000).
+ */
+function setQuickCash(val) {
+  const subtotal = CART.reduce((s, it) => s + (it.qty * it.price), 0);
+  const discount = Math.max(0, Number($('billDiscount') ? $('billDiscount').value : 0) || 0);
+  const grandTotal = Math.max(0, subtotal - discount);
+
+  if (val === 'exact') {
+    $('billPaid').value = grandTotal > 0 ? grandTotal.toFixed(0) : '';
+  } else if (typeof val === 'number') {
+    const current = Number($('billPaid').value) || 0;
+    $('billPaid').value = (current + val).toString();
+  }
+  recalcCart();
+  saveCurrentBillTabForm();
 }
 
 /**
@@ -820,14 +923,24 @@ async function checkoutBill(printFormat) {
   const grandTotal = Math.max(0, CART.reduce((s, it) => s + (it.qty * it.price), 0) - Number($('billDiscount').value || 0));
   const paidVal = $('billPaid').value ? Number($('billPaid').value) : grandTotal;
 
+  const gstinInput = ($('custGstin') ? $('custGstin').value : '').trim().toUpperCase();
+  let billCustState = ($('custState') ? $('custState').value : '').trim() || 'Tamil Nadu';
+  if (gstinInput) {
+    const derivedState = getStateFromGSTIN(gstinInput);
+    if (derivedState) {
+      billCustState = derivedState;
+      if ($('custState')) $('custState').value = derivedState;
+    }
+  }
+
   const payload = {
     date: $('billDate').value || new Date().toISOString().slice(0, 10),
     customer: {
       name: custName,
       phone: custPhone,
       address: ($('custAddress').value || '').trim(),
-      gstin: ($('custGstin').value || '').trim(),
-      state: 'Tamil Nadu'
+      gstin: gstinInput,
+      state: billCustState
     },
     items: CART,
     discount: Number($('billDiscount').value) || 0,
@@ -1523,12 +1636,6 @@ async function cancelBill(id) {
     return;
   }
 
-  const validPin = (SETTINGS && SETTINGS.masterPin) ? SETTINGS.masterPin : DEFAULT_MASTER_PIN;
-  if (enteredPin !== validPin) {
-    alert('❌ Invalid Master PIN. Bill cancellation aborted.');
-    return;
-  }
-
   if (!confirm('⚠️ Are you sure you want to cancel this bill? Stock will be automatically restored to inventory.')) {
     return;
   }
@@ -2002,14 +2109,26 @@ async function showNetworkModal() {
       `).join('')}
     `;
 
-    // Render simple QR Code image pointing to the mobile billing URL
+    // Render offline QR Code pointing to the mobile billing URL
     const targetUrl = info.urls[0] || `http://${window.location.host}`;
-    $('qrcodeDisplay').innerHTML = `
-      <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(targetUrl)}" 
-           alt="Scan QR for Mobile Billing" 
-           style="border:1px solid #ddd; border-radius:6px;">
-      <div style="font-size:11px; color:#64748b; margin-top:6px;">Scan to open on phone camera</div>
-    `;
+    const qrContainer = $('qrcodeDisplay');
+    qrContainer.innerHTML = '';
+    if (typeof QRCode !== 'undefined') {
+      new QRCode(qrContainer, {
+        text: targetUrl,
+        width: 180,
+        height: 180,
+        colorDark: "#1b5e20",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    } else {
+      qrContainer.innerHTML = `<a href="${targetUrl}" target="_blank" style="font-size:14px; color:#0284c7;">${targetUrl}</a>`;
+    }
+    const tipDiv = document.createElement('div');
+    tipDiv.style.cssText = 'font-size:11px; color:#64748b; margin-top:6px;';
+    tipDiv.textContent = 'Scan to open on phone camera';
+    qrContainer.appendChild(tipDiv);
 
     $('networkModal').classList.add('active');
   } catch (err) {

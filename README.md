@@ -2,7 +2,11 @@
 
 ## Universal Billing, Multi-Printer, Inventory & GST Suite
 
-Standalone, single-executable point-of-sale software engineered for **Vanur Farmer Producer Company Ltd (VFPC)**. Works 100% offline on Windows with embedded SQLite and zero external runtime dependencies.
+Standalone,single-executable point-of-sale software engineered for **Vanur Farmer Producer Company Ltd (VFPC)**. Works 100% offline on Windows with embedded SQLite and zero external runtime dependencies.
+
+📖 **Official Documentation & Operations Guide:**
+- 📘 [**Complete User Manual (Markdown)**](docs/USER_MANUAL.md) — Step-by-step instructions with 12 high-resolution screenshots.
+- 🌐 [**Interactive / Printable Manual (HTML)**](docs/USER_MANUAL.html) — Double-click to open in Microsoft Edge or Chrome with full illustrations and print-ready CSS.
 
 ---
 

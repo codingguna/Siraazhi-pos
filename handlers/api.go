@@ -69,6 +69,42 @@ func CORSMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// HasMasterAuth checks whether the incoming request originates from localhost or carries a valid Master PIN.
+func HasMasterAuth(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	isLocalhost := host == "127.0.0.1" || host == "::1" || host == "localhost"
+	adminToken := r.Header.Get("X-Admin-Token")
+	activePIN := db.GetMasterPin()
+	return isLocalhost || (adminToken != "" && strings.TrimSpace(adminToken) == strings.TrimSpace(activePIN))
+}
+
+// HandleAuthVerify handles POST /api/auth/verify to validate Master Admin PIN without exposing it in plaintext.
+func HandleAuthVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	var req struct {
+		PIN string `json:"pin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		ErrorJSON(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+	activePIN := db.GetMasterPin()
+	if strings.TrimSpace(req.PIN) == strings.TrimSpace(activePIN) {
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"ok":    true,
+			"token": activePIN,
+		})
+		return
+	}
+	ErrorJSON(w, http.StatusUnauthorized, "Invalid Master PIN")
+}
+
 // MasterRoleMiddleware restricts management, inventory adjustments, and exports to the Master Host.
 //
 // WHAT IT DOES:
@@ -82,16 +118,7 @@ func CORSMiddleware(next http.Handler) http.Handler {
 //      are permitted for all authorized Wi-Fi staff devices.
 func MasterRoleMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Identify client IP
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			host = r.RemoteAddr
-		}
-
-		isLocalhost := host == "127.0.0.1" || host == "::1" || host == "localhost"
-		adminToken := r.Header.Get("X-Admin-Token")
-		activePIN := db.GetMasterPin()
-		hasMasterAuth := isLocalhost || (adminToken != "" && adminToken == activePIN)
+		hasMasterAuth := HasMasterAuth(r)
 
 		path := r.URL.Path
 		method := r.Method

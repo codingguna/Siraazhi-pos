@@ -12,7 +12,7 @@
         API calls (/api/*) always bypass cache to guarantee real-time stock & sales.
    ========================================================================== */
 
-const CACHE_NAME = 'siraazhi-pos-v3';
+const CACHE_NAME = 'siraazhi-pos-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -22,6 +22,7 @@ const STATIC_ASSETS = [
   '/js/print.js',
   '/js/excel.js',
   '/js/pdf.js',
+  '/js/qrcode.min.js',
   '/js/xlsx.full.min.js',
   '/manifest.json'
 ];

@@ -356,8 +356,18 @@ body {
 }
 
 .prod-badge.low {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.prod-badge.out-of-stock {
   background: #fee2e2;
-  color: var(--danger);
+  color: #dc2626;
+  font-weight: 800;
+}
+
+.product-card.card-out-of-stock {
+  opacity: 0.62;
 }
 
 .prod-title-en {

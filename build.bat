@@ -61,7 +61,7 @@ copy /y "LICENSE.txt" "installer\LICENSE.txt" >nul
 
 :: 5. Compile Standalone Installer
 echo [5/5] Compiling Standalone Windows Setup (SiraazhiPOS-Setup.exe)...
-go build -v -ldflags "-s -w -H=windowsgui" -o SiraazhiPOS-Setup.exe .\installer
+go build -tags installer -v -ldflags "-s -w -H=windowsgui" -o SiraazhiPOS-Setup.exe .\installer
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Failed to compile installer.

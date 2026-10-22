@@ -45,44 +45,50 @@ func formatCurrency(amount float64) string {
 	return fmt.Sprintf("Rs.%.2f", amount)
 }
 
-// padLeft pads string on left to width
+// padLeft pads string on left to width (rune-safe)
 func padLeft(s string, width int) string {
-	if len(s) >= width {
+	r := []rune(s)
+	if len(r) >= width {
 		return s
 	}
-	return strings.Repeat(" ", width-len(s)) + s
+	return strings.Repeat(" ", width-len(r)) + s
 }
 
-// padRight pads string on right to width
+// padRight pads string on right to width (rune-safe)
 func padRight(s string, width int) string {
-	if len(s) >= width {
+	r := []rune(s)
+	if len(r) >= width {
 		return s
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-len(r))
 }
 
-// alignCenterCenters text within width
+// alignCenter centers text within width (rune-safe)
 func alignCenter(s string, width int) string {
 	s = strings.TrimSpace(s)
-	if len(s) >= width {
+	r := []rune(s)
+	if len(r) >= width {
 		return s
 	}
-	leftPad := (width - len(s)) / 2
-	rightPad := width - len(s) - leftPad
+	leftPad := (width - len(r)) / 2
+	rightPad := width - len(r) - leftPad
 	return strings.Repeat(" ", leftPad) + s + strings.Repeat(" ", rightPad)
 }
 
-// formatTwoCols formats left and right strings with spaces in between
+// formatTwoCols formats left and right strings with spaces in between (rune-safe)
 func formatTwoCols(left, right string, width int) string {
-	totalLen := len(left) + len(right)
+	rLeft := []rune(left)
+	rRight := []rune(right)
+	totalLen := len(rLeft) + len(rRight)
 	if totalLen >= width {
-		// If too long, truncate left
-		avail := width - len(right) - 1
-		if avail > 0 && len(left) > avail {
-			left = left[:avail]
+		// If too long, truncate left safely by runes
+		avail := width - len(rRight) - 1
+		if avail > 0 && len(rLeft) > avail {
+			rLeft = rLeft[:avail]
+			left = string(rLeft)
 		}
 	}
-	space := width - len(left) - len(right)
+	space := width - len(rLeft) - len(rRight)
 	if space < 1 {
 		space = 1
 	}

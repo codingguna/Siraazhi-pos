@@ -54,8 +54,9 @@ import (
 
 var (
 	// DB is the singleton SQLite database connection handle
-	DB   *sql.DB
-	lock sync.Mutex
+	DB            *sql.DB
+	lock          sync.Mutex
+	currentDBPath string
 
 	// globalSeq ensures monotonic collision-free unique IDs even across concurrent operations
 	globalSeq uint64
@@ -83,6 +84,8 @@ func InitDB(dbPath string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create dir failed: %w", err)
 	}
+
+	currentDBPath = dbPath
 
 	var err error
 	DB, err = sql.Open("sqlite", dbPath)
@@ -347,7 +350,11 @@ func GetMasterPin() string {
 // Flow: marshals struct to JSON -> executes SQL update.
 func SaveSettings(s Settings) error {
 	if strings.TrimSpace(s.MasterPin) == "" {
-		s.MasterPin = "1234"
+		if existing, err := GetSettings(); err == nil && strings.TrimSpace(existing.MasterPin) != "" {
+			s.MasterPin = existing.MasterPin
+		} else {
+			s.MasterPin = "1234"
+		}
 	}
 	data, err := json.Marshal(s)
 	if err != nil {
@@ -476,16 +483,20 @@ func CreateBill(bill Bill) (Bill, error) {
 	}
 	defer tx.Rollback()
 
-	// Verify stock availability
+	// Verify stock availability by aggregating duplicate SKUs
+	reqQty := make(map[string]float64)
 	for _, it := range bill.Items {
+		reqQty[it.ProductID] += it.Qty
+	}
+	for pid, needed := range reqQty {
 		var curStock float64
 		var name string
-		err := tx.QueryRow("SELECT stock, name_en FROM products WHERE id = ?", it.ProductID).Scan(&curStock, &name)
+		err := tx.QueryRow("SELECT stock, name_en FROM products WHERE id = ?", pid).Scan(&curStock, &name)
 		if err != nil {
-			return bill, fmt.Errorf("item %s not found: %w", it.ProductID, err)
+			return bill, fmt.Errorf("item %s not found: %w", pid, err)
 		}
-		if curStock < it.Qty {
-			return bill, fmt.Errorf("insufficient stock for %s (available: %.0f, requested: %.0f)", name, curStock, it.Qty)
+		if curStock < needed {
+			return bill, fmt.Errorf("insufficient stock for %s (available: %.2f, requested: %.2f)", name, curStock, needed)
 		}
 	}
 
@@ -502,7 +513,7 @@ func CreateBill(bill Bill) (Bill, error) {
 	}
 
 	// Insert bill items & deduct stock
-	for i, it := range bill.Items {
+	for _, it := range bill.Items {
 		_, err = tx.Exec(`INSERT INTO bill_items 
 			(bill_id, product_id, name_en, name_ta, hsn, barcode, qty, price, gst_pct, amount, gst_portion)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -518,8 +529,8 @@ func CreateBill(bill Bill) (Bill, error) {
 			return bill, fmt.Errorf("deduct stock failed: %w", err)
 		}
 
-		// Record stock move with deterministic unique ID per bill item
-		moveID := fmt.Sprintf("sm_%s_%d", bill.ID, i+1)
+		// Record stock move with collision-free unique ID per bill item
+		moveID := GenID("sm_sale")
 		_, err = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref)
 			VALUES (?, ?, ?, 'sale', ?, ?, ?)`,
 			moveID, bill.Date, it.ProductID, -it.Qty, "Bill "+bill.BillNo, bill.ID,
@@ -582,29 +593,33 @@ func UpdateBill(bill Bill) (Bill, error) {
 	}
 	rows.Close()
 
-	// Reverse old stock deductions
-	for i, ir := range oldItems {
+	// Reverse old stock deductions with collision-free IDs
+	for _, ir := range oldItems {
 		_, err = tx.Exec("UPDATE products SET stock = stock + ? WHERE id = ?", ir.qty, ir.pid)
 		if err != nil {
 			return bill, fmt.Errorf("failed to revert old stock: %w", err)
 		}
-		moveID := fmt.Sprintf("sm_rev_%s_%d", bill.ID, i+1)
+		moveID := GenID("sm_rev")
 		_, _ = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref)
 			VALUES (?, date('now'), ?, 'cancel', ?, ?, ?)`,
 			moveID, ir.pid, ir.qty, "Bill Revision "+bill.BillNo, bill.ID,
 		)
 	}
 
-	// 2. Verify stock availability for updated items
+	// 2. Verify stock availability for updated items (aggregating duplicate SKUs)
+	reqQty := make(map[string]float64)
 	for _, it := range bill.Items {
+		reqQty[it.ProductID] += it.Qty
+	}
+	for pid, needed := range reqQty {
 		var curStock float64
 		var name string
-		err := tx.QueryRow("SELECT stock, name_en FROM products WHERE id = ?", it.ProductID).Scan(&curStock, &name)
+		err := tx.QueryRow("SELECT stock, name_en FROM products WHERE id = ?", pid).Scan(&curStock, &name)
 		if err != nil {
-			return bill, fmt.Errorf("item %s not found: %w", it.ProductID, err)
+			return bill, fmt.Errorf("item %s not found: %w", pid, err)
 		}
-		if curStock < it.Qty {
-			return bill, fmt.Errorf("insufficient stock for %s (available: %.0f, requested: %.0f)", name, curStock, it.Qty)
+		if curStock < needed {
+			return bill, fmt.Errorf("insufficient stock for %s (available: %.2f, requested: %.2f)", name, curStock, needed)
 		}
 	}
 
@@ -652,7 +667,7 @@ func UpdateBill(bill Bill) (Bill, error) {
 	}
 
 	// 5. Insert new bill items and apply new stock deductions
-	for i, it := range bill.Items {
+	for _, it := range bill.Items {
 		_, err = tx.Exec(`INSERT INTO bill_items 
 			(bill_id, product_id, name_en, name_ta, hsn, barcode, qty, price, gst_pct, amount, gst_portion)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -668,8 +683,8 @@ func UpdateBill(bill Bill) (Bill, error) {
 			return bill, fmt.Errorf("deduct stock failed: %w", err)
 		}
 
-		// Record stock move
-		moveID := fmt.Sprintf("sm_upd_%s_%d", bill.ID, i+1)
+		// Record stock move with collision-free unique ID
+		moveID := GenID("sm_upd")
 		_, err = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref)
 			VALUES (?, ?, ?, 'sale', ?, ?, ?)`,
 			moveID, bill.Date, it.ProductID, -it.Qty, "Bill Update "+bill.BillNo, bill.ID,
@@ -734,12 +749,12 @@ func CancelBill(id string) error {
 	_ = tx.QueryRow("SELECT bill_no FROM bills WHERE id = ?", id).Scan(&billNo)
 
 	// Restore stock
-	for i, ir := range toRestore {
+	for _, ir := range toRestore {
 		_, err = tx.Exec("UPDATE products SET stock = stock + ? WHERE id = ?", ir.qty, ir.pid)
 		if err != nil {
 			return err
 		}
-		moveID := fmt.Sprintf("sm_c_%s_%d", id, i+1)
+		moveID := GenID("sm_c")
 		_, _ = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref)
 			VALUES (?, date('now'), ?, 'cancel', ?, ?, ?)`,
 			moveID, ir.pid, ir.qty, "Cancelled Bill "+billNo, id,
@@ -774,7 +789,7 @@ func GetBills(from, to string) ([]Bill, error) {
 	if len(conds) > 0 {
 		query += " WHERE " + strings.Join(conds, " AND ")
 	}
-	query += " ORDER BY created_at DESC LIMIT 1000"
+	query += " ORDER BY created_at DESC"
 
 	rows, err := DB.Query(query, args...)
 	if err != nil {
@@ -891,13 +906,21 @@ func GetStockMoves(limit int) ([]StockMove, error) {
 	return list, nil
 }
 
-// SavePurchase inserts a raw material or packaging procurement record.
+// SavePurchase inserts a raw material or packaging procurement record (upsert).
 func SavePurchase(p Purchase) error {
 	if p.ID == "" {
 		p.ID = GenID("pu")
 	}
 	_, err := DB.Exec(`INSERT INTO purchases (id, date, supplier, item, qty, unit, cost, note)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			date = excluded.date,
+			supplier = excluded.supplier,
+			item = excluded.item,
+			qty = excluded.qty,
+			unit = excluded.unit,
+			cost = excluded.cost,
+			note = excluded.note`,
 		p.ID, p.Date, p.Supplier, p.Item, p.Qty, p.Unit, p.Cost, p.Note,
 	)
 	return err
@@ -927,13 +950,18 @@ func DeletePurchase(id string) error {
 	return err
 }
 
-// SaveExpense inserts an operational expenditure record.
+// SaveExpense inserts an operational expenditure record (upsert).
 func SaveExpense(e Expense) error {
 	if e.ID == "" {
 		e.ID = GenID("ex")
 	}
 	_, err := DB.Exec(`INSERT INTO expenses (id, date, head, amount, note)
-		VALUES (?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			date = excluded.date,
+			head = excluded.head,
+			amount = excluded.amount,
+			note = excluded.note`,
 		e.ID, e.Date, e.Head, e.Amount, e.Note,
 	)
 	return err
@@ -1167,4 +1195,95 @@ func RestoreBillsAndMoves(bills []Bill, moves []StockMove) error {
 	}
 
 	return tx.Commit()
+}
+
+// CloseDB safely checkpoints Write-Ahead Logging (WAL) and closes the SQLite database connection.
+func CloseDB() error {
+	lock.Lock()
+	defer lock.Unlock()
+	if DB != nil {
+		_, _ = DB.Exec("PRAGMA wal_checkpoint(TRUNCATE);")
+		err := DB.Close()
+		DB = nil
+		return err
+	}
+	return nil
+}
+
+// AutoDailyBackup creates a non-blocking online snapshot of the database using SQLite's VACUUM INTO.
+// It stores backups in <db_dir>/backups/pos_auto_YYYYMMDD.db and deletes snapshots older than keepDays.
+func AutoDailyBackup(keepDays int) (string, error) {
+	if currentDBPath == "" || DB == nil {
+		return "", fmt.Errorf("database not initialized")
+	}
+
+	backupDir := filepath.Join(filepath.Dir(currentDBPath), "backups")
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return "", fmt.Errorf("create backup dir failed: %w", err)
+	}
+
+	todayStr := time.Now().Format("20060102")
+	targetFile := filepath.Join(backupDir, fmt.Sprintf("pos_auto_%s.db", todayStr))
+
+	// If backup for today already exists, no need to recreate
+	if _, err := os.Stat(targetFile); err == nil {
+		cleanOldBackups(backupDir, keepDays)
+		return targetFile, nil
+	}
+
+	// Lock briefly to issue VACUUM INTO
+	lock.Lock()
+	_, err := DB.Exec("VACUUM INTO ?", targetFile)
+	lock.Unlock()
+
+	if err != nil {
+		return "", fmt.Errorf("vacuum into failed: %w", err)
+	}
+
+	cleanOldBackups(backupDir, keepDays)
+	return targetFile, nil
+}
+
+func cleanOldBackups(backupDir string, keepDays int) {
+	if keepDays <= 0 {
+		keepDays = 14
+	}
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		return
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -keepDays)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "pos_auto_") || !strings.HasSuffix(entry.Name(), ".db") {
+			continue
+		}
+		info, err := entry.Info()
+		if err == nil && info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(backupDir, entry.Name()))
+		}
+	}
+}
+
+// StartAutoBackupScheduler triggers an immediate auto-backup in the background and runs periodically.
+func StartAutoBackupScheduler(stopChan <-chan struct{}) {
+	go func() {
+		// Run once after initial 3-second startup warm up
+		time.Sleep(3 * time.Second)
+		if path, err := AutoDailyBackup(14); err == nil && path != "" {
+			fmt.Printf(" [Safety Backup] Verified auto-snapshot: %s ✓\n", filepath.Base(path))
+		}
+
+		ticker := time.NewTicker(12 * time.Hour)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				_, _ = AutoDailyBackup(14)
+			case <-stopChan:
+				return
+			}
+		}
+	}()
 }

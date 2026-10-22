@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Siraazhi Pro POS — Official User Manual & Operations Guide</title>
+  <style>
+    :root {
+      --primary: #0f172a;
+      --primary-accent: #2563eb;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --bg-page: #f8fafc;
+      --bg-card: #ffffff;
+      --border-color: #e2e8f0;
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-main);
+      background-color: var(--bg-page);
+      line-height: 1.6;
+      font-size: 16px;
+    }
+
+    /* Top Banner Header - Clean White Theme */
+    .top-header {
+      background: #ffffff;
+      color: var(--text-main);
+      padding: 2.75rem 1.5rem 2.25rem;
+      text-align: center;
+      border-bottom: 1px solid var(--border-color);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    .top-header h1 {
+      font-size: 2.1rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #0f172a;
+      margin-bottom: 0.5rem;
+    }
+
+    .top-header p {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      max-width: 820px;
+      margin: 0 auto;
+    }
+
+    .badge-fpc {
+      display: inline-block;
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+      padding: 4px 14px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.85rem;
+    }
+
+    /* Container Layout */
+    .container {
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+
+    /* Sidebar Navigation */
+    .sidebar {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      position: sticky;
+      top: 1rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+      max-height: calc(100vh - 2rem);
+      overflow-y: auto;
+    }
+
+    .sidebar h3 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .sidebar ul {
+      list-style: none;
+    }
+
+    .sidebar li {
+      margin-bottom: 0.35rem;
+    }
+
+    .sidebar a {
+      display: block;
+      color: #475569;
+      text-decoration: none;
+      font-size: 0.9rem;
+      padding: 7px 12px;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .sidebar a:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+      font-weight: 600;
+      padding-left: 16px;
+    }
+
+    /* Main Content */
+    .content {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 2.5rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    }
+
+    .section {
+      margin-bottom: 3.25rem;
+      scroll-margin-top: 1.5rem;
+    }
+
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: #1e293b;
+      margin: 1.5rem 0 0.75rem 0;
+    }
+
+    p {
+      margin-bottom: 1rem;
+      color: #334155;
+    }
+
+    ol, ul {
+      margin-bottom: 1.25rem;
+      padding-left: 1.5rem;
+    }
+
+    li {
+      margin-bottom: 0.5rem;
+      color: #334155;
+    }
+
+    /* Screenshot Cards */
+    .screenshot-card {
+      margin: 1.5rem 0;
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+    }
+
+    .screenshot-card img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .screenshot-caption {
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .screenshot-caption strong {
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    /* Alert Callouts */
+    .callout {
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid var(--primary-accent);
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 1rem 1.25rem;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      margin: 1.5rem 0;
+    }
+
+    .callout.warning {
+      border-color: #fef3c7;
+      border-left-color: #f59e0b;
+      background: #fffbeb;
+      color: #92400e;
+    }
+
+    .callout-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border-color);
+      padding: 0.75rem 1rem;
+      text-align: left;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    tr:nth-child(even) {
+      background-color: #fafbfc;
+    }
+
+    /* Keyboard Shortcut Tag */
+    kbd {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-bottom: 2px solid #94a3b8;
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    /* Print Styles */
+    @media print {
+      body {
+        background: white;
+        font-size: 11pt;
+      }
+      .top-header {
+        background: none;
+        color: black;
+        border-bottom: 1px solid #000;
+        padding: 1rem 0;
+      }
+      .container {
+        display: block;
+        margin: 0;
+        padding: 0;
+        max-width: 100%;
+      }
+      .sidebar {
+        display: none;
+      }
+      .content {
+        border: none;
+        box-shadow: none;
+        padding: 0;
+      }
+      .screenshot-card {
+        page-break-inside: avoid;
+        box-shadow: none;
+        border: 1px solid #ccc;
+      }
+      .section {
+        page-break-inside: auto;
+      }
+      h2 {
+        page-break-after: avoid;
+      }
+    }
+
+    /* Mobile Responsive */
+    @media (max-width: 850px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        position: static;
+        max-height: none;
+      }
+      .content {
+        padding: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Banner Header: Clean White Theme -->
+  <header class="top-header">
+    <div class="badge-fpc">Vanur Farmer Producer Company Limited (VFPC Ltd)</div>
+    <h1>Siraazhi Pro POS — Store User Manual</h1>
+    <p>Operational Guide for Counter Billing, Batch Crushing, Inventory Tracking, Multi-Printer Output & GSTR-1 Tax Filing</p>
+  </header>
+
+  <div class="container">
+    
+    <!-- Quick Table of Contents Sidebar -->
+    <nav class="sidebar">
+      <h3>Manual Chapters</h3>
+      <ul>
+        <li><a href="#overview">1. System Overview</a></li>
+        <li><a href="#ch1">Chapter 1: Dashboard</a></li>
+        <li><a href="#ch2">Chapter 2: Counter Sales</a></li>
+        <li><a href="#ch3">Chapter 3: Hold Bills</a></li>
+        <li><a href="#ch4">Chapter 4: Inventory</a></li>
+        <li><a href="#ch5">Chapter 5: Oil Production</a></li>
+        <li><a href="#ch6">Chapter 6: Purchases</a></li>
+        <li><a href="#ch7">Chapter 7: Expenses</a></li>
+        <li><a href="#ch8">Chapter 8: Invoices Register</a></li>
+        <li><a href="#ch9">Chapter 9: GSTR-1 Reports</a></li>
+        <li><a href="#ch10">Chapter 10: Settings & Printers</a></li>
+        <li><a href="#ch11">Chapter 11: Mobile Wi-Fi Billing</a></li>
+        <li><a href="#ch12">Chapter 12: Safety Backups</a></li>
+        <li><a href="#shortcuts">Appendix: Shortcuts</a></li>
+        <li><a href="#troubleshooting">Troubleshooting FAQ</a></li>
+      </ul>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="content">
+
+      <!-- Section: System Overview -->
+      <section id="overview" class="section">
+        <h2>1. System Overview & Getting Started</h2>
+        <p><strong>Siraazhi Pro POS</strong> is an offline, standalone retail point-of-sale and oil milling management system built specifically for <strong>Vanur Farmer Producer Company Ltd (VFPC)</strong> in Tamil Nadu. It stores all data locally in an embedded SQLite database (<code>data/pos.db</code>) and works 100% offline without needing internet connectivity.</p>
+        
+        <h3>Starting the System Every Morning:</h3>
+        <ol>
+          <li>Turn on your main counter computer.</li>
+          <li>Double-click the <strong>Siraazhi Pro POS</strong> shortcut icon on your Windows desktop.</li>
+          <li>The software launches immediately in a dedicated desktop window on port <code>8080</code> (or your custom port) ready to serve customers.</li>
+          <li><em>Accidentally closed the window?</em> Double-click the desktop icon again—it instantly reconnects to the active server without port conflicts or duplicate processes.</li>
+        </ol>
+      </section>
+
+      <!-- Chapter 1: Dashboard -->
+      <section id="ch1" class="section">
+        <h2>Chapter 1: The Executive Dashboard</h2>
+        <p>The <strong>Dashboard</strong> provides store managers and board members with an immediate snapshot of daily operations.</p>
+        
+        <div class="screenshot-card">
+          <img src="screenshots/01_dashboard.png" alt="Executive Dashboard Screen">
+          <div class="screenshot-caption">
+            <strong>Figure 1.1:</strong> Executive Dashboard showing Today's Revenue, Total Invoices Issued, Total Stock Valuation, and Low Stock Alerts.
+          </div>
+        </div>
+
+        <h3>Key Dashboard Metrics:</h3>
+        <ul>
+          <li><strong>Today's Revenue:</strong> Total cash, UPI, card, and credit sales recorded today.</li>
+          <li><strong>Total Invoices:</strong> Total count of customer transactions completed today.</li>
+          <li><strong>Total Stock Value:</strong> Live total monetary valuation of all cold-pressed oils, seeds, and byproducts currently in your warehouse.</li>
+          <li><strong>Low Stock Warnings:</strong> Real-time alerts displaying products that have reached or fallen below their safety alert threshold.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 2: Counter Sales & Fast Checkout -->
+      <section id="ch2" class="section">
+        <h2>Chapter 2: Counter Sales & Fast Checkout</h2>
+        <p>The <strong>POS Billing</strong> screen is engineered for ultra-fast, queue-busting transactions at the retail cash counter. It is fully bilingual (Tamil & English) so cashiers can instantly identify any oil SKU.</p>
+
+        <div class="screenshot-card">
+          <img src="screenshots/02_pos_billing.png" alt="POS Counter Billing Interface">
+          <div class="screenshot-caption">
+            <strong>Figure 2.1:</strong> POS Counter Billing workspace featuring the bilingual oil catalog, barcode scanner, bill tabs, and active cart.
+          </div>
+        </div>
+
+        <h3>Step-by-Step Checkout Flow:</h3>
+        <ol>
+          <li><strong>Add Items:</strong> Click any product card on the screen, scan a barcode, or press <kbd>F2</kbd> / <kbd>F3</kbd> to type a product name or SKU code.</li>
+          <li><strong>Adjust Quantities:</strong> Use the <strong>[+]</strong> and <strong>[-]</strong> buttons in the cart to set the exact number of bottles or cans.</li>
+          <li><strong>Toggle Invoice Mode (<kbd>F4</kbd>):</strong>
+            <ul>
+              <li><strong>Green ON (GST Tax Invoice):</strong> Prints an official tax invoice with 2.5% CGST + 2.5% SGST breakdown.</li>
+              <li><strong>Gray OFF (Retail Cash Memo):</strong> Prints a simple cash bill with zero tax lines.</li>
+            </ul>
+          </li>
+          <li><strong>Enter Customer Information:</strong> Type customer name and 10-digit mobile number. For registered business buyers, enter their 15-digit GSTIN number.</li>
+          <li><strong>Choose Payment Method:</strong> Cash, UPI / GPay, Card, or Credit.</li>
+        </ol>
+
+        <div class="screenshot-card">
+          <img src="screenshots/03_active_cart.png" alt="Active Cart & Quick Cash Calculator">
+          <div class="screenshot-caption">
+            <strong>Figure 2.2:</strong> Active Cart showing customer details, GST split, Quick Cash buttons (+₹500, +₹1000), and green Change Return calculator.
+          </div>
+        </div>
+
+        <div class="callout">
+          <div class="callout-title">💡 Fast Manual Cash Drawer Handling</div>
+          <p>Since your counter uses a standard manual cash drawer, use the <strong>Quick Cash Buttons</strong> (<code>Exact</code>, <code>+₹100</code>, <code>+₹500</code>, <code>+₹1000</code>) or type the cash handed over by the customer. The green <strong>Change Due</strong> box calculates the exact amount of balance change to return, completely preventing cashier calculation errors.</p>
+        </div>
+
+        <p>Press <kbd>F10</kbd> or click <strong>Print Bill</strong> to complete the sale. The receipt prints immediately on your thermal printer and inventory is automatically deducted.</p>
+      </section>
+
+      <!-- Chapter 3: Hold Bills -->
+      <section id="ch3" class="section">
+        <h2>Chapter 3: Multiple Active Bills (Hold Cart)</h2>
+        <p>If a customer needs to pick up an extra item from the shelf while at the counter, you never need to cancel or clear their cart.</p>
+        <ol>
+          <li>Press <kbd>F8</kbd> (or <kbd>Ctrl + N</kbd>, or click the <strong>[+]</strong> button) at the top of the cart area to open a new tab (<strong>Bill #2</strong>).</li>
+          <li>Serve the next waiting customer and print their receipt.</li>
+          <li>Click back on <strong>Bill #1</strong> when the first customer returns—all their items and customer details are safely preserved!</li>
+        </ol>
+      </section>
+
+      <!-- Chapter 4: Inventory Management -->
+      <section id="ch4" class="section">
+        <h2>Chapter 4: Inventory & Stock Management</h2>
+        <p>The <strong>Inventory</strong> tab provides live visibility over finished oils, raw seeds, and byproduct stock.</p>
+
+        <div class="screenshot-card">
+          <img src="screenshots/04_inventory.png" alt="Inventory & Stock Catalog">
+          <div class="screenshot-caption">
+            <strong>Figure 4.1:</strong> Inventory catalog with stock levels, bilingual titles, color-coded status badges, and quick stock adjustment controls.
+          </div>
+        </div>
+
+        <h3>Verified HSN Codes & GST Rates:</h3>
+        <ul>
+          <li><strong>Groundnut Oil (நிலக்கடலை):</strong> HSN <code>1512</code> — 5% GST (CGST 2.5% + SGST 2.5%)</li>
+          <li><strong>Coconut Oil (தேங்காய்):</strong> HSN <code>1513</code> — 5% GST (CGST 2.5% + SGST 2.5%)</li>
+          <li><strong>Sesame Oil (எள் / நல்லெண்ணெய்):</strong> HSN <code>1515</code> — 5% GST (CGST 2.5% + SGST 2.5%)</li>
+        </ul>
+
+        <h3>Stock Badges:</h3>
+        <ul>
+          <li><span style="color: #059669; font-weight: bold;">Green Badge:</span> Healthy stock available on the shelf.</li>
+          <li><span style="color: #d97706; font-weight: bold;">Orange Badge:</span> Low stock alert—item has reached or fallen below reorder threshold.</li>
+          <li><span style="color: #dc2626; font-weight: bold;">Red Badge:</span> Out of stock—0 bottles available.</li>
+        </ul>
+
+        <h3>Physical Audits & Adjustments:</h3>
+        <p>If an oil bottle breaks or is taken for quality testing, click the <strong>Adjust</strong> button, choose <em>Subtract</em>, type the quantity, and enter a note (e.g., <em>Customer sample tasting</em>). The change is logged into the audit ledger.</p>
+      </section>
+
+      <!-- Chapter 5: Oil Production -->
+      <section id="ch5" class="section">
+        <h2>Chapter 5: Oil Production & Batch Crushing</h2>
+        <p>Traditional wood and stone cold-pressed oil milling requires careful batch logging to track extraction yield.</p>
+
+        <div class="screenshot-card">
+          <img src="screenshots/05_production.png" alt="Batch Oil Crushing Log">
+          <div class="screenshot-caption">
+            <strong>Figure 5.1:</strong> Oil Crushing Batch Log tracking raw seeds crushed (Kg), pure oil yield (Litres), and oilcake byproduct (Kg).
+          </div>
+        </div>
+
+        <h3>Logging a Fresh Milling Batch:</h3>
+        <ol>
+          <li>Click <strong>Production</strong> -> <strong>+ Log New Batch</strong>.</li>
+          <li>Select the raw seed type (e.g., <em>Raw Groundnut Kernels</em>).</li>
+          <li>Enter the input seed weight in Kilograms (e.g., <code>100.00 kg</code>).</li>
+          <li>Enter the filtered pure oil yield in Litres (e.g., <code>42.50 L</code>).</li>
+          <li>Enter the oilcake byproduct weight in Kilograms (e.g., <code>55.00 kg</code>).</li>
+          <li>Click <strong>Save Batch</strong>. Raw seeds are automatically deducted and finished oil and oilcake stocks are immediately credited!</li>
+        </ol>
+      </section>
+
+      <!-- Chapter 6: Purchases -->
+      <section id="ch6" class="section">
+        <h2>Chapter 6: Raw Material Purchases</h2>
+        <p>The <strong>Purchases</strong> tab tracks seed procurement from farmer members and packaging supplies (bottles, caps, tins) from vendors.</p>
+
+        <div class="screenshot-card">
+          <img src="screenshots/06_purchases.png" alt="Raw Material Procurement">
+          <div class="screenshot-caption">
+            <strong>Figure 6.1:</strong> Raw Material Purchases table displaying vendor names, item procurement quantities, rates, and payment methods.
+          </div>
+        </div>
+      </section>
+
+      <!-- Chapter 7: Expenses -->
+      <section id="ch7" class="section">
+        <h2>Chapter 7: Daily Shop Expenses & Overheads</h2>
+        <p>Record daily overheads (labour wages, crushing mill electricity, transport fuel, packaging consumables, tea/refreshments) to accurately calculate net monthly profits.</p>
+
+        <div class="screenshot-card">
+          <img src="screenshots/07_expenses.png" alt="Daily Overheads & Expenses Register">
+          <div class="screenshot-caption">
+            <strong>Figure 7.1:</strong> Operational Expenses register with category classification, payment modes, and expense notes.
+          </div>
+        </div>
+      </section>
+
+      <!-- Chapter 8: Invoices Register -->
+      <section id="ch8" class="section">
+        <h2>Chapter 8: Invoices Register, Reprints & Protected Cancellations</h2>
+        <p>View, search, reprint, or cancel any past transaction from the <strong>Bills / Sales History</strong> tab.</p>
+
+        <div class="screenshot-card">
+          <img src="screenshots/08_sales_history.png" alt="Sales History & Invoices Register">
+          <div class="screenshot-caption">
+            <strong>Figure 8.1:</strong> Sales History table with instant search, reprint formats (80mm/58mm/A4), and Master PIN protected cancellation.
+          </div>
+        </div>
+
+        <div class="callout warning">
+          <div class="callout-title">🔒 Protected Bill Cancellation & Automatic Stock Recovery</div>
+          <p>To prevent unauthorized bill tampering, canceling an invoice strictly requires the <strong>Master PIN (default: 1234)</strong> and a mandatory cancellation reason. When a bill is canceled, all items on that bill are <strong>automatically returned to your live stock</strong>!</p>
+        </div>
+      </section>
+
+      <!-- Chapter 9: GSTR-1 Tax Reports -->
+      <section id="ch9" class="section">
+        <h2>Chapter 9: GST Tax Filing & GSTR-1 Excel Exports</h2>
+        <p>Generate one-click GST tax returns for your Chartered Accountant (CA) without needing manual bookkeeping.</p>
+
+        <div class="screenshot-card">
+          <img src="screenshots/09_reports_gstr1.png" alt="GSTR-1 Tax Report & CA Export">
+          <div class="screenshot-caption">
+            <strong>Figure 9.1:</strong> GSTR-1 Tax Summary table displaying Table 4A (B2B), Table 7 (B2C Small), and Table 12 (HSN Summary).
+          </div>
+        </div>
+
+        <p>Click <strong>Export to Excel (.xlsx)</strong> to download a multi-tab formatted spreadsheet that matches the official GST Portal offline format.</p>
+      </section>
+
+      <!-- Chapter 10: Settings & Printers -->
+      <section id="ch10" class="section">
+        <h2>Chapter 10: Shop Settings & Printer Configuration</h2>
+        <p>Configure company details, FSSAI registration numbers, and multi-format receipt printers.</p>
+
+        <div class="screenshot-card">
+          <img src="screenshots/10_settings.png" alt="Settings & Printer Profiles">
+          <div class="screenshot-caption">
+            <strong>Figure 10.1:</strong> Company profile, legal registration numbers (GSTIN/FSSAI: 12423031000494), bill prefix (VFPC), and printer engine settings.
+          </div>
+        </div>
+
+        <h3>Supported Printer Formats:</h3>
+        <ul>
+          <li><strong>80mm Thermal Receipt (Standard 3-Inch Roll):</strong> Recommended for retail counters.</li>
+          <li><strong>58mm Thermal Receipt (Compact 2-Inch Roll):</strong> Portable mini printer format.</li>
+          <li><strong>A4 Corporate Tax Invoice:</strong> Full-page letterhead format for laser and inkjet printers.</li>
+          <li><strong>A5 Delivery Slip:</strong> Compact half-page delivery note.</li>
+          <li><strong>Direct PDF Generator:</strong> Saves high-resolution PDF receipts for WhatsApp customer sharing.</li>
+        </ul>
+      </section>
+
+      <!-- Chapter 11: Mobile Wi-Fi Billing -->
+      <section id="ch11" class="section">
+        <h2>Chapter 11: Mobile Staff Wi-Fi Billing & Print Queue</h2>
+        <p>Turn any Android phone, iPhone, or iPad into a mobile billing terminal over your shop's Wi-Fi router.</p>
+
+        <div class="screenshot-card">
+          <img src="screenshots/11_mobile_wifi_modal.png" alt="Mobile Wi-Fi QR Code Access">
+          <div class="screenshot-caption">
+            <strong>Figure 11.1:</strong> Mobile / LAN Access modal showing offline QR code and staff connection URL.
+          </div>
+        </div>
+
+        <h3>How Staff Connect Their Phones:</h3>
+        <ol>
+          <li>Connect the phone to the shop Wi-Fi network.</li>
+          <li>Scan the QR code shown on the Master PC screen (e.g., <code>http://192.168.1.3:8080</code>).</li>
+          <li>The mobile billing screen opens in the phone browser. Staff operate in <strong>Restricted Staff Mode</strong> (can only bill items; cannot delete bills or view profit numbers). The business owner can unlock Master Mode on any device using the <strong>Master PIN (1234)</strong>.</li>
+        </ol>
+
+        <div class="screenshot-card">
+          <img src="screenshots/12_print_queue.png" alt="Centralized Print Queue">
+          <div class="screenshot-caption">
+            <strong>Figure 11.2:</strong> Centralized Print Queue spooling print jobs sent from mobile staff terminals directly to the counter printer.
+          </div>
+        </div>
+      </section>
+
+      <!-- Chapter 12: Safety Backups -->
+      <section id="ch12" class="section">
+        <h2>Chapter 12: Automatic Safety Backups & Data Protection</h2>
+        <p>Siraazhi Pro POS automatically creates rolling daily database backups (<code>data/backups/pos_auto_YYYYMMDD.db</code>) every morning and retains the last 14 days of snapshots. To keep an external copy on a USB pendrive:</p>
+        <ol>
+          <li>Plug a USB pendrive into the counter computer.</li>
+          <li>Go to the <strong>Settings</strong> tab and click <strong>Download Database Backup (.db)</strong> or <strong>Download JSON Backup</strong>.</li>
+          <li>Save the file to your pendrive. In case of computer replacement, copying your database file restores your entire store in seconds!</li>
+        </ol>
+      </section>
+
+      <!-- Appendix: Shortcuts -->
+      <section id="shortcuts" class="section">
+        <h2>Appendix A: Keyboard Shortcut Cheat Sheet</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Shortcut Key</th>
+              <th>Action</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><kbd>F2</kbd></td>
+              <td>Focus Barcode / SKU Lookup</td>
+              <td>Moves cursor into search bar for instant typing or scanning.</td>
+            </tr>
+            <tr>
+              <td><kbd>F3</kbd></td>
+              <td>Select & Replace Barcode</td>
+              <td>Highlights existing search text for immediate replacement.</td>
+            </tr>
+            <tr>
+              <td><kbd>F4</kbd></td>
+              <td>Toggle GST Invoice Mode</td>
+              <td>Switches between GST Tax Invoice (with CGST/SGST) and Retail Cash Memo.</td>
+            </tr>
+            <tr>
+              <td><kbd>F8</kbd> or <kbd>Ctrl + N</kbd></td>
+              <td>Add New Bill Tab (Hold Cart)</td>
+              <td>Opens a new transaction tab without clearing the previous customer's cart.</td>
+            </tr>
+            <tr>
+              <td><kbd>F10</kbd></td>
+              <td>Save & Print Bill</td>
+              <td>Finalizes transaction and prints receipt to default printer.</td>
+            </tr>
+            <tr>
+              <td><kbd>Esc</kbd></td>
+              <td>Dismiss Modals / Clear</td>
+              <td>Closes open dialog boxes, customer dropdown, or clears search fields.</td>
+            </tr>
+            <tr>
+              <td><kbd>Ctrl + P</kbd></td>
+              <td>Browser Print</td>
+              <td>Opens standard Windows printer selection dialog.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Appendix: Troubleshooting FAQ -->
+      <section id="troubleshooting" class="section">
+        <h2>Appendix B: Frequently Asked Questions & Troubleshooting</h2>
+        <h3>1. The thermal receipt printer is not printing anything.</h3>
+        <p>Check that the paper roll is inserted correctly with the thermal side facing up, ensure the USB cable is firmly connected, and verify in Windows <em>Printers & Scanners</em> that your thermal printer is set as the default printer.</p>
+        
+        <h3>2. Mobile phone displays "Connection Timed Out" when scanning the QR code.</h3>
+        <p>Ensure that both the computer and the mobile phone are connected to the exact same shop Wi-Fi network (not mobile cellular data). In Windows Defender Firewall, allow port 8080 (or your configured port) for Private Networks.</p>
+
+        <h3>3. What if there is a sudden power cut?</h3>
+        <p>Siraazhi Pro POS uses SQLite WAL (Write-Ahead Logging) storage. Even if power cuts abruptly, the database cannot be corrupted and all completed bills are 100% saved.</p>
+
+        <h3>4. How do I change the Master PIN?</h3>
+        <p>Go to the <strong>Settings</strong> tab on the Master PC, locate the Master PIN field, type your new 4-digit PIN, and click <strong>Save Settings</strong>.</p>
+      </section>
+
+    </main>
+  </div>
+
+  <footer style="text-align: center; padding: 2.5rem 1rem; color: #64748b; font-size: 0.9rem; border-top: 1px solid #e2e8f0; background: #ffffff;">
+    <strong>Vanur Farmer Producer Company Limited (VFPC Ltd)</strong><br>
+    Thailapuram Village, Vanur, Villupuram District, Tamil Nadu — 604102<br>
+    FSSAI Lic. No: 12423031000494 | Helpline & Technical Support: +91 98765 43210
+  </footer>
+
+</body>
+</html>

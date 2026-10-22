@@ -149,6 +149,20 @@ func GetDefaultPrinterName() (string, error) {
 	return syscall.UTF16ToString(buf), nil
 }
 
+// utf16PtrToString safely reads a null-terminated UTF-16 string from a pointer
+func utf16PtrToString(p *uint16) string {
+	if p == nil {
+		return ""
+	}
+	s := unsafe.Slice(p, 512)
+	for i, val := range s {
+		if val == 0 {
+			return syscall.UTF16ToString(s[:i])
+		}
+	}
+	return syscall.UTF16ToString(s)
+}
+
 // GetInstalledPrinters returns the names of all printers configured on this Windows machine using 100% native Win32 EnumPrintersW
 func GetInstalledPrinters() ([]string, error) {
 	flags := uintptr(PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS)
@@ -175,13 +189,11 @@ func GetInstalledPrinters() ([]string, error) {
 			infoSize := unsafe.Sizeof(printerInfo4{})
 			for i := uint32(0); i < returned; i++ {
 				pInfo := (*printerInfo4)(unsafe.Pointer(&buf[uintptr(i)*infoSize]))
-				if pInfo.pPrinterName != nil {
-					name := syscall.UTF16ToString((*[1 << 16]uint16)(unsafe.Pointer(pInfo.pPrinterName))[:])
-					trimmed := strings.TrimSpace(name)
-					if trimmed != "" && !seen[trimmed] {
-						seen[trimmed] = true
-						printers = append(printers, trimmed)
-					}
+				name := utf16PtrToString(pInfo.pPrinterName)
+				trimmed := strings.TrimSpace(name)
+				if trimmed != "" && !seen[trimmed] {
+					seen[trimmed] = true
+					printers = append(printers, trimmed)
 				}
 			}
 		}
@@ -209,13 +221,11 @@ func GetInstalledPrinters() ([]string, error) {
 				infoSize := unsafe.Sizeof(printerInfo2{})
 				for i := uint32(0); i < returned; i++ {
 					pInfo := (*printerInfo2)(unsafe.Pointer(&buf[uintptr(i)*infoSize]))
-					if pInfo.pPrinterName != nil {
-						name := syscall.UTF16ToString((*[1 << 16]uint16)(unsafe.Pointer(pInfo.pPrinterName))[:])
-						trimmed := strings.TrimSpace(name)
-						if trimmed != "" && !seen[trimmed] {
-							seen[trimmed] = true
-							printers = append(printers, trimmed)
-						}
+					name := utf16PtrToString(pInfo.pPrinterName)
+					trimmed := strings.TrimSpace(name)
+					if trimmed != "" && !seen[trimmed] {
+						seen[trimmed] = true
+						printers = append(printers, trimmed)
 					}
 				}
 			}
@@ -322,18 +332,23 @@ func createDevMode(hPrinter uintptr, printerName, paperSize, orientation, colorM
 		return nil
 	}
 
-	// DEVMODEW layout offsets:
-	// dmFields (offset 40, DWORD = 4 bytes)
-	// dmOrientation (offset 44, short = 2 bytes)
-	// dmPaperSize (offset 46, short = 2 bytes)
-	// dmCopies (offset 54, short = 2 bytes)
-	// dmColor (offset 60, short = 2 bytes)
-	if len(devModeBuf) >= 70 {
-		fields := (*uint32)(unsafe.Pointer(&devModeBuf[40]))
-		pOrient := (*int16)(unsafe.Pointer(&devModeBuf[44]))
-		pPaper := (*int16)(unsafe.Pointer(&devModeBuf[46]))
-		pCopies := (*int16)(unsafe.Pointer(&devModeBuf[54]))
-		pColor := (*int16)(unsafe.Pointer(&devModeBuf[60]))
+	// DEVMODEW layout offsets (Unicode):
+	// dmDeviceName: 64 bytes (WCHAR[32], offset 0..63)
+	// dmSpecVersion: offset 64 (WORD = 2 bytes)
+	// dmDriverVersion: offset 66 (WORD = 2 bytes)
+	// dmSize: offset 68 (WORD = 2 bytes)
+	// dmDriverExtra: offset 70 (WORD = 2 bytes)
+	// dmFields: offset 72 (DWORD = 4 bytes)
+	// dmOrientation: offset 76 (short = 2 bytes)
+	// dmPaperSize: offset 78 (short = 2 bytes)
+	// dmCopies: offset 86 (short = 2 bytes)
+	// dmColor: offset 92 (short = 2 bytes)
+	if len(devModeBuf) >= 94 {
+		fields := (*uint32)(unsafe.Pointer(&devModeBuf[72]))
+		pOrient := (*int16)(unsafe.Pointer(&devModeBuf[76]))
+		pPaper := (*int16)(unsafe.Pointer(&devModeBuf[78]))
+		pCopies := (*int16)(unsafe.Pointer(&devModeBuf[86]))
+		pColor := (*int16)(unsafe.Pointer(&devModeBuf[92]))
 
 		*fields |= DM_COPIES
 		if copies < 1 {

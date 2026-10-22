@@ -34,10 +34,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"siraazhi-pos/db"
@@ -47,18 +49,12 @@ import (
 
 func isServerRunning(port int) bool {
 	client := http.Client{
-		Timeout: 400 * time.Millisecond,
+		Timeout: 500 * time.Millisecond,
 	}
 	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/api/settings", port))
 	if err == nil {
 		_ = resp.Body.Close()
 		return resp.StatusCode == http.StatusOK
-	}
-	// Fallback TCP dial check
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 250*time.Millisecond)
-	if err == nil {
-		_ = conn.Close()
-		return true
 	}
 	return false
 }
@@ -109,6 +105,21 @@ func main() {
 	}
 	fmt.Println(" [Database] SQLite tables & indexes verified ✓")
 
+	// Start automated daily backup scheduler (retains last 14 days of snapshots)
+	stopBackup := make(chan struct{})
+	defer close(stopBackup)
+	db.StartAutoBackupScheduler(stopBackup)
+
+	// Graceful shutdown: flush WAL and cleanly close database on exit
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\n [System] Gracefully flushing database WAL and shutting down...")
+		_ = db.CloseDB()
+		os.Exit(0)
+	}()
+
 	// 4. Configure HTTP Router
 	mux := http.NewServeMux()
 
@@ -133,6 +144,7 @@ func main() {
 	mux.HandleFunc("/api/expenses/", handlers.HandleExpenseDelete)
 
 	mux.HandleFunc("/api/settings", handlers.HandleSettings)
+	mux.HandleFunc("/api/auth/verify", handlers.HandleAuthVerify)
 	mux.HandleFunc("/api/dashboard", handlers.HandleDashboard)
 	mux.HandleFunc("/api/reports/gstr1", handlers.HandleGSTR1Report)
 

@@ -1,5 +1,9 @@
+//go:build installer
+// +build installer
+
 /* ==========================================================================
    Siraazhi Pro POS — Official Self-Extracting Windows Setup Installer
+
    
    WHAT IT IS:
      A single standalone Windows installer (.exe) that users run:

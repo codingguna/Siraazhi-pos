@@ -161,6 +161,9 @@ func HandleSettings(w http.ResponseWriter, r *http.Request) {
 			ErrorJSON(w, http.StatusInternalServerError, "Failed to fetch settings: "+err.Error())
 			return
 		}
+		if !HasMasterAuth(r) {
+			s.MasterPin = ""
+		}
 		JSON(w, http.StatusOK, s)
 
 	case http.MethodPut, http.MethodPost:
@@ -169,9 +172,19 @@ func HandleSettings(w http.ResponseWriter, r *http.Request) {
 			ErrorJSON(w, http.StatusBadRequest, "Invalid settings data")
 			return
 		}
+		if !HasMasterAuth(r) {
+			// Remote clients without master PIN cannot overwrite master PIN
+			existing, err := db.GetSettings()
+			if err == nil {
+				s.MasterPin = existing.MasterPin
+			}
+		}
 		if err := db.SaveSettings(s); err != nil {
 			ErrorJSON(w, http.StatusInternalServerError, "Failed to save settings: "+err.Error())
 			return
+		}
+		if !HasMasterAuth(r) {
+			s.MasterPin = ""
 		}
 		JSON(w, http.StatusOK, s)
 
