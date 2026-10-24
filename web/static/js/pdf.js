@@ -206,38 +206,139 @@ const PDFEngine = {
   },
 
   /**
-   * saveBillPDF generates a standalone vector invoice ready for saving as PDF or sharing.
-   * Flow: constructs document title -> opens preview window or in-page fallback -> triggers print.
+   * get80mmStyles returns complete self-contained styles for vector 80mm thermal receipts.
    */
-  saveBillPDF(bill, settings) {
+  get80mmStyles() {
+    return `
+      @page {
+        size: 80mm auto;
+        margin: 2mm 3mm;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        background: #fff;
+        color: #000;
+        font-family: 'Segoe UI', 'Nirmala UI', Arial, sans-serif;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .print-container {
+        display: block !important;
+        visibility: visible !important;
+        width: 100%;
+        margin: 0 auto;
+        padding: 0;
+      }
+      .receipt-80mm {
+        width: 72mm;
+        max-width: 72mm;
+        margin: 0 auto;
+        padding: 2mm 0;
+        font-family: 'Segoe UI', 'Nirmala UI', Arial, sans-serif;
+        font-size: 11px;
+        line-height: 1.25;
+        color: #000;
+      }
+      .receipt-80mm .center { text-align: center; }
+      .receipt-80mm .right { text-align: right; }
+      .receipt-80mm .left { text-align: left; }
+      .receipt-80mm .bold { font-weight: bold; }
+      .receipt-80mm .header-title { font-size: 13.5px; font-weight: 900; }
+      .receipt-80mm .header-sub { font-size: 9.5px; margin: 2px 0; }
+      .receipt-80mm .dashed-line { border-top: 1px dashed #000; margin: 4px 0; }
+      .receipt-80mm table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+      .receipt-80mm th, .receipt-80mm td { padding: 2px 0; vertical-align: top; }
+      .receipt-80mm .grand-total-box {
+        font-size: 14px;
+        font-weight: bold;
+        border-top: 1px dashed #000;
+        border-bottom: 1px dashed #000;
+        padding: 4px 0;
+        margin: 4px 0;
+      }
+      .pdf-actions-bar {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        display: flex;
+        gap: 8px;
+        z-index: 1000;
+      }
+      .pdf-btn {
+        background: #1b5e20;
+        color: #fff;
+        padding: 6px 14px;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+        border: none;
+        font-size: 12px;
+      }
+      .pdf-btn:hover {
+        background: #2e7d32;
+      }
+      @media print {
+        .pdf-actions-bar,
+        .pdf-btn {
+          display: none !important;
+          visibility: hidden !important;
+        }
+      }
+    `;
+  },
+
+  /**
+   * saveBillPDF generates a standalone vector invoice ready for saving as PDF or sharing.
+   * Supports both '80mm' (bill1) and 'a4' (bill2) templates.
+   */
+  saveBillPDF(bill, format, settings) {
     if (!bill) {
       alert('No bill data available.');
       return;
     }
 
-    const s = settings || {};
+    // Support flexible signature: saveBillPDF(bill, settings) or saveBillPDF(bill, format, settings)
+    let effFormat = format;
+    let s = settings;
+    if (typeof format === 'object' && format !== null && typeof settings === 'undefined') {
+      s = format;
+      effFormat = (s && (s.paperSize || s.defaultPrinter)) || 'a4';
+    }
+    s = s || {};
+    if (!effFormat || effFormat === 'default') {
+      effFormat = s.defaultPrinter || s.paperSize || 'a4';
+    }
+    if (effFormat !== '80mm' && effFormat !== '58mm') {
+      effFormat = 'a4';
+    }
+
     const cust = (bill && bill.customer) || {};
     const cleanBillNo = (bill.billNo || 'INVOICE').replace(/[\/\\]/g, '_');
     const cleanCustomer = (cust.name || 'Walkin').replace(/\s+/g, '_');
-    const pdfTitle = `Invoice_${cleanBillNo}_${cleanCustomer}`;
+    const prefix = effFormat === '80mm' ? 'Receipt' : 'Invoice';
+    const pdfTitle = `${prefix}_${cleanBillNo}_${cleanCustomer}`;
 
-    const invoiceHtml = PrintEngine.renderA4(bill, s);
+    const invoiceHtml = effFormat === '80mm' ? PrintEngine.render80mm(bill, s) : PrintEngine.renderA4(bill, s);
+    const styles = effFormat === '80mm' ? this.get80mmStyles() : this.getA4Styles();
+    const windowGeometry = effFormat === '80mm' ? 'width=460,height=780' : 'width=880,height=920';
 
     // Try opening dedicated printable preview window
     let win = null;
     try {
-      win = window.open('', '_blank', 'width=880,height=920');
+      win = window.open('', '_blank', windowGeometry);
     } catch (e) {
       win = null;
     }
 
     // Check if pop-up was blocked or not allowed in current webview/app mode
     if (!win || win.closed || typeof win.document === 'undefined') {
-      // Seamless Fallback: Print directly using the main window's #printContainer
-      // so the user ALWAYS gets the PDF save dialog, even if pop-ups are blocked!
       const originalTitle = document.title;
       document.title = pdfTitle;
-      PrintEngine.print(bill, 'a4', s);
+      PrintEngine.print(bill, effFormat, s);
       setTimeout(() => {
         document.title = originalTitle;
       }, 3000);
@@ -253,7 +354,7 @@ const PDFEngine = {
         <meta charset="utf-8">
         <title>${pdfTitle}</title>
         <style>
-          ${this.getA4Styles()}
+          ${styles}
         </style>
       </head>
       <body>
@@ -261,7 +362,7 @@ const PDFEngine = {
           <button class="pdf-btn" onclick="window.print()">📥 Click to Save as PDF / Print</button>
           <button class="pdf-btn" style="background:#555;" onclick="window.close()">✕ Close</button>
         </div>
-        <div id="printContainer" class="print-container invoice-pdf-container">
+        <div id="printContainer" class="print-container">
           ${invoiceHtml}
         </div>
         <script>

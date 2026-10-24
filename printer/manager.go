@@ -137,13 +137,16 @@ func PrintBillToHardware(bill *db.Bill, format string, s *db.Settings) PrintResu
 			}
 		}
 	} else {
-		// 2. Standard Office / Desktop Printer (A4 / A5 Sheet — HP Smart Tank, LaserJet, Inkjet)
-		paperSize := s.PaperSize
-		if effectiveFormat == "a4" || effectiveFormat == "a5" || effectiveFormat == "letter" {
-			paperSize = effectiveFormat
+		// 2. Standard Office / Desktop Printer (HP Smart Tank, LaserJet, Inkjet, Microsoft Print to PDF)
+		paperSize := effectiveFormat
+		if paperSize == "" || paperSize == "default" {
+			paperSize = s.PaperSize
+			if paperSize == "" {
+				paperSize = s.DefaultPrinter
+			}
 		}
-		if paperSize == "" || paperSize == "80mm" || paperSize == "58mm" {
-			paperSize = "a4" // Default A4 sheet for desktop printers
+		if paperSize == "" {
+			paperSize = "80mm"
 		}
 
 		orientation := s.Orientation
@@ -156,8 +159,7 @@ func PrintBillToHardware(bill *db.Bill, format string, s *db.Settings) PrintResu
 			colorMode = "color"
 		}
 
-		docText := BuildDocumentText(bill, s, paperSize)
-		primaryErr = PrintDocumentWin32(targetPrinter, docName, docText, paperSize, orientation, colorMode, copies)
+		primaryErr = PrintBillGDI(targetPrinter, docName, bill, s, paperSize, orientation, colorMode, copies)
 	}
 
 	if primaryErr != nil {
@@ -207,11 +209,10 @@ func PrintBillToHardware(bill *db.Bill, format string, s *db.Settings) PrintResu
 				}
 			} else {
 				secPaper := s.SecondaryPaperSize
-				if secPaper == "" || secPaper == "80mm" || secPaper == "58mm" {
-					secPaper = "a4"
+				if secPaper == "" {
+					secPaper = "80mm"
 				}
-				secDocText := BuildDocumentText(bill, s, secPaper)
-				secErr = PrintDocumentWin32(s.SecondaryPrinterTarget, docName+"_Copy", secDocText, secPaper, "portrait", "color", 1)
+				secErr = PrintBillGDI(s.SecondaryPrinterTarget, docName+"_Copy", bill, s, secPaper, "portrait", "color", 1)
 			}
 			if secErr != nil {
 				log.Printf("[Printer] Secondary print failed on %q: %v", s.SecondaryPrinterTarget, secErr)
@@ -278,9 +279,9 @@ func PrintTestSlip(intf, target string, port int, paperSize, orientation, colorM
 		return SendRawToSpooler(target, "POS_Test_Slip", testData)
 	}
 
-	// Standard Office / Desktop Printer (HP Smart Tank, LaserJet, Inkjet, A4/A5)
-	if paperSize == "" || paperSize == "80mm" || paperSize == "58mm" {
-		paperSize = "a4" // Default to A4 for desktop printers
+	// Standard Office / Desktop Printer (HP Smart Tank, LaserJet, Inkjet, Microsoft Print to PDF)
+	if paperSize == "" {
+		paperSize = "80mm"
 	}
 	if orientation == "" {
 		orientation = "portrait"
@@ -289,7 +290,6 @@ func PrintTestSlip(intf, target string, port int, paperSize, orientation, colorM
 		colorMode = "color"
 	}
 
-	docText := BuildTestDocumentText(target, paperSize, orientation, colorMode, s)
-	return PrintDocumentWin32(target, "Siraazhi POS Test Slip", docText, paperSize, orientation, colorMode, 1)
+	return PrintTestSlipGDI(target, paperSize, orientation, colorMode, s)
 }
 

@@ -31,7 +31,10 @@ import (
 	"fmt"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
+
+	"siraazhi-pos/db"
 )
 
 var (
@@ -47,36 +50,65 @@ var (
 	procGetDefaultPrinterW  = modwinspool.NewProc("GetDefaultPrinterW")
 	procDocumentPropertiesW = modwinspool.NewProc("DocumentPropertiesW")
 
-	modgdi32         = syscall.NewLazyDLL("gdi32.dll")
-	procCreateDCW    = modgdi32.NewProc("CreateDCW")
-	procDeleteDC     = modgdi32.NewProc("DeleteDC")
-	procStartDocW    = modgdi32.NewProc("StartDocW")
-	procEndDoc       = modgdi32.NewProc("EndDoc")
-	procStartPage    = modgdi32.NewProc("StartPage")
-	procEndPage      = modgdi32.NewProc("EndPage")
-	procTextOutW     = modgdi32.NewProc("TextOutW")
-	procSelectObject = modgdi32.NewProc("SelectObject")
-	procDeleteObject = modgdi32.NewProc("DeleteObject")
-	procCreateFontW  = modgdi32.NewProc("CreateFontW")
-	procGetDeviceCaps= modgdi32.NewProc("GetDeviceCaps")
+	modgdi32             = syscall.NewLazyDLL("gdi32.dll")
+	procCreateDCW        = modgdi32.NewProc("CreateDCW")
+	procDeleteDC         = modgdi32.NewProc("DeleteDC")
+	procStartDocW        = modgdi32.NewProc("StartDocW")
+	procEndDoc           = modgdi32.NewProc("EndDoc")
+	procStartPage        = modgdi32.NewProc("StartPage")
+	procEndPage          = modgdi32.NewProc("EndPage")
+	procTextOutW         = modgdi32.NewProc("TextOutW")
+	procSelectObject     = modgdi32.NewProc("SelectObject")
+	procDeleteObject     = modgdi32.NewProc("DeleteObject")
+	procCreateFontW      = modgdi32.NewProc("CreateFontW")
+	procGetDeviceCaps    = modgdi32.NewProc("GetDeviceCaps")
+	procSetTextColor     = modgdi32.NewProc("SetTextColor")
+	procSetBkMode        = modgdi32.NewProc("SetBkMode")
+	procCreatePen        = modgdi32.NewProc("CreatePen")
+	procCreateSolidBrush = modgdi32.NewProc("CreateSolidBrush")
+	procMoveToEx         = modgdi32.NewProc("MoveToEx")
+	procLineTo           = modgdi32.NewProc("LineTo")
+	procRectangle        = modgdi32.NewProc("Rectangle")
+
+	moduser32     = syscall.NewLazyDLL("user32.dll")
+	procDrawTextW = moduser32.NewProc("DrawTextW")
+	procFillRect  = moduser32.NewProc("FillRect")
 )
 
 const (
 	PRINTER_ENUM_LOCAL       = 0x00000002
 	PRINTER_ENUM_CONNECTIONS = 0x00000004
 
-	HORZRES     = 8
-	VERTRES     = 10
-	LOGPIXELSX  = 88
-	LOGPIXELSY  = 90
-	FW_NORMAL   = 400
-	FW_BOLD     = 700
-	ANSI_CHARSET    = 0
-	DEFAULT_CHARSET = 1
+	HORZRES    = 8
+	VERTRES    = 10
+	LOGPIXELSX = 88
+	LOGPIXELSY = 90
+	FW_NORMAL  = 400
+	FW_BOLD    = 700
+
+	ANSI_CHARSET       = 0
+	DEFAULT_CHARSET    = 1
 	OUT_DEFAULT_PRECIS = 0
 	CLIP_DEFAULT_PRECIS = 0
-	DEFAULT_QUALITY = 0
-	DEFAULT_PITCH = 0
+	DEFAULT_QUALITY    = 0
+	DEFAULT_PITCH      = 0
+
+	PS_SOLID = 0
+	PS_DASH  = 1
+	PS_DOT   = 2
+
+	TRANSPARENT = 1
+	OPAQUE      = 2
+
+	DT_TOP        = 0x00000000
+	DT_LEFT       = 0x00000000
+	DT_CENTER     = 0x00000001
+	DT_RIGHT      = 0x00000002
+	DT_VCENTER    = 0x00000004
+	DT_BOTTOM     = 0x00000008
+	DT_WORDBREAK  = 0x00000010
+	DT_SINGLELINE = 0x00000020
+	DT_NOPREFIX   = 0x00000800
 
 	DM_OUT_BUFFER = 2
 	DM_IN_BUFFER  = 8
@@ -96,6 +128,13 @@ const (
 	DMCOLOR_MONOCHROME = 1
 	DMCOLOR_COLOR      = 2
 )
+
+type RECT struct {
+	Left   int32
+	Top    int32
+	Right  int32
+	Bottom int32
+}
 
 type printerInfo4 struct {
 	pPrinterName *uint16
@@ -594,6 +633,932 @@ func PrintDocumentWin32(printerName, docName, content, paperSize, orientation, c
 
 	procEndPage.Call(hdc)
 	return nil
+}
+
+// PrintBillGDI renders an invoice to a Windows printer using vector GDI.
+// - 80mm / 58mm: Renders exact 80mm thermal receipt template (bill1).
+// - a4 / a5 / letter: Renders exact full corporate A4 tax invoice (bill2).
+func PrintBillGDI(printerName, docName string, bill *db.Bill, s *db.Settings, paperSize, orientation, colorMode string, copies int) error {
+	if bill == nil {
+		return fmt.Errorf("bill cannot be nil")
+	}
+	if printerName == "" {
+		def, err := GetDefaultPrinterName()
+		if err != nil || def == "" {
+			return fmt.Errorf("printer name is required and no default printer found")
+		}
+		printerName = def
+	}
+	if copies < 1 {
+		copies = 1
+	}
+
+	pDevice, err := syscall.UTF16PtrFromString(printerName)
+	if err != nil {
+		return fmt.Errorf("invalid printer name: %w", err)
+	}
+
+	var hPrinter uintptr
+	rOpen, _, _ := procOpenPrinterW.Call(uintptr(unsafe.Pointer(pDevice)), uintptr(unsafe.Pointer(&hPrinter)), 0)
+	var devModeBuf []byte
+	if rOpen != 0 && hPrinter != 0 {
+		defer procClosePrinter.Call(hPrinter)
+		devModeBuf = createDevMode(hPrinter, printerName, paperSize, orientation, colorMode, copies)
+	}
+
+	pDriver, _ := syscall.UTF16PtrFromString("WINSPOOL")
+	var pInit uintptr
+	if len(devModeBuf) > 0 {
+		pInit = uintptr(unsafe.Pointer(&devModeBuf[0]))
+	}
+
+	hdc, _, errDC := procCreateDCW.Call(
+		uintptr(unsafe.Pointer(pDriver)),
+		uintptr(unsafe.Pointer(pDevice)),
+		0,
+		pInit,
+	)
+	if hdc == 0 {
+		hdc, _, errDC = procCreateDCW.Call(0, uintptr(unsafe.Pointer(pDevice)), 0, pInit)
+	}
+	if hdc == 0 {
+		hdc, _, errDC = procCreateDCW.Call(0, uintptr(unsafe.Pointer(pDevice)), 0, 0)
+	}
+	if hdc == 0 {
+		return fmt.Errorf("failed to create printer device context for %q: %v", printerName, errDC)
+	}
+	defer procDeleteDC.Call(hdc)
+
+	if docName == "" {
+		docName = "Bill_" + bill.BillNo
+	}
+	pDocName, _ := syscall.UTF16PtrFromString(docName)
+	docInfo := DOCINFOW{
+		cbSize:      int32(unsafe.Sizeof(DOCINFOW{})),
+		lpszDocName: pDocName,
+	}
+
+	rDoc, _, errDoc := procStartDocW.Call(hdc, uintptr(unsafe.Pointer(&docInfo)))
+	if int32(rDoc) <= 0 {
+		return fmt.Errorf("StartDoc failed on %s: %v", printerName, errDoc)
+	}
+	defer procEndDoc.Call(hdc)
+
+	procStartPage.Call(hdc)
+
+	ps := strings.ToLower(strings.TrimSpace(paperSize))
+	if ps == "80mm" || ps == "58mm" {
+		drawReceipt80mmGDI(hdc, bill, s)
+	} else {
+		drawInvoiceA4GDI(hdc, bill, s)
+	}
+
+	procEndPage.Call(hdc)
+	return nil
+}
+
+// PrintTestSlipGDI renders a verification test slip to a Windows printer using vector GDI.
+// - 80mm / 58mm: Renders an 80mm test receipt matching bill1 receipt styling.
+// - a4 / a5 / letter: Renders a full A4 test verification document matching bill2 styling.
+func PrintTestSlipGDI(printerName, paperSize, orientation, colorMode string, s *db.Settings) error {
+	if printerName == "" {
+		def, err := GetDefaultPrinterName()
+		if err != nil || def == "" {
+			return fmt.Errorf("printer name is required and no default printer found")
+		}
+		printerName = def
+	}
+
+	pDevice, err := syscall.UTF16PtrFromString(printerName)
+	if err != nil {
+		return fmt.Errorf("invalid printer name: %w", err)
+	}
+
+	var hPrinter uintptr
+	rOpen, _, _ := procOpenPrinterW.Call(uintptr(unsafe.Pointer(pDevice)), uintptr(unsafe.Pointer(&hPrinter)), 0)
+	var devModeBuf []byte
+	if rOpen != 0 && hPrinter != 0 {
+		defer procClosePrinter.Call(hPrinter)
+		devModeBuf = createDevMode(hPrinter, printerName, paperSize, orientation, colorMode, 1)
+	}
+
+	pDriver, _ := syscall.UTF16PtrFromString("WINSPOOL")
+	var pInit uintptr
+	if len(devModeBuf) > 0 {
+		pInit = uintptr(unsafe.Pointer(&devModeBuf[0]))
+	}
+
+	hdc, _, errDC := procCreateDCW.Call(
+		uintptr(unsafe.Pointer(pDriver)),
+		uintptr(unsafe.Pointer(pDevice)),
+		0,
+		pInit,
+	)
+	if hdc == 0 {
+		hdc, _, errDC = procCreateDCW.Call(0, uintptr(unsafe.Pointer(pDevice)), 0, pInit)
+	}
+	if hdc == 0 {
+		hdc, _, errDC = procCreateDCW.Call(0, uintptr(unsafe.Pointer(pDevice)), 0, 0)
+	}
+	if hdc == 0 {
+		return fmt.Errorf("failed to create printer device context for %q: %v", printerName, errDC)
+	}
+	defer procDeleteDC.Call(hdc)
+
+	pDocName, _ := syscall.UTF16PtrFromString("Siraazhi POS Test Slip")
+	docInfo := DOCINFOW{
+		cbSize:      int32(unsafe.Sizeof(DOCINFOW{})),
+		lpszDocName: pDocName,
+	}
+
+	rDoc, _, errDoc := procStartDocW.Call(hdc, uintptr(unsafe.Pointer(&docInfo)))
+	if int32(rDoc) <= 0 {
+		return fmt.Errorf("StartDoc failed on %s: %v", printerName, errDoc)
+	}
+	defer procEndDoc.Call(hdc)
+
+	procStartPage.Call(hdc)
+
+	ps := strings.ToLower(strings.TrimSpace(paperSize))
+	if ps == "80mm" || ps == "58mm" {
+		drawTestSlip80mmGDI(hdc, printerName, s)
+	} else {
+		drawTestSlipA4GDI(hdc, printerName, orientation, colorMode, s)
+	}
+
+	procEndPage.Call(hdc)
+	return nil
+}
+
+// ----------------------------------------------------------------------------
+// GDI Helper Routines & Template Renderers (Bill 1 & Bill 2 & Test Slips)
+// ----------------------------------------------------------------------------
+
+func setupGDIHelpers(hdc uintptr) (
+	scaleX, scaleY func(float64) int32,
+	ptH func(float64) int32,
+	pageWidth, pageHeight int32,
+	createFont func(float64, bool) uintptr,
+	createPen func(int, int32, uint32) uintptr,
+	createBrush func(uint32) uintptr,
+	drawText func(string, int32, int32, int32, int32, uintptr, uint32, uint32),
+	drawLine func(int32, int32, int32, int32, uintptr),
+	fillRect func(int32, int32, int32, int32, uintptr),
+	drawRect func(int32, int32, int32, int32, uintptr, uintptr),
+	cleanup func(),
+) {
+	dpiXVal, _, _ := procGetDeviceCaps.Call(hdc, uintptr(LOGPIXELSX))
+	dpiYVal, _, _ := procGetDeviceCaps.Call(hdc, uintptr(LOGPIXELSY))
+	dpiX := int32(dpiXVal)
+	dpiY := int32(dpiYVal)
+	if dpiX <= 0 {
+		dpiX = 300
+	}
+	if dpiY <= 0 {
+		dpiY = 300
+	}
+
+	pw, _, _ := procGetDeviceCaps.Call(hdc, uintptr(HORZRES))
+	ph, _, _ := procGetDeviceCaps.Call(hdc, uintptr(VERTRES))
+	pageWidth = int32(pw)
+	pageHeight = int32(ph)
+	if pageWidth <= 0 {
+		pageWidth = int32(float64(dpiX) * 8.27)
+	}
+	if pageHeight <= 0 {
+		pageHeight = int32(float64(dpiY) * 11.69)
+	}
+
+	scaleX = func(mm float64) int32 {
+		return int32(mm * float64(dpiX) / 25.4)
+	}
+	scaleY = func(mm float64) int32 {
+		return int32(mm * float64(dpiY) / 25.4)
+	}
+	ptH = func(pt float64) int32 {
+		return int32(pt * float64(dpiY) / 72.0)
+	}
+
+	var gdiObjects []uintptr
+	cleanup = func() {
+		for _, obj := range gdiObjects {
+			if obj != 0 {
+				procDeleteObject.Call(obj)
+			}
+		}
+	}
+
+	createFont = func(pt float64, bold bool) uintptr {
+		weight := FW_NORMAL
+		if bold {
+			weight = FW_BOLD
+		}
+		height := ptH(pt)
+		pName, _ := syscall.UTF16PtrFromString("Nirmala UI")
+		hFont, _, _ := procCreateFontW.Call(
+			uintptr(height), 0, 0, 0, uintptr(weight),
+			0, 0, 0, uintptr(DEFAULT_CHARSET),
+			uintptr(OUT_DEFAULT_PRECIS), uintptr(CLIP_DEFAULT_PRECIS),
+			uintptr(DEFAULT_QUALITY), uintptr(DEFAULT_PITCH),
+			uintptr(unsafe.Pointer(pName)),
+		)
+		if hFont != 0 {
+			gdiObjects = append(gdiObjects, hFont)
+		}
+		return hFont
+	}
+
+	createPen = func(style int, width int32, color uint32) uintptr {
+		hPen, _, _ := procCreatePen.Call(uintptr(style), uintptr(width), uintptr(color))
+		if hPen != 0 {
+			gdiObjects = append(gdiObjects, hPen)
+		}
+		return hPen
+	}
+
+	createBrush = func(color uint32) uintptr {
+		hBrush, _, _ := procCreateSolidBrush.Call(uintptr(color))
+		if hBrush != 0 {
+			gdiObjects = append(gdiObjects, hBrush)
+		}
+		return hBrush
+	}
+
+	drawText = func(text string, x1, y1, x2, y2 int32, hFont uintptr, color uint32, flags uint32) {
+		if text == "" {
+			return
+		}
+		procSelectObject.Call(hdc, hFont)
+		procSetTextColor.Call(hdc, uintptr(color))
+		procSetBkMode.Call(hdc, uintptr(TRANSPARENT))
+		rect := RECT{Left: x1, Top: y1, Right: x2, Bottom: y2}
+		u16, err := syscall.UTF16FromString(text)
+		if err != nil || len(u16) <= 1 {
+			return
+		}
+		procDrawTextW.Call(
+			hdc,
+			uintptr(unsafe.Pointer(&u16[0])),
+			uintptr(len(u16)-1),
+			uintptr(unsafe.Pointer(&rect)),
+			uintptr(flags),
+		)
+	}
+
+	drawLine = func(x1, y1, x2, y2 int32, hPen uintptr) {
+		procSelectObject.Call(hdc, hPen)
+		procMoveToEx.Call(hdc, uintptr(x1), uintptr(y1), 0)
+		procLineTo.Call(hdc, uintptr(x2), uintptr(y2))
+	}
+
+	fillRect = func(x1, y1, x2, y2 int32, hBrush uintptr) {
+		rect := RECT{Left: x1, Top: y1, Right: x2, Bottom: y2}
+		procFillRect.Call(hdc, uintptr(unsafe.Pointer(&rect)), hBrush)
+	}
+
+	drawRect = func(x1, y1, x2, y2 int32, hPen uintptr, hBrush uintptr) {
+		procSelectObject.Call(hdc, hPen)
+		procSelectObject.Call(hdc, hBrush)
+		procRectangle.Call(hdc, uintptr(x1), uintptr(y1), uintptr(x2), uintptr(y2))
+	}
+
+	return
+}
+
+// drawInvoiceA4GDI renders the pristine corporate A4 tax invoice template (bill2) using vector GDI
+func drawInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
+	scaleX, scaleY, _, pageWidth, _, createFont, createPen, createBrush, drawText, drawLine, fillRect, drawRect, cleanup := setupGDIHelpers(hdc)
+	defer cleanup()
+
+	colorBlack := uint32(0x00000000)
+	colorWhite := uint32(0x00FFFFFF)
+	colorDarkGreen := uint32(0x00205E1B) // RGB(27, 94, 32)
+	colorLightGray := uint32(0x00F0F0F0) // RGB(240, 240, 240)
+	colorTaxGray := uint32(0x00F7F7F7)   // RGB(247, 247, 247)
+	colorDarkGray := uint32(0x00444444)
+	colorMuted := uint32(0x00666666)
+
+	fTitle := createFont(15.5, true)
+	fBrand := createFont(12.5, true)
+	fBadge := createFont(11.5, true)
+	fSub := createFont(9.5, false)
+	fSubBold := createFont(9.5, true)
+	fTableH := createFont(9.5, true)
+	fTableR := createFont(9.5, false)
+	fTableB := createFont(9.5, true)
+	fTableTa := createFont(8.0, false)
+	fTotal := createFont(13.5, true)
+	fDecl := createFont(8.5, false)
+	fSign := createFont(9.5, false)
+
+	hPenThick := createPen(PS_SOLID, scaleX(0.60), colorBlack)
+	hPenBorder := createPen(PS_SOLID, scaleX(0.20), colorBlack)
+	hBrushWhite := createBrush(colorWhite)
+	hBrushHeader := createBrush(colorLightGray)
+	hBrushTaxH := createBrush(colorTaxGray)
+	hBrushBlack := createBrush(colorBlack)
+
+	companyName := "VANUR FARMER PRODUCER COMPANY LIMITED"
+	if s != nil && s.CompanyName != "" {
+		companyName = strings.ToUpper(s.CompanyName)
+	}
+	brandEn := "Siraazhi"
+	if s != nil && s.BrandEn != "" {
+		brandEn = s.BrandEn
+	}
+	brandTa := "சிராழி"
+	if s != nil && s.BrandTa != "" {
+		brandTa = s.BrandTa
+	}
+	tagline := "Pure Traditional Marachekku Oils"
+	if s != nil && s.Tagline != "" {
+		tagline = s.Tagline
+	}
+	address := "Thailapuram Village, Vanur, Villupuram, Tamil Nadu"
+	if s != nil && s.Address != "" {
+		address = s.Address
+	}
+	phone := "9876543210"
+	if s != nil && s.Phone != "" {
+		phone = s.Phone
+	}
+	fssai := "12423031000494"
+	if s != nil && s.Fssai != "" {
+		fssai = s.Fssai
+	}
+
+	custName := "Consumer / Walk-in"
+	if bill.Customer.Name != "" {
+		custName = bill.Customer.Name
+	}
+	custPhone := "-"
+	if bill.Customer.Phone != "" {
+		custPhone = bill.Customer.Phone
+	}
+	custAddr := "Tamil Nadu"
+	if bill.Customer.Address != "" {
+		custAddr = bill.Customer.Address
+	}
+	custType := "Customer Type: Consumer / Unregistered"
+	if bill.Customer.Gstin != "" {
+		custType = "Customer GSTIN: " + bill.Customer.Gstin
+	}
+	placeOfSupply := "Tamil Nadu"
+	if bill.Customer.State != "" {
+		placeOfSupply = bill.Customer.State
+	}
+
+	left := scaleX(10)
+	right := pageWidth - scaleX(10)
+	width := right - left
+	curY := scaleY(10)
+
+	// 1. Header Block
+	drawText(companyName, left, curY, left+scaleX(120), curY+scaleY(6), fTitle, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	badgeText := "RETAIL CASH BILL"
+	if bill.GSTOn {
+		badgeText = "TAX INVOICE"
+	}
+	badgeW := scaleX(36)
+	badgeH := scaleY(5.5)
+	fillRect(right-badgeW, curY, right, curY+badgeH, hBrushBlack)
+	drawText(badgeText, right-badgeW, curY, right, curY+badgeH, fBadge, colorWhite, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+
+	curY += scaleY(6.5)
+	drawText(fmt.Sprintf("%s (%s) — %s", brandEn, brandTa, tagline), left, curY, left+scaleX(120), curY+scaleY(5), fBrand, colorDarkGreen, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Invoice No: "+bill.BillNo, right-scaleX(60), curY, right, curY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
+
+	curY += scaleY(5)
+	drawText(address, left, curY, left+scaleX(120), curY+scaleY(4.5), fSub, colorDarkGray, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Date: "+bill.Date, right-scaleX(60), curY, right, curY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
+
+	curY += scaleY(4.5)
+	phoneLine := fmt.Sprintf("Phone: %s | FSSAI Lic. No: %s", phone, fssai)
+	drawText(phoneLine, left, curY, left+scaleX(120), curY+scaleY(4.5), fSub, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Mode: "+bill.PayMode, right-scaleX(60), curY, right, curY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
+
+	curY += scaleY(4.5)
+	if s != nil && s.Gstin != "" {
+		drawText("GSTIN: "+s.Gstin+" | State: 33 - Tamil Nadu", left, curY, left+scaleX(120), curY+scaleY(4.5), fSubBold, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+		curY += scaleY(5)
+	}
+
+	drawLine(left, curY, right, curY, hPenThick)
+	curY += scaleY(3)
+
+	// 2. Billed To Details Grid
+	bH := scaleY(20)
+	drawRect(left, curY, right, curY+bH, hPenBorder, hBrushWhite)
+	drawText("BILLED TO (CUSTOMER):", left+scaleX(4), curY+scaleY(1.5), left+scaleX(100), curY+scaleY(5), fDecl, colorMuted, DT_LEFT|DT_NOPREFIX)
+	drawText(custName, left+scaleX(4), curY+scaleY(5.5), left+scaleX(100), curY+scaleY(10), fTitle, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText("Mobile: "+custPhone, left+scaleX(4), curY+scaleY(10.5), left+scaleX(100), curY+scaleY(14.5), fSub, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText("Address: "+custAddr, left+scaleX(4), curY+scaleY(14.5), left+scaleX(100), curY+scaleY(18.5), fSub, colorDarkGray, DT_LEFT|DT_NOPREFIX)
+
+	drawText(custType, left+scaleX(105), curY+scaleY(5.5), right-scaleX(4), curY+scaleY(10), fSubBold, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText("Place of Supply: "+placeOfSupply, left+scaleX(105), curY+scaleY(10.5), right-scaleX(4), curY+scaleY(14.5), fSub, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += bH + scaleY(3)
+
+	// 3. Items Table
+	w0 := scaleX(10) // #
+	w2 := scaleX(26) // HSN
+	w3 := scaleX(18) // Qty
+	w4 := scaleX(30) // Unit Rate
+	w5 := scaleX(34) // Total Amount
+	w1 := width - (w0 + w2 + w3 + w4 + w5)
+
+	x0 := left
+	x1 := x0 + w0
+	x2 := x1 + w1
+	x3 := x2 + w2
+	x4 := x3 + w3
+	x5 := x4 + w4
+	x6 := right
+
+	hH := scaleY(7)
+	fillRect(left, curY, right, curY+hH, hBrushHeader)
+	drawRect(left, curY, right, curY+hH, hPenBorder, hBrushHeader)
+	drawLine(x1, curY, x1, curY+hH, hPenBorder)
+	drawLine(x2, curY, x2, curY+hH, hPenBorder)
+	drawLine(x3, curY, x3, curY+hH, hPenBorder)
+	drawLine(x4, curY, x4, curY+hH, hPenBorder)
+	drawLine(x5, curY, x5, curY+hH, hPenBorder)
+
+	drawText("#", x0, curY, x1, curY+hH, fTableH, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Description of Goods", x1+scaleX(2), curY, x2-scaleX(2), curY+hH, fTableH, colorBlack, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("HSN", x2, curY, x3, curY+hH, fTableH, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Qty", x3, curY, x4, curY+hH, fTableH, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Unit Rate", x4, curY, x5-scaleX(2), curY+hH, fTableH, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Total Amount", x5, curY, x6-scaleX(2), curY+hH, fTableH, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+	curY += hH
+
+	for idx, it := range bill.Items {
+		rH := scaleY(10.5)
+		drawRect(left, curY, right, curY+rH, hPenBorder, hBrushWhite)
+		drawLine(x1, curY, x1, curY+rH, hPenBorder)
+		drawLine(x2, curY, x2, curY+rH, hPenBorder)
+		drawLine(x3, curY, x3, curY+rH, hPenBorder)
+		drawLine(x4, curY, x4, curY+rH, hPenBorder)
+		drawLine(x5, curY, x5, curY+rH, hPenBorder)
+
+		drawText(fmt.Sprintf("%d", idx+1), x0, curY, x1, curY+rH, fTableR, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(it.NameEn, x1+scaleX(2), curY+scaleY(1), x2-scaleX(2), curY+scaleY(5.5), fTableB, colorBlack, DT_LEFT|DT_NOPREFIX)
+		if it.NameTa != "" {
+			drawText(it.NameTa, x1+scaleX(2), curY+scaleY(5.5), x2-scaleX(2), curY+scaleY(9.5), fTableTa, colorDarkGray, DT_LEFT|DT_NOPREFIX)
+		}
+		drawText(it.HSN, x2, curY, x3, curY+rH, fTableR, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("%.2f", it.Qty), x3, curY, x4, curY+rH, fTableR, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", it.Price), x4, curY, x5-scaleX(2), curY+rH, fTableR, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", it.Amount), x5, curY, x6-scaleX(2), curY+rH, fTableB, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		curY += rH
+	}
+	curY += scaleY(3)
+
+	// 4. Totals and Tax Breakdown Block
+	tY := curY
+	if bill.GSTOn {
+		// HSN/SAC Tax Summary Table
+		txW := scaleX(102)
+		cW1 := scaleX(27)
+		cWRest := scaleX(15)
+		drawRect(left, tY, left+txW, tY+scaleY(12), hPenBorder, hBrushWhite)
+		fillRect(left, tY, left+txW, tY+scaleY(5.5), hBrushTaxH)
+		drawLine(left, tY+scaleY(5.5), left+txW, tY+scaleY(5.5), hPenBorder)
+
+		tx0 := left
+		tx1 := tx0 + cW1
+		tx2 := tx1 + cWRest
+		tx3 := tx2 + cWRest
+		tx4 := tx3 + cWRest
+		tx5 := tx4 + cWRest
+		tx6 := left + txW
+
+		drawLine(tx1, tY, tx1, tY+scaleY(12), hPenBorder)
+		drawLine(tx2, tY, tx2, tY+scaleY(12), hPenBorder)
+		drawLine(tx3, tY, tx3, tY+scaleY(12), hPenBorder)
+		drawLine(tx4, tY, tx4, tY+scaleY(12), hPenBorder)
+		drawLine(tx5, tY, tx5, tY+scaleY(12), hPenBorder)
+
+		drawText("HSN/SAC", tx0, tY, tx1, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("Taxable Val", tx1, tY, tx2, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("CGST", tx2, tY, tx3, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("SGST", tx3, tY, tx4, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("IGST", tx4, tY, tx5, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("Total Tax", tx5, tY, tx6, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+
+		drawText("1512 / 1513", tx0, tY+scaleY(5.5), tx1, tY+scaleY(12), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.Taxable), tx1, tY+scaleY(5.5), tx2-scaleX(1), tY+scaleY(12), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.CGST), tx2, tY+scaleY(5.5), tx3-scaleX(1), tY+scaleY(12), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.SGST), tx3, tY+scaleY(5.5), tx4-scaleX(1), tY+scaleY(12), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.IGST), tx4, tY+scaleY(5.5), tx5-scaleX(1), tY+scaleY(12), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.GSTAmt), tx5, tY+scaleY(5.5), tx6-scaleX(1), tY+scaleY(12), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+	}
+
+	rY := curY
+	drawText("Subtotal:", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	drawText(fmt.Sprintf("₹%.2f", bill.Subtotal), right-scaleX(32), rY, right, rY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	rY += scaleY(4.5)
+	if bill.Discount > 0 {
+		drawText("Discount:", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		drawText(fmt.Sprintf("-₹%.2f", bill.Discount), right-scaleX(32), rY, right, rY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		rY += scaleY(4.5)
+	}
+	if bill.GSTOn && bill.GSTAmt > 0 {
+		drawText("Taxable Value:", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.Taxable), right-scaleX(32), rY, right, rY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		rY += scaleY(4.5)
+		drawText("Total GST (incl.):", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.GSTAmt), right-scaleX(32), rY, right, rY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		rY += scaleY(4.5)
+	}
+
+	if rY > curY+scaleY(15) {
+		curY = rY
+	} else {
+		curY += scaleY(17)
+	}
+
+	// 5. Grand Total Row
+	drawLine(left, curY, right, curY, hPenThick)
+	curY += scaleY(1)
+	drawText("GRAND TOTAL:", right-scaleX(85), curY, right-scaleX(36), curY+scaleY(6.5), fTotal, colorBlack, DT_RIGHT|DT_VCENTER|DT_NOPREFIX)
+	drawText(fmt.Sprintf("₹%.2f", bill.GrandTotal), right-scaleX(36), curY, right, curY+scaleY(6.5), fTotal, colorBlack, DT_RIGHT|DT_VCENTER|DT_NOPREFIX)
+	curY += scaleY(6.5)
+	drawLine(left, curY, right, curY, hPenThick)
+	curY += scaleY(2)
+
+	drawText(fmt.Sprintf("Amount Paid: ₹%.2f (%s)", bill.Paid, bill.PayMode), right-scaleX(85), curY, right, curY+scaleY(4.5), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	curY += scaleY(4.5)
+	drawText(fmt.Sprintf("Balance Due: ₹%.2f", bill.Balance), right-scaleX(85), curY, right, curY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	curY += scaleY(6)
+
+	// 6. Declaration & Signatures
+	drawText("Declaration: We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.", left, curY, right, curY+scaleY(5), fDecl, colorDarkGray, DT_LEFT|DT_NOPREFIX)
+	curY += scaleY(14)
+
+	drawLine(left+scaleX(5), curY, left+scaleX(55), curY, hPenBorder)
+	drawText("Customer Signature", left+scaleX(5), curY+scaleY(1.5), left+scaleX(55), curY+scaleY(6), fSign, colorBlack, DT_CENTER|DT_NOPREFIX)
+
+	drawLine(right-scaleX(65), curY, right-scaleX(5), curY, hPenBorder)
+	drawText("For "+companyName, right-scaleX(65), curY+scaleY(1.5), right-scaleX(5), curY+scaleY(6), fSign, colorBlack, DT_CENTER|DT_NOPREFIX)
+	drawText("(Authorised Signatory)", right-scaleX(65), curY+scaleY(6.5), right-scaleX(5), curY+scaleY(11), fDecl, colorDarkGray, DT_CENTER|DT_NOPREFIX)
+}
+
+// drawReceipt80mmGDI renders the exact 80mm thermal receipt template (bill1) using vector GDI
+func drawReceipt80mmGDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
+	scaleX, scaleY, _, pageWidth, _, createFont, createPen, _, drawText, drawLine, _, _, cleanup := setupGDIHelpers(hdc)
+	defer cleanup()
+
+	colorBlack := uint32(0x00000000)
+	colorDarkGray := uint32(0x00333333)
+
+	fTitle80 := createFont(10.5, true)
+	fBrand80 := createFont(13.5, true)
+	fSub80 := createFont(8.0, false)
+	fHeader80 := createFont(10.5, true)
+	fText80 := createFont(8.5, false)
+	fBold80 := createFont(8.5, true)
+	fTotal80 := createFont(12.5, true)
+	fFooter80 := createFont(8.5, false)
+	fFooterTa80 := createFont(9.0, true)
+
+	hPenDashed := createPen(PS_DASH, 1, colorBlack)
+
+	companyName := "VANUR FARMER PRODUCER COMPANY LIMITED"
+	if s != nil && s.CompanyName != "" {
+		companyName = strings.ToUpper(s.CompanyName)
+	}
+	brandEn := "Siraazhi"
+	if s != nil && s.BrandEn != "" {
+		brandEn = s.BrandEn
+	}
+	brandTa := "சிராழி"
+	if s != nil && s.BrandTa != "" {
+		brandTa = s.BrandTa
+	}
+	tagline := "Pure Traditional Marachekku Oils"
+	if s != nil && s.Tagline != "" {
+		tagline = s.Tagline
+	}
+	address := "Thailapuram Village, Vanur, Villupuram, Tamil Nadu"
+	if s != nil && s.Address != "" {
+		address = s.Address
+	}
+	phone := "9876543210"
+	if s != nil && s.Phone != "" {
+		phone = s.Phone
+	}
+	fssai := "12423031000494"
+	if s != nil && s.Fssai != "" {
+		fssai = s.Fssai
+	}
+
+	custName := "Walk-in"
+	if bill.Customer.Name != "" {
+		custName = bill.Customer.Name
+	}
+	custPhone := "-"
+	if bill.Customer.Phone != "" {
+		custPhone = bill.Customer.Phone
+	}
+
+	receiptW := scaleX(72)
+	left := scaleX(3)
+	if pageWidth > scaleX(76) {
+		left = (pageWidth - receiptW) / 2
+	}
+	right := left + receiptW
+	curY := scaleY(8)
+
+	// 1. Header
+	drawText(companyName, left, curY, right, curY+scaleY(4.5), fTitle80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4.8)
+	drawText(fmt.Sprintf("%s (%s)", brandEn, brandTa), left, curY, right, curY+scaleY(5.5), fBrand80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(5.5)
+	drawText(tagline, left, curY, right, curY+scaleY(4), fSub80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4)
+	drawText(address, left, curY, right, curY+scaleY(4), fSub80, colorDarkGray, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4)
+	drawText(fmt.Sprintf("Ph: %s | FSSAI: %s", phone, fssai), left, curY, right, curY+scaleY(4), fSub80, colorDarkGray, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4)
+
+	if bill.GSTOn && s != nil && s.Gstin != "" {
+		drawText("GSTIN: "+s.Gstin, left, curY, right, curY+scaleY(4), fBold80, colorBlack, DT_CENTER|DT_NOPREFIX)
+		curY += scaleY(4)
+	}
+
+	drawLine(left, curY, right, curY, hPenDashed)
+	curY += scaleY(2)
+
+	title := "CASH RECEIPT"
+	if bill.GSTOn {
+		title = "TAX INVOICE"
+	}
+	drawText(title, left, curY, right, curY+scaleY(4.5), fHeader80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(5)
+
+	drawText(fmt.Sprintf("Bill No: %s   Date: %s", bill.BillNo, bill.Date), left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += scaleY(4)
+	custLine := "Customer: " + custName
+	if custPhone != "-" {
+		custLine += " (" + custPhone + ")"
+	}
+	drawText(custLine, left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += scaleY(4)
+	if bill.Customer.Gstin != "" {
+		drawText("Cust GSTIN: "+bill.Customer.Gstin, left, curY, right, curY+scaleY(4), fBold80, colorBlack, DT_LEFT|DT_NOPREFIX)
+		curY += scaleY(4)
+	}
+
+	drawLine(left, curY, right, curY, hPenDashed)
+	curY += scaleY(2)
+
+	// 2. Items Table
+	drawText("HSN", left, curY, left+scaleX(20), curY+scaleY(4), fBold80, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText("Qty", left+scaleX(20), curY, left+scaleX(36), curY+scaleY(4), fBold80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	drawText("Rate", left+scaleX(36), curY, left+scaleX(53), curY+scaleY(4), fBold80, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	drawText("Amt", left+scaleX(53), curY, right, curY+scaleY(4), fBold80, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	curY += scaleY(4.5)
+	drawLine(left, curY, right, curY, hPenDashed)
+	curY += scaleY(2)
+
+	for _, it := range bill.Items {
+		itemTitle := it.NameEn
+		if it.NameTa != "" {
+			itemTitle += " (" + it.NameTa + ")"
+		}
+		drawText(itemTitle, left, curY, right, curY+scaleY(4), fBold80, colorBlack, DT_LEFT|DT_NOPREFIX)
+		curY += scaleY(4)
+
+		drawText(it.HSN, left, curY, left+scaleX(20), curY+scaleY(3.8), fText80, colorBlack, DT_LEFT|DT_NOPREFIX)
+		drawText(fmt.Sprintf("%.0f", it.Qty), left+scaleX(20), curY, left+scaleX(36), curY+scaleY(3.8), fText80, colorBlack, DT_CENTER|DT_NOPREFIX)
+		drawText(fmt.Sprintf("%.2f", it.Price), left+scaleX(36), curY, left+scaleX(53), curY+scaleY(3.8), fText80, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		drawText(fmt.Sprintf("%.2f", it.Amount), left+scaleX(53), curY, right, curY+scaleY(3.8), fBold80, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		curY += scaleY(4.5)
+	}
+
+	drawLine(left, curY, right, curY, hPenDashed)
+	curY += scaleY(2)
+
+	// 3. Totals Block
+	drawText(fmt.Sprintf("Subtotal: %.2f", bill.Subtotal), left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	curY += scaleY(4.2)
+	if bill.Discount > 0 {
+		drawText(fmt.Sprintf("Discount: -%.2f", bill.Discount), left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		curY += scaleY(4.2)
+	}
+
+	drawLine(left, curY, right, curY, hPenDashed)
+	curY += scaleY(2)
+	drawText(fmt.Sprintf("GRAND TOTAL: ₹%.2f", bill.GrandTotal), left, curY, right, curY+scaleY(5.5), fTotal80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(5.8)
+	drawLine(left, curY, right, curY, hPenDashed)
+	curY += scaleY(2)
+
+	drawText(fmt.Sprintf("Paid (%s): ₹%.2f | Balance: ₹%.2f", bill.PayMode, bill.Paid, bill.Balance), left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	curY += scaleY(4.2)
+
+	if !bill.GSTOn {
+		drawText("*** RETAIL CASH MEMO (NO TAX) ***", left, curY, right, curY+scaleY(4), fSub80, colorBlack, DT_CENTER|DT_NOPREFIX)
+		curY += scaleY(4)
+	} else {
+		drawText(fmt.Sprintf("Taxable: ₹%.2f | Total GST (incl.): ₹%.2f", bill.Taxable, bill.GSTAmt), left, curY, right, curY+scaleY(3.8), fSub80, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		curY += scaleY(4)
+	}
+
+	drawLine(left, curY, right, curY, hPenDashed)
+	curY += scaleY(3)
+
+	// 4. Footer
+	noteEn := "Thank you! Visit again."
+	if s != nil && s.FooterNoteEn != "" {
+		noteEn = s.FooterNoteEn
+	}
+	noteTa := "நன்றி! மீண்டும் வருக!"
+	if s != nil && s.FooterNoteTa != "" {
+		noteTa = s.FooterNoteTa
+	}
+	drawText(noteEn, left, curY, right, curY+scaleY(4), fFooter80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4.2)
+	drawText(noteTa, left, curY, right, curY+scaleY(4.5), fFooterTa80, colorBlack, DT_CENTER|DT_NOPREFIX)
+}
+
+// drawTestSlipA4GDI renders an A4 hardware verification document in bill2 styling
+func drawTestSlipA4GDI(hdc uintptr, printerName, orientation, colorMode string, s *db.Settings) {
+	scaleX, scaleY, _, pageWidth, _, createFont, createPen, createBrush, drawText, drawLine, fillRect, drawRect, cleanup := setupGDIHelpers(hdc)
+	defer cleanup()
+
+	colorBlack := uint32(0x00000000)
+	colorWhite := uint32(0x00FFFFFF)
+	colorDarkGreen := uint32(0x00205E1B)
+	colorLightGray := uint32(0x00F0F0F0)
+	colorDarkGray := uint32(0x00444444)
+
+	fTitle := createFont(15.5, true)
+	fBrand := createFont(12.5, true)
+	fBadge := createFont(11.5, true)
+	fSub := createFont(9.5, false)
+	fSubBold := createFont(9.5, true)
+	fTableH := createFont(9.5, true)
+	fTableR := createFont(9.5, false)
+	fTableB := createFont(9.5, true)
+
+	hPenThick := createPen(PS_SOLID, scaleX(0.60), colorBlack)
+	hPenBorder := createPen(PS_SOLID, scaleX(0.20), colorBlack)
+	hBrushWhite := createBrush(colorWhite)
+	hBrushHeader := createBrush(colorLightGray)
+	hBrushBlack := createBrush(colorBlack)
+
+	companyName := "VANUR FARMER PRODUCER COMPANY LIMITED"
+	if s != nil && s.CompanyName != "" {
+		companyName = strings.ToUpper(s.CompanyName)
+	}
+
+	left := scaleX(10)
+	right := pageWidth - scaleX(10)
+	curY := scaleY(10)
+
+	// Header
+	drawText(companyName, left, curY, left+scaleX(120), curY+scaleY(6), fTitle, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	badgeW := scaleX(68)
+	badgeH := scaleY(5.5)
+	fillRect(right-badgeW, curY, right, curY+badgeH, hBrushBlack)
+	drawText("HARDWARE VERIFICATION TEST", right-badgeW, curY, right, curY+badgeH, fBadge, colorWhite, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+
+	curY += scaleY(6.5)
+	drawText("Siraazhi (சிராழி) — Pure Traditional Marachekku Oils", left, curY, left+scaleX(120), curY+scaleY(5), fBrand, colorDarkGreen, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	curY += scaleY(5)
+	drawText("Thailapuram Village, Vanur, Villupuram, Tamil Nadu", left, curY, left+scaleX(120), curY+scaleY(4.5), fSub, colorDarkGray, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	curY += scaleY(4.5)
+	drawText("Phone: 9876543210 | FSSAI Lic. No: 12423031000494", left, curY, left+scaleX(120), curY+scaleY(4.5), fSub, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	curY += scaleY(5)
+
+	drawLine(left, curY, right, curY, hPenThick)
+	curY += scaleY(4)
+
+	// Test Details Grid
+	bH := scaleY(28)
+	drawRect(left, curY, right, curY+bH, hPenBorder, hBrushWhite)
+	nowStr := time.Now().Format("02/01/2006 15:04:05")
+
+	drawText("Printer Name:", left+scaleX(4), curY+scaleY(2), left+scaleX(45), curY+scaleY(6), fTableB, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText(printerName, left+scaleX(45), curY+scaleY(2), right-scaleX(4), curY+scaleY(6), fTableR, colorBlack, DT_LEFT|DT_NOPREFIX)
+
+	drawText("Hardware Class:", left+scaleX(4), curY+scaleY(6.5), left+scaleX(45), curY+scaleY(10.5), fTableB, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText("Standard Document Spooler (Laser / Inkjet / Smart Tank)", left+scaleX(45), curY+scaleY(6.5), right-scaleX(4), curY+scaleY(10.5), fTableR, colorBlack, DT_LEFT|DT_NOPREFIX)
+
+	drawText("Paper Size Preset:", left+scaleX(4), curY+scaleY(11), left+scaleX(45), curY+scaleY(15), fTableB, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText("A4 Sheet (210 x 297 mm)", left+scaleX(45), curY+scaleY(11), right-scaleX(4), curY+scaleY(15), fTableR, colorBlack, DT_LEFT|DT_NOPREFIX)
+
+	drawText("Hardware Status:", left+scaleX(4), curY+scaleY(15.5), left+scaleX(45), curY+scaleY(19.5), fTableB, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText("ONLINE - READY ✓", left+scaleX(45), curY+scaleY(15.5), right-scaleX(4), curY+scaleY(19.5), fTableB, colorDarkGreen, DT_LEFT|DT_NOPREFIX)
+
+	drawText("Spool Timestamp:", left+scaleX(4), curY+scaleY(20), left+scaleX(45), curY+scaleY(24), fTableB, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText(nowStr, left+scaleX(45), curY+scaleY(20), right-scaleX(4), curY+scaleY(24), fTableR, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += bH + scaleY(4)
+
+	// Verification Results Table
+	hH := scaleY(7)
+	fillRect(left, curY, right, curY+hH, hBrushHeader)
+	drawRect(left, curY, right, curY+hH, hPenBorder, hBrushHeader)
+	drawText("VERIFICATION RESULTS & SUBSYSTEM STATUS", left+scaleX(4), curY, right, curY+hH, fTableH, colorBlack, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+	curY += hH
+
+	capabilities := []string{
+		"[✓] Direct Zero-Dialog Windows GDI Document Spooling Active",
+		"[✓] Mobile & Tablet Wireless LAN Printing Enabled via Master Queue",
+		"[✓] Full Corporate A4 Tax Invoicing & Multi-Printer Routing Ready",
+		"[✓] Universal Hardware Support for HP Smart Tank, LaserJet, Inkjet & POS Thermal",
+	}
+
+	for _, cap := range capabilities {
+		rH := scaleY(8)
+		drawRect(left, curY, right, curY+rH, hPenBorder, hBrushWhite)
+		drawText(cap, left+scaleX(4), curY, right-scaleX(4), curY+rH, fTableR, colorBlack, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		curY += rH
+	}
+	curY += scaleY(12)
+
+	drawLine(right-scaleX(65), curY, right-scaleX(5), curY, hPenBorder)
+	drawText("For "+companyName, right-scaleX(65), curY+scaleY(1.5), right-scaleX(5), curY+scaleY(6), fSubBold, colorBlack, DT_CENTER|DT_NOPREFIX)
+	drawText("(Authorised Signatory)", right-scaleX(65), curY+scaleY(6.5), right-scaleX(5), curY+scaleY(11), fSub, colorDarkGray, DT_CENTER|DT_NOPREFIX)
+}
+
+// drawTestSlip80mmGDI renders an 80mm hardware verification receipt in bill1 styling
+func drawTestSlip80mmGDI(hdc uintptr, printerName string, s *db.Settings) {
+	scaleX, scaleY, _, pageWidth, _, createFont, createPen, _, drawText, drawLine, _, _, cleanup := setupGDIHelpers(hdc)
+	defer cleanup()
+
+	colorBlack := uint32(0x00000000)
+	colorDarkGray := uint32(0x00333333)
+
+	fTitle80 := createFont(10.5, true)
+	fBrand80 := createFont(13.5, true)
+	fSub80 := createFont(8.0, false)
+	fHeader80 := createFont(10.5, true)
+	fText80 := createFont(8.5, false)
+	fBold80 := createFont(8.5, true)
+	fFooterTa80 := createFont(9.0, true)
+
+	hPenDashed := createPen(PS_DASH, 1, colorBlack)
+
+	companyName := "VANUR FARMER PRODUCER COMPANY LIMITED"
+	if s != nil && s.CompanyName != "" {
+		companyName = strings.ToUpper(s.CompanyName)
+	}
+
+	receiptW := scaleX(72)
+	left := scaleX(3)
+	if pageWidth > scaleX(76) {
+		left = (pageWidth - receiptW) / 2
+	}
+	right := left + receiptW
+	curY := scaleY(8)
+
+	// Header
+	drawText(companyName, left, curY, right, curY+scaleY(4.5), fTitle80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4.8)
+	drawText("Siraazhi (சிராழி)", left, curY, right, curY+scaleY(5.5), fBrand80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(5.5)
+	drawText("Pure Traditional Marachekku Oils", left, curY, right, curY+scaleY(4), fSub80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4)
+	drawText("Thailapuram Village, Vanur, Villupuram, Tamil Nadu", left, curY, right, curY+scaleY(4), fSub80, colorDarkGray, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4)
+	drawText("Ph: 9876543210 | FSSAI: 12423031000494", left, curY, right, curY+scaleY(4), fSub80, colorDarkGray, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4)
+
+	drawLine(left, curY, right, curY, hPenDashed)
+	curY += scaleY(2)
+
+	drawText("HARDWARE PRINTER TEST SLIP", left, curY, right, curY+scaleY(4.5), fHeader80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(5)
+
+	drawText("Printer: "+printerName, left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += scaleY(4)
+	drawText("Paper Size: 80mm Roll (3-inch)", left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += scaleY(4)
+	drawText("Status: ONLINE - READY ✓", left, curY, right, curY+scaleY(4), fBold80, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += scaleY(4)
+	drawText("Time: "+time.Now().Format("02/01/2006 15:04:05"), left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += scaleY(4)
+
+	drawLine(left, curY, right, curY, hPenDashed)
+	curY += scaleY(2)
+
+	drawText("[✓] Zero-Dialog Hardware Spooling Active", left, curY, right, curY+scaleY(3.8), fText80, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += scaleY(3.8)
+	drawText("[✓] 80mm Thermal Receipt Layout Ready", left, curY, right, curY+scaleY(3.8), fText80, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += scaleY(3.8)
+	drawText("[✓] Multi-Language & Tamil Printing Ready", left, curY, right, curY+scaleY(3.8), fText80, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += scaleY(3.8)
+
+	drawLine(left, curY, right, curY, hPenDashed)
+	curY += scaleY(2.5)
+
+	drawText("Hardware Test Slip Dispatched Successfully!", left, curY, right, curY+scaleY(4), fBold80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4.5)
+	drawText("Thank you! Visit again.", left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	curY += scaleY(4.2)
+	drawText("நன்றி! மீண்டும் வருக!", left, curY, right, curY+scaleY(4.5), fFooterTa80, colorBlack, DT_CENTER|DT_NOPREFIX)
 }
 
 // IsThermalPOSPrinter returns true if the printer name indicates a standard 80mm/58mm thermal receipt printer

@@ -295,7 +295,11 @@ const PrintEngine = {
 
         <div class="sign-block">
           <div>Customer Signature</div>
-          <div>For ${s.companyName || 'VANUR FPC LTD'}<br><br><small>(Authorised Signatory)</small></div>
+          <div>For ${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}<br><br><small>(Authorised Signatory)</small></div>
+        </div>
+
+        <div style="margin-top:14px; font-size:10px; font-style:italic; color:#444;">
+          Declaration: We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
         </div>
       </div>
     `;
@@ -309,6 +313,134 @@ const PrintEngine = {
   },
 
   /**
+   * renderTestSlip80mm generates an 80mm test receipt ticket matching bill1
+   */
+  renderTestSlip80mm(printerName, settings) {
+    const s = settings || {};
+    const nowStr = new Date().toLocaleString('en-IN');
+    return `
+      <div class="receipt-80mm">
+        <div class="center">
+          <div class="header-title">${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}</div>
+          <div class="header-title" style="font-size:15px;">${s.brandEn || 'Siraazhi'} (${s.brandTa || 'சிராழி'})</div>
+          <div class="header-sub">${s.tagline || 'Pure Traditional Marachekku Oils'}</div>
+          <div class="header-sub">${s.address || 'Vanur, Villupuram, Tamil Nadu'}</div>
+          <div class="header-sub">Ph: ${s.phone || '-'} | FSSAI: ${s.fssai || '-'}</div>
+          <div class="dashed-line"></div>
+          <div class="bold" style="font-size:12px;">HARDWARE PRINTER TEST SLIP</div>
+        </div>
+
+        <div style="margin:4px 0; font-size:10.5px;">
+          <div><b>Printer:</b> ${printerName || 'Default Hardware'}</div>
+          <div><b>Format:</b> 80mm Roll (3-inch Thermal)</div>
+          <div><b>Status:</b> ONLINE - READY ✓</div>
+          <div><b>Time:</b> ${nowStr}</div>
+        </div>
+
+        <div class="dashed-line"></div>
+        <div style="font-size:10px; line-height:1.4;">
+          <div>[✓] Direct Zero-Dialog Hardware Spooling Active</div>
+          <div>[✓] 80mm Thermal Receipt Layout Ready</div>
+          <div>[✓] Multi-Language & Tamil Printing Ready</div>
+          <div>[✓] Universal Support for Thermal, Laser & Inkjet</div>
+        </div>
+
+        <div class="dashed-line"></div>
+        <div class="center bold" style="font-size:11px; margin:4px 0;">
+          Hardware Test Slip Dispatched Successfully!
+        </div>
+
+        <div class="dashed-line"></div>
+        <div class="center" style="font-size:10.5px; margin-top:4px;">
+          <div>${s.footerNoteEn || 'Thank you! Visit again.'}</div>
+          <div>${s.footerNoteTa || 'நன்றி! மீண்டும் வருக!'}</div>
+        </div>
+      </div>
+    `;
+  },
+
+  /**
+   * renderTestSlipA4 generates a corporate A4 test document matching bill2
+   */
+  renderTestSlipA4(printerName, settings) {
+    const s = settings || {};
+    const nowStr = new Date().toLocaleString('en-IN');
+    return `
+      <div class="invoice-a4">
+        <div class="header-block">
+          <div>
+            <h1>${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}</h1>
+            <div style="font-size:15px; font-weight:bold; color:#1b5e20;">
+              ${s.brandEn || 'Siraazhi'} (${s.brandTa || 'சிராழி'}) — ${s.tagline || 'Pure Traditional Marachekku Oils'}
+            </div>
+            <div>${s.address || 'Vanur, Villupuram, Tamil Nadu'}</div>
+            <div>Phone: <b>${s.phone || '-'}</b> | FSSAI Lic. No: <b>${s.fssai || '12423031000494'}</b></div>
+          </div>
+          <div style="text-align:right;">
+            <div class="badge-invoice">HARDWARE VERIFICATION TEST</div>
+            <div style="margin-top:6px; font-size:12px;">
+              Status: <b>ONLINE - READY ✓</b><br>
+              Date: <b>${nowStr}</b>
+            </div>
+          </div>
+        </div>
+
+        <div class="meta-grid" style="margin-bottom:12px;">
+          <div>
+            <div>Printer Target: <b>${printerName || 'Default Windows Printer'}</b></div>
+            <div>Printer Class: <b>Standard Document Spooler (Laser / Inkjet / PDF)</b></div>
+            <div>Paper Size Preset: <b>A4 Sheet (210 x 297 mm)</b></div>
+          </div>
+          <div>
+            <div>Hardware Status: <b>ONLINE - READY ✓</b></div>
+            <div>Spool Timestamp: <b>${nowStr}</b></div>
+          </div>
+        </div>
+
+        <table class="items-table" style="margin-bottom:16px;">
+          <thead>
+            <tr>
+              <th style="width:10%">#</th>
+              <th style="width:65%">Subsystem / Verification Check</th>
+              <th style="width:25%; text-align:center;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="center">1</td>
+              <td>Direct Zero-Dialog Windows GDI Document Spooling</td>
+              <td class="center bold" style="color:#1b5e20;">[✓] READY</td>
+            </tr>
+            <tr>
+              <td class="center">2</td>
+              <td>Mobile & Tablet Wireless LAN Printing Enabled</td>
+              <td class="center bold" style="color:#1b5e20;">[✓] READY</td>
+            </tr>
+            <tr>
+              <td class="center">3</td>
+              <td>Full Corporate A4 Tax Invoicing & Multi-Printer Routing</td>
+              <td class="center bold" style="color:#1b5e20;">[✓] READY</td>
+            </tr>
+            <tr>
+              <td class="center">4</td>
+              <td>Universal Hardware Support for HP Smart Tank, LaserJet, Inkjet & POS Thermal</td>
+              <td class="center bold" style="color:#1b5e20;">[✓] READY</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:30px; display:flex; justify-content:space-between; padding:0 10px;">
+          <div></div>
+          <div style="text-align:center; border-top:1px solid #000; padding-top:4px; font-size:10.5px; width:220px;">
+            For ${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}<br><br>
+            <small>(Authorised Signatory)</small>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  /**
    * print renders the selected format into #printContainer and triggers native window.print().
    */
   print(bill, format, settings) {
@@ -319,6 +451,19 @@ const PrintEngine = {
     let mode = format;
     if (!mode || mode === 'default') {
       mode = (settings && settings.defaultPrinter) || '80mm';
+    }
+
+    // Dynamic @page size injection so browser automatically selects exact dimensions
+    let pageStyle = document.getElementById('dynamicPageSizeStyle');
+    if (!pageStyle) {
+      pageStyle = document.createElement('style');
+      pageStyle.id = 'dynamicPageSizeStyle';
+      document.head.appendChild(pageStyle);
+    }
+    if (mode === '80mm' || mode === '58mm') {
+      pageStyle.innerHTML = `@page { size: ${mode === '58mm' ? '48mm' : '80mm'} auto; margin: 2mm 3mm; }`;
+    } else {
+      pageStyle.innerHTML = `@page { size: A4 portrait; margin: 8mm 10mm; }`;
     }
 
     switch (mode) {

@@ -1501,7 +1501,8 @@ async function loadBills() {
           <button class="chip-btn" style="color:#0284c7; font-weight:700;" onclick="editExistingBill('${b.id}')">✏️ Edit</button>
           <button class="chip-btn" onclick="reprintBill('${b.id}', '80mm')">🧻 80mm</button>
           <button class="chip-btn" onclick="reprintBill('${b.id}', 'a4')">📑 A4</button>
-          <button class="chip-btn" onclick="downloadBillPDF('${b.id}')">📥 PDF</button>
+          <button class="chip-btn" onclick="downloadBillPDF('${b.id}', '80mm')">📥 80mm PDF</button>
+          <button class="chip-btn" onclick="downloadBillPDF('${b.id}', 'a4')">📥 A4 PDF</button>
           <button class="chip-btn" style="color:#ef4444;" onclick="cancelBill('${b.id}')">Cancel</button>
         </td>
       </tr>
@@ -1617,10 +1618,10 @@ async function reprintLastBill(format) {
   reprintBill(LAST_BILL.id, format || 'default');
 }
 
-async function downloadBillPDF(id) {
+async function downloadBillPDF(id, format) {
   try {
     const bill = await api('GET', `/api/bills/${id}`);
-    PDFEngine.saveBillPDF(bill, SETTINGS);
+    PDFEngine.saveBillPDF(bill, format || 'a4', SETTINGS);
   } catch (err) {
     showToast('Failed to generate PDF: ' + err.message, 'danger', 4000);
   }
@@ -2051,7 +2052,12 @@ function toggleSecPrinterTargetUI() {
 async function testHardwarePrinterSlip() {
   const iface = $('setPrinterInterface') ? $('setPrinterInterface').value : 'browser';
   if (iface === 'browser') {
-    showToast('⚠️ Please select Windows USB or Network printer first', 'warning', 3500);
+    const paperSize = $('setPaperSize') ? $('setPaperSize').value : (SETTINGS.paperSize || '80mm');
+    if (paperSize === 'a4' || paperSize === 'a5' || paperSize === 'letter') {
+      PrintEngine.renderTestSlipA4(SETTINGS);
+    } else {
+      PrintEngine.renderTestSlip80mm(SETTINGS);
+    }
     return;
   }
 

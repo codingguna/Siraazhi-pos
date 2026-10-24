@@ -54,9 +54,9 @@
     width: 72mm;
     max-width: 72mm;
     margin: 0 auto;
-    padding: 4mm 0;
-    font-family: 'Courier New', Courier, monospace, 'Nirmala UI', sans-serif;
-    font-size: 11.5px;
+    padding: 2mm 0;
+    font-family: 'Segoe UI', 'Nirmala UI', Arial, sans-serif;
+    font-size: 11px;
     line-height: 1.25;
     color: #000;
   }
@@ -67,12 +67,12 @@
   .receipt-80mm .bold { font-weight: bold; }
 
   .receipt-80mm .header-title {
-    font-size: 14px;
+    font-size: 13.5px;
     font-weight: 900;
   }
 
   .receipt-80mm .header-sub {
-    font-size: 10px;
+    font-size: 9.5px;
     margin: 2px 0;
   }
 
@@ -84,7 +84,7 @@
   .receipt-80mm table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 11px;
+    font-size: 10.5px;
   }
 
   .receipt-80mm th,
@@ -110,7 +110,7 @@
     max-width: 48mm;
     margin: 0 auto;
     padding: 2mm 0;
-    font-family: 'Courier New', Courier, monospace, 'Nirmala UI', sans-serif;
+    font-family: 'Segoe UI', 'Nirmala UI', Arial, sans-serif;
     font-size: 9.5px;
     line-height: 1.15;
     color: #000;
@@ -146,16 +146,15 @@
      -------------------------------------------------------------------------- */
   .invoice-a4 {
     width: 100%;
-    max-width: 100%;
+    max-width: 190mm;
     margin: 0 auto;
-    padding: 4mm 8mm;
+    padding: 8mm 10mm;
     box-sizing: border-box;
-    font-family: 'Segoe UI', Nirmala UI, Arial, sans-serif;
-    font-size: 11px;
-    line-height: 1.25;
+    font-family: 'Segoe UI', 'Nirmala UI', Arial, sans-serif;
+    font-size: 11.5px;
+    line-height: 1.30;
     color: #000;
     background: #fff;
-    max-height: 142mm;
     page-break-inside: avoid;
   }
 
