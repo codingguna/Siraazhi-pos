@@ -71,7 +71,8 @@ const (
 	LOGPIXELSY  = 90
 	FW_NORMAL   = 400
 	FW_BOLD     = 700
-	ANSI_CHARSET = 0
+	ANSI_CHARSET    = 0
+	DEFAULT_CHARSET = 1
 	OUT_DEFAULT_PRECIS = 0
 	CLIP_DEFAULT_PRECIS = 0
 	DEFAULT_QUALITY = 0
@@ -247,6 +248,10 @@ func GetInstalledPrinters() ([]string, error) {
 func SendRawToSpooler(printerName string, docName string, data []byte) error {
 	if len(data) == 0 {
 		return fmt.Errorf("no print data provided")
+	}
+
+	if !IsThermalPOSPrinter(printerName) {
+		return fmt.Errorf("printer %q is an office/desktop printer (not a thermal POS roll printer) and cannot accept raw ESC/POS binary data", printerName)
 	}
 
 	pPrinterName, err := syscall.UTF16PtrFromString(printerName)
@@ -434,6 +439,24 @@ func PrintDocumentWin32(printerName, docName, content, paperSize, orientation, c
 		pInit,
 	)
 	if hdc == 0 {
+		// Fallback 1: driver NULL with pInit
+		hdc, _, errDC = procCreateDCW.Call(
+			0,
+			uintptr(unsafe.Pointer(pDevice)),
+			0,
+			pInit,
+		)
+	}
+	if hdc == 0 {
+		// Fallback 2: driver NULL with default DEVMODE
+		hdc, _, errDC = procCreateDCW.Call(
+			0,
+			uintptr(unsafe.Pointer(pDevice)),
+			0,
+			0,
+		)
+	}
+	if hdc == 0 {
 		return fmt.Errorf("failed to create printer device context for %q: %v", printerName, errDC)
 	}
 	defer procDeleteDC.Call(hdc)
@@ -446,16 +469,65 @@ func PrintDocumentWin32(printerName, docName, content, paperSize, orientation, c
 	if dpiY == 0 {
 		dpiY = 300
 	}
+	pageWidth, _, _ := procGetDeviceCaps.Call(hdc, uintptr(HORZRES))
 	pageHeight, _, _ := procGetDeviceCaps.Call(hdc, uintptr(VERTRES))
 
-	pFontName, _ := syscall.UTF16PtrFromString("Consolas")
-	// Font size: 10pt = (10 * dpiY) / 72
-	fontHeight := int32((10 * dpiY) / 72)
-	lineSpacing := int32((13 * dpiY) / 72)
+	lines := strings.Split(content, "\n")
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	numLines := int32(len(lines))
+	if numLines == 0 {
+		numLines = 1
+	}
 
+	// 1. Calculate Width: Full A4 width with standard border gap (~10 mm / 0.38 in)
+	const numCols = 96.0
+	normalMargin := int32(float64(dpiX) * 0.38)
+	usableWidth := int32(pageWidth) - (2 * normalMargin)
+	if usableWidth <= 0 {
+		usableWidth = int32(pageWidth) - 40
+		normalMargin = 20
+	}
+
+	// Consolas average character width in GDI is ~0.601 * fontHeight
+	// Scale fontHeight so 96 columns span usableWidth across the page
+	fontHeight := int32(float64(usableWidth) / (0.601 * numCols))
+	if fontHeight < 12 {
+		fontHeight = 12
+	}
+
+	totalLineWidth := int32(float64(fontHeight) * 0.601 * numCols)
+	leftMargin := (int32(pageWidth) - totalLineWidth) / 2
+	if leftMargin < 0 {
+		leftMargin = 0
+	}
+
+	// 2. Calculate Height: STRICTLY FIT WITHIN TOP HALF OF A4 PAPER (< 148.5 mm)
+	halfPageHeight := int32(pageHeight) / 2
+	topMargin := int32(float64(dpiY) * 0.30) // ~7.6 mm top gap
+	availableHeight := halfPageHeight - topMargin - int32(float64(dpiY)*0.10) // safety buffer before middle fold
+
+	lineSpacing := int32(float64(fontHeight) * 1.30)
+	if numLines*lineSpacing > availableHeight {
+		lineSpacing = availableHeight / numLines
+		if lineSpacing < int32(float64(fontHeight)*1.05) {
+			fontHeight = int32(float64(lineSpacing) * 0.85)
+			if fontHeight < 10 {
+				fontHeight = 10
+			}
+			totalLineWidth = int32(float64(fontHeight) * 0.601 * numCols)
+			leftMargin = (int32(pageWidth) - totalLineWidth) / 2
+			if leftMargin < 0 {
+				leftMargin = 0
+			}
+		}
+	}
+
+	pFontName, _ := syscall.UTF16PtrFromString("Consolas")
 	hFontReg, _, _ := procCreateFontW.Call(
 		uintptr(fontHeight), 0, 0, 0, uintptr(FW_NORMAL),
-		0, 0, 0, uintptr(ANSI_CHARSET),
+		0, 0, 0, uintptr(DEFAULT_CHARSET),
 		uintptr(OUT_DEFAULT_PRECIS), uintptr(CLIP_DEFAULT_PRECIS),
 		uintptr(DEFAULT_QUALITY), uintptr(DEFAULT_PITCH),
 		uintptr(unsafe.Pointer(pFontName)),
@@ -464,7 +536,7 @@ func PrintDocumentWin32(printerName, docName, content, paperSize, orientation, c
 
 	hFontBold, _, _ := procCreateFontW.Call(
 		uintptr(fontHeight), 0, 0, 0, uintptr(FW_BOLD),
-		0, 0, 0, uintptr(ANSI_CHARSET),
+		0, 0, 0, uintptr(DEFAULT_CHARSET),
 		uintptr(OUT_DEFAULT_PRECIS), uintptr(CLIP_DEFAULT_PRECIS),
 		uintptr(DEFAULT_QUALITY), uintptr(DEFAULT_PITCH),
 		uintptr(unsafe.Pointer(pFontName)),
@@ -485,29 +557,21 @@ func PrintDocumentWin32(printerName, docName, content, paperSize, orientation, c
 
 	procStartPage.Call(hdc)
 
-	// Half-inch margins
-	leftMargin := int32(dpiX / 2)
-	topMargin := int32(dpiY / 2)
-	bottomMargin := int32(pageHeight) - topMargin
-
 	currentY := topMargin
 	procSelectObject.Call(hdc, hFontReg)
 
-	lines := strings.Split(content, "\n")
 	for _, rawLine := range lines {
 		line := strings.TrimRight(rawLine, "\r")
-		if currentY+lineSpacing > bottomMargin {
-			procEndPage.Call(hdc)
-			procStartPage.Call(hdc)
-			currentY = topMargin
-		}
 
-		isBold := strings.Contains(line, "==") ||
-			strings.Contains(line, "SIRAAZHI") ||
-			strings.Contains(line, "TOTAL") ||
-			strings.Contains(line, "TAX INVOICE") ||
-			strings.Contains(line, "CASH RECEIPT") ||
-			strings.Contains(line, "CASH BILL")
+		isBold := strings.Contains(line, "TAX INVOICE") ||
+			strings.Contains(line, "RETAIL CASH BILL") ||
+			strings.Contains(line, "TOTAL INVOICE VALUE") ||
+			strings.Contains(line, "GRAND TOTAL") ||
+			strings.Contains(line, "VANUR FARMER") ||
+			strings.Contains(line, "BILLED TO") ||
+			strings.Contains(line, "INVOICE DETAILS") ||
+			strings.Contains(line, "Description of Goods") ||
+			strings.Contains(line, "Amount in Words")
 
 		if isBold {
 			procSelectObject.Call(hdc, hFontBold)

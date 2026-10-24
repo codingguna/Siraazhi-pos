@@ -20,8 +20,8 @@
     <div class="brand-cluster">
       <img src="assets/logo.png" class="brand-logo" alt="Siraazhi Logo">
       <div class="brand-titles">
-        <div class="brand-tamil">சீராழி <span class="brand-en">Siraazhi Pro POS</span></div>
-        <div class="brand-sub">VANUR FARMER PRODUCER COMPANY LTD • Billing, Inventory & Multi-Print Suite</div>
+        <div class="brand-tamil">சீராழி <span class="brand-en">Siraazhi</span></div>
+        <div class="brand-sub">VANUR FARMER PRODUCER COMPANY LIMITED • Pure Traditional chekku Oils</div>
       </div>
     </div>
 
@@ -739,14 +739,23 @@
 
             <!-- Windows Spooler Target -->
             <div class="form-group" id="groupSpoolerPrinter" style="display:none;">
-              <label>Target Windows Thermal Printer:</label>
+              <label>Target Windows Printer (Desktop or Thermal):</label>
               <div style="display:flex; gap:8px;">
-                <select id="setPrinterTarget" style="flex:1;">
+                <select id="setPrinterTarget" style="flex:1;" onchange="onPrinterSelectChange()">
                   <option value="">-- Select Installed Windows Printer --</option>
                 </select>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="loadInstalledPrintersList()" title="Refresh printers">🔄 Refresh</button>
               </div>
-              <small class="muted-text">Auto-detected Windows printers on Master PC (POS-80, TVS, Epson, etc.).</small>
+              <small class="muted-text">Auto-detected Windows printers on Master PC (HP Smart Tank, LaserJet, POS-80, TVS, Epson, etc.).</small>
+            </div>
+
+            <!-- Printer Machine Type -->
+            <div class="form-group">
+              <label>Printer Machine Hardware Class:</label>
+              <select id="setPrinterType" onchange="onPrinterTypeChange()">
+                <option value="document">📄 Standard Desktop / Office Printer (HP Smart Tank, LaserJet, Inkjet — A4/A5)</option>
+                <option value="thermal">🧻 Thermal POS Receipt Printer (80mm / 58mm Roll — USB / Serial / LAN)</option>
+              </select>
             </div>
 
             <!-- Network Target -->
@@ -761,13 +770,15 @@
               </div>
             </div>
 
-            <!-- Receipt Preset -->
+            <!-- Paper Size & Invoice Format -->
             <div class="form-row">
               <div class="form-group">
-                <label>Thermal Paper Preset:</label>
-                <select id="setThermalPaperSize">
-                  <option value="80mm">Standard 80mm Roll (48 Columns)</option>
-                  <option value="58mm">Compact 58mm Roll (32 Columns)</option>
+                <label>Paper Size & Invoice Format Preset:</label>
+                <select id="setPaperSize" onchange="onPaperSizeChange()">
+                  <option value="a4">📄 Standard Office A4 Corporate Tax Invoice (210 x 297 mm Sheet)</option>
+                  <option value="a5">📑 Compact A5 Half Sheet / Delivery Memo (148 x 210 mm)</option>
+                  <option value="80mm">🧻 Standard 80mm Roll (48 Columns Thermal Receipt)</option>
+                  <option value="58mm">🧻 Compact 58mm Roll (32 Columns Portable Thermal)</option>
                 </select>
               </div>
               <div class="form-group">
@@ -779,14 +790,36 @@
               </div>
             </div>
 
-            <!-- Hardware Actions Toggles -->
-            <div class="form-row" style="margin-top:4px;">
+            <!-- Document Specific Settings -->
+            <div class="form-row" id="boxDocumentSettings" style="display:none;">
+              <div class="form-group">
+                <label>Page Orientation:</label>
+                <select id="setOrientation">
+                  <option value="portrait">Portrait</option>
+                  <option value="landscape">Landscape</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Color Mode:</label>
+                <select id="setColorMode">
+                  <option value="color">Color</option>
+                  <option value="monochrome">Monochrome / Black & White</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Thermal Specific Settings -->
+            <div class="form-row" id="boxThermalSettings" style="display:none; margin-top:4px;">
               <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
                 <input type="checkbox" id="setAutoCut" checked> ✂️ Auto-Cut Paper
               </label>
               <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
                 <input type="checkbox" id="setCashDrawer"> 💵 Kick Cash Drawer
               </label>
+            </div>
+
+            <!-- Hardware Actions Toggles -->
+            <div class="form-row" style="margin-top:4px;">
               <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
                 <input type="checkbox" id="setAutoPrintMobile" checked> ⚡ Direct Auto-Print Mobile Bills
               </label>
@@ -832,20 +865,21 @@
 
             <div class="form-row">
               <div class="form-group">
-                <label>Default Counter Printer Machine:</label>
-                <select id="setDefaultPrinter">
-                  <option value="80mm">Standard 80mm Thermal POS (3-inch roll)</option>
-                  <option value="58mm">Compact 58mm Thermal POS (2-inch portable roll)</option>
-                  <option value="a4">Office A4 Tax Invoice (Laser / Inkjet)</option>
-                  <option value="a5">A5 Landscape / Delivery Slip</option>
+                <label>Default Bill Mode (POS Counter):</label>
+                <select id="setDefaultGSTMode">
+                  <option value="false">Non-GST Retail Cash Bill by default</option>
+                  <option value="true">GST Tax Invoice by default</option>
                 </select>
               </div>
               <div class="form-group">
-                <label>Default Bill Mode (POS Counter):</label>
-                <select id="setDefaultGSTMode">
-                  <option value="true">GST Tax Invoice by default</option>
-                  <option value="false">Non-GST Cash Bill by default</option>
+                <label>Default Payment Mode:</label>
+                <select id="setDefaultPayMode">
+                  <option value="Cash">Cash by default</option>
+                  <option value="UPI">UPI / GPay / PhonePe</option>
+                  <option value="Card">Credit / Debit Card</option>
+                  <option value="Credit">Customer Credit Ledger</option>
                 </select>
+                <input type="hidden" id="setDefaultPrinter" value="a4">
               </div>
             </div>
 

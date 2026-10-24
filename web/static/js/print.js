@@ -293,10 +293,6 @@ const PrintEngine = {
           </div>
         </div>
 
-        <div style="margin-top:20px; font-size:11px; font-style:italic;">
-          Declaration: We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
-        </div>
-
         <div class="sign-block">
           <div>Customer Signature</div>
           <div>For ${s.companyName || 'VANUR FPC LTD'}<br><br><small>(Authorised Signatory)</small></div>

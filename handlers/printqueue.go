@@ -224,6 +224,8 @@ func HandlePrintQueue(w http.ResponseWriter, r *http.Request) {
 			if res.Success && res.DirectPrint {
 				globalPrintQueue.MarkCompleted(job.ID)
 				directPrinted = true
+			} else if !res.Success {
+				job.Status = "failed"
 			}
 		}
 

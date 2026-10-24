@@ -14,6 +14,7 @@ package printer
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"siraazhi-pos/db"
 )
@@ -73,18 +74,34 @@ func PrintBillToHardware(bill *db.Bill, format string, s *db.Settings) PrintResu
 
 	docName := fmt.Sprintf("Bill_%s", bill.BillNo)
 
+	// Determine effective format
+	effectiveFormat := strings.ToLower(strings.TrimSpace(format))
+	if effectiveFormat == "" || effectiveFormat == "default" {
+		if s.DefaultPrinter != "" {
+			effectiveFormat = strings.ToLower(strings.TrimSpace(s.DefaultPrinter))
+		} else if !IsThermalPOSPrinter(targetPrinter) || s.PrinterType == "document" {
+			effectiveFormat = "a4"
+		} else {
+			effectiveFormat = "80mm"
+		}
+	}
+
 	// Determine whether primary target is Thermal POS or Document (A4/Deskjet/HP Smart Tank)
-	isThermal := true
-	if s.PrinterType == "document" || (!IsThermalPOSPrinter(targetPrinter) && s.PrinterType != "thermal" && s.PrinterInterface != "network") {
-		isThermal = false
-	}
-	// If format explicitly requests A4/A5 tax invoice
-	if (format == "a4" || format == "a5") && s.PrinterInterface != "network" {
-		isThermal = false
-	}
-	// If format explicitly requests thermal
-	if format == "80mm" || format == "58mm" {
+	isThermal := false
+	if s.PrinterInterface == "network" {
+		// LAN raw socket printer (port 9100)
 		isThermal = true
+	} else if !IsThermalPOSPrinter(targetPrinter) {
+		// Non-thermal desktop office printer (HP Smart Tank, Deskjet, LaserJet, etc.)
+		// MUST ALWAYS use Windows GDI Document printing! Never send raw ESC/POS!
+		isThermal = false
+	} else if s.PrinterType == "document" {
+		isThermal = false
+	} else if s.PrinterType == "thermal" {
+		isThermal = true
+	} else {
+		// Auto-detect based on printer driver and requested format
+		isThermal = IsThermalPOSPrinter(targetPrinter) && effectiveFormat != "a4" && effectiveFormat != "a5" && effectiveFormat != "letter"
 	}
 
 	var primaryErr error
@@ -95,8 +112,8 @@ func PrintBillToHardware(bill *db.Bill, format string, s *db.Settings) PrintResu
 		if paperSize == "" {
 			paperSize = s.PaperSize
 		}
-		if format == "58mm" || format == "80mm" {
-			paperSize = format
+		if effectiveFormat == "58mm" || effectiveFormat == "80mm" {
+			paperSize = effectiveFormat
 		}
 		if paperSize != "58mm" {
 			paperSize = "80mm" // Default 80mm roll
@@ -122,11 +139,11 @@ func PrintBillToHardware(bill *db.Bill, format string, s *db.Settings) PrintResu
 	} else {
 		// 2. Standard Office / Desktop Printer (A4 / A5 Sheet — HP Smart Tank, LaserJet, Inkjet)
 		paperSize := s.PaperSize
-		if format == "a4" || format == "a5" || format == "letter" {
-			paperSize = format
+		if effectiveFormat == "a4" || effectiveFormat == "a5" || effectiveFormat == "letter" {
+			paperSize = effectiveFormat
 		}
 		if paperSize == "" || paperSize == "80mm" || paperSize == "58mm" {
-			paperSize = "a4" // Default A4 sheet
+			paperSize = "a4" // Default A4 sheet for desktop printers
 		}
 
 		orientation := s.Orientation
@@ -159,7 +176,19 @@ func PrintBillToHardware(bill *db.Bill, format string, s *db.Settings) PrintResu
 	// Handle Optional Secondary Printer (e.g. Dispatch / Packaging / Warehouse counter)
 	if s.SecondaryPrinterEnabled && s.SecondaryPrinterTarget != "" {
 		go func() {
-			secIsThermal := (s.SecondaryPrinterType == "thermal") || (s.SecondaryPrinterType == "" && IsThermalPOSPrinter(s.SecondaryPrinterTarget))
+			secIsThermal := false
+			if s.SecondaryPrinterInterface == "network" {
+				secIsThermal = true
+			} else if !IsThermalPOSPrinter(s.SecondaryPrinterTarget) {
+				secIsThermal = false
+			} else if s.SecondaryPrinterType == "document" {
+				secIsThermal = false
+			} else if s.SecondaryPrinterType == "thermal" {
+				secIsThermal = true
+			} else {
+				secIsThermal = IsThermalPOSPrinter(s.SecondaryPrinterTarget)
+			}
+
 			var secErr error
 			if secIsThermal {
 				secPaper := s.SecondaryPaperSize
@@ -178,7 +207,7 @@ func PrintBillToHardware(bill *db.Bill, format string, s *db.Settings) PrintResu
 				}
 			} else {
 				secPaper := s.SecondaryPaperSize
-				if secPaper == "" {
+				if secPaper == "" || secPaper == "80mm" || secPaper == "58mm" {
 					secPaper = "a4"
 				}
 				secDocText := BuildDocumentText(bill, s, secPaper)
@@ -228,7 +257,10 @@ func PrintTestSlip(intf, target string, port int, paperSize, orientation, colorM
 	// Windows Spooler Interface:
 	// Check if this target is a Thermal POS printer or a standard Document printer (HP Smart Tank, etc.)
 	isThermal := false
-	if printerType == "thermal" {
+	if !IsThermalPOSPrinter(target) {
+		// Non-thermal desktop printer - NEVER send raw ESC/POS
+		isThermal = false
+	} else if printerType == "thermal" {
 		isThermal = true
 	} else if printerType == "document" {
 		isThermal = false
@@ -260,3 +292,4 @@ func PrintTestSlip(intf, target string, port int, paperSize, orientation, colorM
 	docText := BuildTestDocumentText(target, paperSize, orientation, colorMode, s)
 	return PrintDocumentWin32(target, "Siraazhi POS Test Slip", docText, paperSize, orientation, colorMode, 1)
 }
+

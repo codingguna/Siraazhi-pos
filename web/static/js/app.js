@@ -1783,11 +1783,12 @@ function applySettingsToUI() {
   // 3. Update brand titles in header
   const brandTamil = document.querySelector('.brand-tamil');
   if (brandTamil && SETTINGS.brandEn) {
-    brandTamil.innerHTML = `${SETTINGS.brandTa || 'சீராழி'} <span class="brand-en">${SETTINGS.brandEn}</span>`;
+    const ta = (!SETTINGS.brandTa || SETTINGS.brandTa.includes('?')) ? 'சீராழி' : SETTINGS.brandTa;
+    brandTamil.innerHTML = `${ta} <span class="brand-en">${SETTINGS.brandEn}</span>`;
   }
   const brandSub = document.querySelector('.brand-sub');
   if (brandSub && SETTINGS.companyName) {
-    brandSub.textContent = `${SETTINGS.companyName} • ${SETTINGS.tagline || 'Billing, Inventory & Multi-Print Suite'}`;
+    brandSub.textContent = `${SETTINGS.companyName} • ${SETTINGS.tagline || 'Pure Traditional chekku Oils'}`;
   }
 }
 
@@ -1805,7 +1806,6 @@ function populateSettingsForm() {
   $('setFY').value = s.financialYear || '2026-27';
   $('setFooterEn').value = s.footerNoteEn || '';
   $('setFooterTa').value = s.footerNoteTa || '';
-  $('setDefaultPrinter').value = s.defaultPrinter || '80mm';
   $('setDefaultGSTMode').value = (s.gstDefaultOn === true) ? 'true' : 'false';
   if ($('setMasterPin')) $('setMasterPin').value = s.masterPin || '1234';
 
@@ -1814,9 +1814,20 @@ function populateSettingsForm() {
   if ($('setPrinterTarget')) $('setPrinterTarget').value = s.printerTarget || '';
   if ($('setPrinterIP')) $('setPrinterIP').value = (s.printerInterface === 'network' ? s.printerTarget : '') || '';
   if ($('setPrinterPort')) $('setPrinterPort').value = s.printerPort || 9100;
-  if ($('setPrinterType')) $('setPrinterType').value = s.printerType || 'thermal';
+  let pType = s.printerType;
+  const tName = (s.printerTarget || '').toLowerCase();
+  if (!pType || (pType === 'thermal' && (tName.includes('smart tank') || tName.includes('laser') || tName.includes('deskjet') || tName.includes('ink tank') || tName.includes('ecotank') || tName.includes('pixma') || tName.includes('brother')))) {
+    if (tName.includes('smart tank') || tName.includes('laser') || tName.includes('deskjet') || tName.includes('ink tank') || tName.includes('ecotank') || tName.includes('pixma') || tName.includes('brother')) {
+      pType = 'document';
+    } else if (!pType) {
+      pType = 'thermal';
+    }
+  }
+  if ($('setPrinterType')) $('setPrinterType').value = pType;
   onPrinterTypeChange();
-  if ($('setPaperSize')) $('setPaperSize').value = s.paperSize || s.thermalPaperSize || s.thermalSize || (s.printerType === 'document' ? 'a4' : '80mm');
+  const effectivePaper = s.paperSize || s.defaultPrinter || (pType === 'document' ? 'a4' : '80mm');
+  if ($('setPaperSize')) $('setPaperSize').value = effectivePaper;
+  if ($('setDefaultPrinter')) $('setDefaultPrinter').value = effectivePaper;
   if ($('setOrientation')) $('setOrientation').value = s.orientation || 'portrait';
   if ($('setColorMode')) $('setColorMode').value = s.colorMode || 'color';
   if ($('setPrintCopies')) $('setPrintCopies').value = s.printCopies || 1;
@@ -1874,7 +1885,7 @@ async function saveSettingsForm() {
     financialYear: $('setFY').value.trim(),
     footerNoteEn: $('setFooterEn').value.trim(),
     footerNoteTa: $('setFooterTa').value.trim(),
-    defaultPrinter: $('setDefaultPrinter').value,
+    defaultPrinter: $('setPaperSize') ? $('setPaperSize').value : (SETTINGS.paperSize || 'a4'),
     gstDefaultOn: $('setDefaultGSTMode').value === 'true',
     masterPin: masterPin,
 
@@ -1883,11 +1894,11 @@ async function saveSettingsForm() {
     printerTarget: printerTarget,
     printerPort: parseInt($('setPrinterPort') ? $('setPrinterPort').value : '9100', 10) || 9100,
     printerType: $('setPrinterType') ? $('setPrinterType').value : (SETTINGS.printerType || 'thermal'),
-    paperSize: $('setPaperSize') ? $('setPaperSize').value : (SETTINGS.paperSize || '80mm'),
+    paperSize: $('setPaperSize') ? $('setPaperSize').value : (SETTINGS.paperSize || 'a4'),
     orientation: $('setOrientation') ? $('setOrientation').value : (SETTINGS.orientation || 'portrait'),
     colorMode: $('setColorMode') ? $('setColorMode').value : (SETTINGS.colorMode || 'color'),
-    thermalPaperSize: $('setPaperSize') ? $('setPaperSize').value : '80mm',
-    thermalSize: $('setPaperSize') ? $('setPaperSize').value : '80mm',
+    thermalPaperSize: ($('setPaperSize') && $('setPaperSize').value === '58mm') ? '58mm' : '80mm',
+    thermalSize: ($('setPaperSize') && $('setPaperSize').value === '58mm') ? '58mm' : '80mm',
     printCopies: parseInt($('setPrintCopies') ? $('setPrintCopies').value : '1', 10) || 1,
     autoCut: $('setAutoCut') ? $('setAutoCut').checked : true,
     cashDrawer: $('setCashDrawer') ? $('setCashDrawer').checked : false,
@@ -1918,6 +1929,12 @@ async function saveSettingsForm() {
 // Hardware Multi-Printer UI Handlers & Direct Print Dispatcher
 // --------------------------------------------------------------------------
 
+function onPaperSizeChange() {
+  const paperSelect = $('setPaperSize');
+  if (!paperSelect) return;
+  if ($('setDefaultPrinter')) $('setDefaultPrinter').value = paperSelect.value;
+}
+
 function onPrinterTypeChange() {
   const pType = $('setPrinterType') ? $('setPrinterType').value : 'thermal';
   const paperSelect = $('setPaperSize');
@@ -1931,20 +1948,21 @@ function onPrinterTypeChange() {
     const curVal = paperSelect.value;
     if (pType === 'thermal') {
       paperSelect.innerHTML = `
-        <option value="80mm">Standard 80mm Roll (3-inch — Preferred)</option>
-        <option value="58mm">Compact 58mm Roll (2-inch portable)</option>
+        <option value="80mm">🧻 Standard 80mm Roll (48 Columns — Preferred)</option>
+        <option value="58mm">🧻 Compact 58mm Roll (32 Columns Portable)</option>
       `;
       if (curVal === '58mm') paperSelect.value = '58mm';
       else paperSelect.value = '80mm';
     } else {
       paperSelect.innerHTML = `
-        <option value="a4">Standard A4 Sheet (210 x 297 mm)</option>
-        <option value="a5">Compact A5 Half Sheet (148 x 210 mm)</option>
-        <option value="letter">Letter Sheet (8.5 x 11 in)</option>
+        <option value="a4">📄 Standard A4 Corporate Tax Invoice (210 x 297 mm)</option>
+        <option value="a5">📑 Compact A5 Half Sheet / Delivery Memo (148 x 210 mm)</option>
+        <option value="letter">📄 Letter Sheet (8.5 x 11 in)</option>
       `;
       if (curVal === 'a5' || curVal === 'letter') paperSelect.value = curVal;
       else paperSelect.value = 'a4';
     }
+    if ($('setDefaultPrinter')) $('setDefaultPrinter').value = paperSelect.value;
   }
 }
 
@@ -2078,19 +2096,27 @@ async function testHardwarePrinterSlip() {
 async function printBillDirect(bill, format) {
   if (SETTINGS.printerInterface === 'browser') {
     PrintEngine.print(bill, format, SETTINGS);
-    return;
+    return true;
+  }
+
+  // Resolve effective format
+  let effFormat = format;
+  if (!effFormat || effFormat === 'default') {
+    effFormat = SETTINGS.defaultPrinter || SETTINGS.paperSize || SETTINGS.thermalPaperSize || 'a4';
   }
 
   try {
     const res = await api('POST', '/api/print-direct', {
       bill: bill,
       billId: bill.id,
-      format: format || SETTINGS.thermalPaperSize || SETTINGS.paperSize || '80mm'
+      format: effFormat
     });
-    showToast(`🖨 Bill ${bill.billNo} printed`, 'success', 3000);
+    showToast(`🖨 Bill ${bill.billNo} sent to ${res.printerUsed || 'printer'}`, 'success', 3000);
+    return true;
   } catch (err) {
     console.warn('Hardware direct print failed:', err);
-    showToast(`⚠️ Print error: ${err.message}`, 'warning', 4000);
+    showToast(`⚠️ Print error: ${err.message}`, 'danger', 5000);
+    return false;
   }
 }
 
@@ -2255,17 +2281,23 @@ async function checkMasterPrintQueue() {
     if (autoPrint && res.jobs && res.jobs.length > 0) {
       for (const job of res.jobs) {
         if (job.status === 'pending' && job.bill) {
+          let ok = false;
           // Trigger print on Master System's physical hardware printer or browser preview
           if (SETTINGS.printerInterface === 'browser') {
             PrintEngine.print(job.bill, job.format, SETTINGS);
+            ok = true;
           } else {
-            await printBillDirect(job.bill, job.format);
+            ok = await printBillDirect(job.bill, job.format);
           }
-          // Mark completed in queue
-          await api('POST', `/api/print-queue/${job.id}/complete`);
-          showToast(`🔔 Remote Bill #${job.billNo} received & sent to printer!`, 'info', 4000);
-          loadDashboard();
-          loadBills();
+          if (ok) {
+            // Mark completed in queue ONLY IF printing actually succeeded!
+            await api('POST', `/api/print-queue/${job.id}/complete`);
+            showToast(`🔔 Remote Bill #${job.billNo} received & printed!`, 'info', 4000);
+            loadDashboard();
+            loadBills();
+          } else {
+            showToast(`❌ Remote Bill #${job.billNo} print failed! Job kept in queue for retry.`, 'danger', 5000);
+          }
         }
       }
       checkMasterPrintQueue();
@@ -2341,12 +2373,17 @@ async function executeManualPrintJob(jobId) {
       showToast('Job or bill data not found', 'warning', 3000);
       return;
     }
+    let ok = false;
     if (SETTINGS.printerInterface === 'browser') {
       PrintEngine.print(job.bill, job.format, SETTINGS);
+      ok = true;
     } else {
-      await printBillDirect(job.bill, job.format);
+      ok = await printBillDirect(job.bill, job.format);
     }
-    await api('POST', `/api/print-queue/${job.id}/complete`);
+    if (ok) {
+      await api('POST', `/api/print-queue/${job.id}/complete`);
+      showToast(`🖨 Bill ${job.billNo} printed successfully!`, 'success', 3000);
+    }
     loadPrintQueueModalData();
     checkMasterPrintQueue();
   } catch (err) {

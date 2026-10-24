@@ -20,6 +20,7 @@ package printer
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -342,203 +343,499 @@ func BuildTestReceipt(printerName, paperSize string, s *db.Settings) []byte {
 	return buf.Bytes()
 }
 
-// BuildDocumentText generates clean formatted plain text for standard office/desktop printers
-// (A4, A5, Letter) such as HP Smart Tank, LaserJet, Inkjet, or standard matrix/GDI printers.
-func BuildDocumentText(bill *db.Bill, s *db.Settings, paperSize string) string {
-	width := 80
-	isA5 := strings.EqualFold(paperSize, "a5")
-	if isA5 {
-		width = 64
+// padCenter centers text within width (rune-safe)
+func padCenter(s string, width int) string {
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) >= width {
+		return s
+	}
+	leftPad := (width - len(r)) / 2
+	rightPad := width - len(r) - leftPad
+	return strings.Repeat(" ", leftPad) + s + strings.Repeat(" ", rightPad)
+}
+
+// numberToWordsINR converts a numeric amount to Indian Rupee words (e.g. 420.00 -> "Four Hundred Twenty Rupees Only")
+func numberToWordsINR(amount float64) string {
+	intPart := int64(math.Floor(amount))
+	if intPart <= 0 {
+		return "Zero Rupees Only"
 	}
 
+	ones := []string{"", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+		"Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"}
+	tens := []string{"", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"}
+
+	convertBelowThousand := func(n int64) string {
+		var res string
+		if n >= 100 {
+			res += ones[n/100] + " Hundred "
+			n %= 100
+		}
+		if n >= 20 {
+			res += tens[n/10] + " "
+			n %= 10
+		}
+		if n > 0 {
+			res += ones[n] + " "
+		}
+		return strings.TrimSpace(res)
+	}
+
+	var parts []string
+
+	crore := intPart / 10000000
+	intPart %= 10000000
+	if crore > 0 {
+		parts = append(parts, convertBelowThousand(crore)+" Crore")
+	}
+
+	lakh := intPart / 100000
+	intPart %= 100000
+	if lakh > 0 {
+		parts = append(parts, convertBelowThousand(lakh)+" Lakh")
+	}
+
+	thousand := intPart / 1000
+	intPart %= 1000
+	if thousand > 0 {
+		parts = append(parts, convertBelowThousand(thousand)+" Thousand")
+	}
+
+	if intPart > 0 {
+		parts = append(parts, convertBelowThousand(intPart))
+	}
+
+	words := strings.TrimSpace(strings.Join(parts, " "))
+	if words == "" {
+		return "Zero Rupees Only"
+	}
+	return words + " Rupees Only"
+}
+
+// formatBoxRow wraps text inside | and | to exactly match the target width (rune-safe)
+func formatBoxRow(content string, width int) string {
+	r := []rune(content)
+	innerWidth := width - 2
+	if len(r) > innerWidth {
+		r = r[:innerWidth]
+	}
+	return "|" + string(r) + strings.Repeat(" ", innerWidth-len(r)) + "|"
+}
+
+// formatBoxCenter centers text inside | and | of a fixed width (rune-safe)
+func formatBoxCenter(content string, width int) string {
+	content = strings.TrimSpace(content)
+	r := []rune(content)
+	innerWidth := width - 2
+	if len(r) >= innerWidth {
+		return formatBoxRow(content, width)
+	}
+	leftPad := (innerWidth - len(r)) / 2
+	rightPad := innerWidth - len(r) - leftPad
+	return "|" + strings.Repeat(" ", leftPad) + content + strings.Repeat(" ", rightPad) + "|"
+}
+
+// formatBoxTwoCols formats left and right strings inside | and | of a fixed width (rune-safe)
+func formatBoxTwoCols(left, right string, width int) string {
+	innerWidth := width - 2
+	rLeft := []rune(left)
+	rRight := []rune(right)
+	totalLen := len(rLeft) + len(rRight)
+	if totalLen > innerWidth {
+		avail := innerWidth - len(rRight) - 1
+		if avail > 0 && len(rLeft) > avail {
+			rLeft = rLeft[:avail]
+			left = string(rLeft)
+		}
+	}
+	space := innerWidth - len([]rune(left)) - len(rRight)
+	if space < 1 {
+		space = 1
+	}
+	return "|" + left + strings.Repeat(" ", space) + right + "|"
+}
+
+// BuildA4InvoiceText generates a complete boxed corporate Tax Invoice
+// designed specifically for standard office A4 paper (HP Smart Tank, LaserJet, Inkjet).
+// It spans the full A4 printable width with standard border gap and fits within half of the paper.
+func BuildA4InvoiceText(bill *db.Bill, s *db.Settings) string {
+	const width = 96
 	var sb strings.Builder
 
-	companyName := "SIRAAZHI PRO POS"
+	companyName := "VANUR FARMER PRODUCER COMPANY LIMITED"
 	if s != nil && s.CompanyName != "" {
 		companyName = strings.ToUpper(s.CompanyName)
 	}
 
-	brandEn := "Vanur Farmer Producer Company Limited"
+	brandEn := "Siraazhi"
 	if s != nil && s.BrandEn != "" {
 		brandEn = s.BrandEn
 	}
+	brandTa := "சீராழி"
+	if s != nil && s.BrandTa != "" && !strings.Contains(s.BrandTa, "?") {
+		brandTa = s.BrandTa
+	}
 
-	sb.WriteString(strings.Repeat("=", width) + "\n")
-	sb.WriteString(alignCenter(companyName, width) + "\n")
-	sb.WriteString(alignCenter(brandEn, width) + "\n")
+	tagline := "Pure Traditional Marachekku Oils"
+	if s != nil && s.Tagline != "" {
+		tagline = s.Tagline
+	}
 
+	address := "Thailapuram Village, Vanur, Villupuram, Tamil Nadu"
+	if s != nil && s.Address != "" {
+		address = s.Address
+	}
+
+	var metaParts []string
 	if s != nil {
-		if s.Address != "" {
-			sb.WriteString(alignCenter(s.Address, width) + "\n")
-		}
-		var metaParts []string
 		if s.Phone != "" {
-			metaParts = append(metaParts, "Ph: "+s.Phone)
+			metaParts = append(metaParts, "Phone: "+s.Phone)
 		}
 		if s.Gstin != "" {
 			metaParts = append(metaParts, "GSTIN: "+s.Gstin)
 		}
 		if s.Fssai != "" {
-			metaParts = append(metaParts, "FSSAI: "+s.Fssai)
-		}
-		if len(metaParts) > 0 {
-			sb.WriteString(alignCenter(strings.Join(metaParts, " • "), width) + "\n")
+			metaParts = append(metaParts, "FSSAI Lic. No: "+s.Fssai)
 		}
 	}
-	sb.WriteString(strings.Repeat("=", width) + "\n")
+
+	// 1. Header Box
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
+	sb.WriteString(formatBoxCenter(companyName, width) + "\n")
+	sb.WriteString(formatBoxCenter(fmt.Sprintf("%s (%s) — %s", brandEn, brandTa, tagline), width) + "\n")
+	sb.WriteString(formatBoxCenter(address, width) + "\n")
+	if len(metaParts) > 0 {
+		sb.WriteString(formatBoxCenter(strings.Join(metaParts, "  •  "), width) + "\n")
+	}
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
+
+	// 2. Invoice Title Banner
+	billTitle := "TAX INVOICE"
+	if !bill.GSTOn {
+		billTitle = "RETAIL CASH BILL"
+	}
+	sb.WriteString(formatBoxCenter(billTitle, width) + "\n")
+
+	// 3. Two-Column Box: Customer Details (61 chars) & Invoice Metadata (32 chars)
+	// 61 + 32 + 3 borders = 96
+	custBoxWidth := 61
+	invBoxWidth := 32
+	twoColDivider := "+" + strings.Repeat("-", custBoxWidth) + "+" + strings.Repeat("-", invBoxWidth) + "+\n"
+	sb.WriteString(twoColDivider)
+
+	formatTwoColBoxRow := func(left, right string) string {
+		rL := []rune(left)
+		if len(rL) > custBoxWidth {
+			rL = rL[:custBoxWidth]
+		}
+		leftPadded := string(rL) + strings.Repeat(" ", custBoxWidth-len(rL))
+
+		rR := []rune(right)
+		if len(rR) > invBoxWidth {
+			rR = rR[:invBoxWidth]
+		}
+		rightPadded := string(rR) + strings.Repeat(" ", invBoxWidth-len(rR))
+
+		return "|" + leftPadded + "|" + rightPadded + "|\n"
+	}
+
+	custName := "Consumer / Walk-in"
+	if bill.Customer.Name != "" {
+		custName = bill.Customer.Name
+	}
+	custPhone := "-"
+	if bill.Customer.Phone != "" {
+		custPhone = bill.Customer.Phone
+	}
+	custAddr := "Tamil Nadu"
+	if bill.Customer.Address != "" {
+		custAddr = bill.Customer.Address
+	}
+	custGstin := "Unregistered / Consumer"
+	if bill.Customer.Gstin != "" {
+		custGstin = bill.Customer.Gstin
+	}
+	custState := "33 - Tamil Nadu"
+	if bill.Customer.State != "" {
+		custState = bill.Customer.State
+	}
+
+	sb.WriteString(formatTwoColBoxRow(" BILLED TO (CUSTOMER):", " INVOICE DETAILS:"))
+	sb.WriteString(formatTwoColBoxRow(" Customer Name : "+custName, " Invoice No : "+bill.BillNo))
+	sb.WriteString(formatTwoColBoxRow(" Contact Phone : "+custPhone, " Date       : "+bill.Date))
+	sb.WriteString(formatTwoColBoxRow(" Delivery Addr : "+custAddr, " Pay Mode   : "+bill.PayMode))
+	if bill.Customer.Gstin != "" {
+		sb.WriteString(formatTwoColBoxRow(" Customer GSTIN: "+custGstin, " Place of Supply: "+custState))
+	} else {
+		sb.WriteString(formatTwoColBoxRow(" Place of Supply: "+custState, " Cashier    : Master Counter"))
+	}
+
+	// 4. Items Table
+	// Width = 96 chars:
+	// Col 1: S.No (4), Col 2: Desc (40), Col 3: HSN (8), Col 4: Qty (7), Col 5: Unit (5), Col 6: Rate (11), Col 7: Amt (13)
+	// Total: 4 + 40 + 8 + 7 + 5 + 11 + 13 + 8 dividers = 96
+	tableBorder := "+" + strings.Repeat("-", 4) + "+" + strings.Repeat("-", 40) + "+" + strings.Repeat("-", 8) + "+" + strings.Repeat("-", 7) + "+" + strings.Repeat("-", 5) + "+" + strings.Repeat("-", 11) + "+" + strings.Repeat("-", 13) + "+\n"
+	sb.WriteString(tableBorder)
+
+	tableHeader := "|S.No| " + padRight("Description of Goods", 39) + "|  HSN   |   Qty | Unit| Rate (Rs) |  Amount(Rs) |\n"
+	sb.WriteString(tableHeader)
+	sb.WriteString(tableBorder)
+
+	for idx, it := range bill.Items {
+		name := it.NameEn
+		if name == "" {
+			name = "Product"
+		}
+		snoStr := padCenter(fmt.Sprintf("%d", idx+1), 4)
+		hsnStr := padCenter(it.HSN, 8)
+		qtyStr := padLeft(fmt.Sprintf("%.2f", it.Qty), 7)
+		unitStr := padCenter("Btl", 5)
+		rateStr := padLeft(fmt.Sprintf("%.2f", it.Price), 11)
+		amtStr := padLeft(fmt.Sprintf("%.2f", it.Amount), 13)
+
+		rName := []rune(name)
+		if len(rName) > 39 {
+			firstLine := string(rName[:39])
+			rest := string(rName[39:])
+			sb.WriteString("|" + snoStr + "| " + padRight(firstLine, 39) + "|" + hsnStr + "|" + qtyStr + "|" + unitStr + "|" + rateStr + "|" + amtStr + "|\n")
+			sb.WriteString("|    | " + padRight(rest, 39) + "|        |       |     |           |             |\n")
+		} else {
+			sb.WriteString("|" + snoStr + "| " + padRight(name, 39) + "|" + hsnStr + "|" + qtyStr + "|" + unitStr + "|" + rateStr + "|" + amtStr + "|\n")
+		}
+	}
+
+	sb.WriteString(tableBorder)
+
+	// 5. Subtotal and Tax Breakdown Rows
+	// Left: 80 chars, Right: 13 chars. 80 + 13 + 3 = 96
+	formatTotalLine := func(label, val string) string {
+		return "|" + padLeft(label+" ", 80) + "|" + padLeft(val+" ", 13) + "|\n"
+	}
+	totalDivider := "+" + strings.Repeat("-", 80) + "+" + strings.Repeat("-", 13) + "+\n"
+
+	subtotal := bill.Subtotal
+	if subtotal == 0 {
+		for _, it := range bill.Items {
+			subtotal += it.Amount
+		}
+		if subtotal == 0 && bill.GrandTotal > 0 {
+			subtotal = bill.GrandTotal
+		}
+	}
+	sb.WriteString(formatTotalLine("Subtotal:", fmt.Sprintf("%.2f", subtotal)))
+	if bill.Discount > 0 {
+		sb.WriteString(formatTotalLine("Discount:", fmt.Sprintf("-%.2f", bill.Discount)))
+	}
+	if bill.GSTOn && bill.GSTAmt > 0 {
+		sb.WriteString(formatTotalLine("Taxable Value:", fmt.Sprintf("%.2f", bill.Taxable)))
+		if bill.CGST > 0 && bill.SGST > 0 {
+			sb.WriteString(formatTotalLine("CGST (2.5%) + SGST (2.5%):", fmt.Sprintf("%.2f + %.2f", bill.CGST, bill.SGST)))
+		} else if bill.IGST > 0 {
+			sb.WriteString(formatTotalLine("IGST (5%):", fmt.Sprintf("%.2f", bill.IGST)))
+		}
+		sb.WriteString(formatTotalLine("Total GST Tax (incl.):", fmt.Sprintf("%.2f", bill.GSTAmt)))
+	}
+
+	sb.WriteString(totalDivider)
+
+	// Grand Total
+	sb.WriteString("|" + padLeft("TOTAL INVOICE VALUE (IN RUPEES): ", 80) + "|" + padLeft(fmt.Sprintf("Rs. %.2f ", bill.GrandTotal), 13) + "|\n")
+	sb.WriteString(totalDivider)
+
+	// 6. Words & Payment Info
+	words := numberToWordsINR(bill.GrandTotal)
+	sb.WriteString(formatBoxRow(" Amount in Words: "+words, width) + "\n")
+
+	payDetails := fmt.Sprintf(" Amount Paid    : Rs. %.2f (%s)", bill.Paid, bill.PayMode)
+	balDetails := fmt.Sprintf("Balance Due : Rs. %.2f ", bill.Balance)
+	sb.WriteString(formatBoxTwoCols(payDetails, balDetails, width) + "\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
+
+	// 7. Signatures (NO TERMS & CONDITIONS - REMOVED AS REQUESTED)
+	signHeader := fmt.Sprintf("For %s", companyName)
+	sb.WriteString(formatBoxTwoCols("", signHeader+" ", width) + "\n")
+	sb.WriteString(formatBoxRow("", width) + "\n")
+	sb.WriteString(formatBoxTwoCols(" Customer Signature", "(Authorised Signatory) ", width) + "\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
+
+	footerNote := "Thank you! Visit again."
+	if s != nil && s.FooterNoteEn != "" {
+		footerNote = s.FooterNoteEn
+	}
+	sb.WriteString(formatBoxCenter(footerNote+" • "+time.Now().Format("02/01/2006 03:04 PM"), width) + "\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
+
+	return sb.String()
+}
+
+// BuildA5InvoiceText generates a compact boxed invoice for A5 sheets (Laser / Inkjet)
+func BuildA5InvoiceText(bill *db.Bill, s *db.Settings) string {
+	const width = 64
+	var sb strings.Builder
+
+	companyName := "VANUR FARMER PRODUCER CO. LTD"
+	if s != nil && s.CompanyName != "" {
+		companyName = strings.ToUpper(s.CompanyName)
+	}
+
+	brandEn := "Siraazhi"
+	if s != nil && s.BrandEn != "" {
+		brandEn = s.BrandEn
+	}
+
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
+	sb.WriteString(formatBoxCenter(companyName, width) + "\n")
+	sb.WriteString(formatBoxCenter(brandEn+" — Pure Marachekku Oils", width) + "\n")
+	if s != nil && s.Phone != "" && s.Gstin != "" {
+		sb.WriteString(formatBoxCenter("Ph: "+s.Phone+" | GSTIN: "+s.Gstin, width) + "\n")
+	}
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
 
 	billTitle := "TAX INVOICE"
 	if !bill.GSTOn {
 		billTitle = "RETAIL CASH BILL"
 	}
-	sb.WriteString(alignCenter(billTitle, width) + "\n")
+	sb.WriteString(formatBoxCenter(billTitle, width) + "\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
 
-	sb.WriteString(formatTwoCols(fmt.Sprintf("Invoice No : %s", bill.BillNo), fmt.Sprintf("Date : %s", bill.Date), width) + "\n")
-	sb.WriteString(formatTwoCols(fmt.Sprintf("Payment    : %s", bill.PayMode), "Cashier: Master Terminal", width) + "\n")
+	sb.WriteString(formatBoxTwoCols(" Inv No: "+bill.BillNo, "Date: "+bill.Date+" ", width) + "\n")
+	sb.WriteString(formatBoxTwoCols(" Mode  : "+bill.PayMode, "Cashier: Master Counter ", width) + "\n")
+	if bill.Customer.Name != "" {
+		sb.WriteString(formatBoxTwoCols(" Cust  : "+bill.Customer.Name, "Phone: "+bill.Customer.Phone+" ", width) + "\n")
+	}
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
 
-	if bill.Customer.Name != "" || bill.Customer.Phone != "" {
-		sb.WriteString(strings.Repeat("-", width) + "\n")
-		custLine := fmt.Sprintf("Customer : %s", bill.Customer.Name)
-		if bill.Customer.Phone != "" {
-			custLine += fmt.Sprintf(" (Ph: %s)", bill.Customer.Phone)
+	// Table: Col 1: S.No (4), Col 2: Item (29), Col 3: Qty (6), Col 4: Rate (9), Col 5: Amt (10)
+	tBorder := "+" + strings.Repeat("-", 4) + "+" + strings.Repeat("-", 29) + "+" + strings.Repeat("-", 6) + "+" + strings.Repeat("-", 9) + "+" + strings.Repeat("-", 10) + "+\n"
+	sb.WriteString(tBorder)
+	sb.WriteString("|S.No| " + padRight("Item Description", 28) + "|   Qty| Rate(Rs)|  Amt(Rs) |\n")
+	sb.WriteString(tBorder)
+
+	for idx, it := range bill.Items {
+		name := it.NameEn
+		if name == "" {
+			name = "Product"
 		}
-		sb.WriteString(custLine + "\n")
-		if bill.Customer.Gstin != "" {
-			sb.WriteString(fmt.Sprintf("GSTIN    : %s\n", bill.Customer.Gstin))
+		snoStr := padCenter(fmt.Sprintf("%d", idx+1), 4)
+		qtyStr := padLeft(fmt.Sprintf("%.2f", it.Qty), 6)
+		rateStr := padLeft(fmt.Sprintf("%.2f", it.Price), 9)
+		amtStr := padLeft(fmt.Sprintf("%.2f", it.Amount), 10)
+
+		rName := []rune(name)
+		if len(rName) > 28 {
+			first := string(rName[:28])
+			rest := string(rName[28:])
+			sb.WriteString("|" + snoStr + "| " + padRight(first, 28) + "|" + qtyStr + "|" + rateStr + "|" + amtStr + "|\n")
+			sb.WriteString("|    | " + padRight(rest, 28) + "|      |         |          |\n")
+		} else {
+			sb.WriteString("|" + snoStr + "| " + padRight(name, 28) + "|" + qtyStr + "|" + rateStr + "|" + amtStr + "|\n")
 		}
 	}
+	sb.WriteString(tBorder)
 
-	sb.WriteString(strings.Repeat("=", width) + "\n")
-
-	// Table Header
-	if isA5 {
-		header := padRight("S.No Item Description", 30) + padLeft("Qty", 6) + padLeft("Rate", 12) + padLeft("Amount", 16)
-		sb.WriteString(header + "\n")
-		sb.WriteString(strings.Repeat("-", width) + "\n")
-
-		for idx, it := range bill.Items {
-			name := it.NameEn
-			if name == "" {
-				name = "Product"
-			}
-			snoStr := fmt.Sprintf("%-4d", idx+1)
-			qtyStr := fmt.Sprintf("%.2f", it.Qty)
-			rateStr := fmt.Sprintf("%.2f", it.Price)
-			amtStr := fmt.Sprintf("%.2f", it.Amount)
-
-			if len(name) > 24 {
-				sb.WriteString(snoStr + name + "\n")
-				row := strings.Repeat(" ", 30) + padLeft(qtyStr, 6) + padLeft(rateStr, 12) + padLeft(amtStr, 16)
-				sb.WriteString(row + "\n")
-			} else {
-				desc := padRight(snoStr+name, 30)
-				row := desc + padLeft(qtyStr, 6) + padLeft(rateStr, 12) + padLeft(amtStr, 16)
-				sb.WriteString(row + "\n")
-			}
-		}
-	} else {
-		// A4 - 80 columns
-		header := padRight("S.No Item Description", 38) + padRight("HSN", 10) + padLeft("Qty", 6) + padLeft("Rate (Rs)", 12) + padLeft("Amount (Rs)", 14)
-		sb.WriteString(header + "\n")
-		sb.WriteString(strings.Repeat("-", width) + "\n")
-
-		for idx, it := range bill.Items {
-			name := it.NameEn
-			if name == "" {
-				name = "Product"
-			}
-			snoStr := fmt.Sprintf("%-4d ", idx+1)
-			hsnStr := padRight(it.HSN, 10)
-			qtyStr := fmt.Sprintf("%.2f", it.Qty)
-			rateStr := fmt.Sprintf("%.2f", it.Price)
-			amtStr := fmt.Sprintf("%.2f", it.Amount)
-
-			if len(name) > 32 {
-				sb.WriteString(snoStr + name + "\n")
-				row := strings.Repeat(" ", 38) + hsnStr + padLeft(qtyStr, 6) + padLeft(rateStr, 12) + padLeft(amtStr, 14)
-				sb.WriteString(row + "\n")
-			} else {
-				desc := padRight(snoStr+name, 38)
-				row := desc + hsnStr + padLeft(qtyStr, 6) + padLeft(rateStr, 12) + padLeft(amtStr, 14)
-				sb.WriteString(row + "\n")
-			}
-		}
-	}
-
-	sb.WriteString(strings.Repeat("-", width) + "\n")
-
-	// Totals
-	sb.WriteString(formatTwoCols("Subtotal:", formatCurrency(bill.Subtotal), width) + "\n")
+	totDivider := "+" + strings.Repeat("-", 50) + "+" + strings.Repeat("-", 10) + "+\n"
+	sb.WriteString("|" + padLeft("Subtotal: ", 50) + "|" + padLeft(fmt.Sprintf("%.2f ", bill.Subtotal), 10) + "|\n")
 	if bill.Discount > 0 {
-		sb.WriteString(formatTwoCols("Discount:", "-"+formatCurrency(bill.Discount), width) + "\n")
+		sb.WriteString("|" + padLeft("Discount: ", 50) + "|" + padLeft(fmt.Sprintf("-%.2f ", bill.Discount), 10) + "|\n")
 	}
-
 	if bill.GSTOn && bill.GSTAmt > 0 {
-		sb.WriteString(formatTwoCols("Taxable Value:", formatCurrency(bill.Taxable), width) + "\n")
-		if bill.CGST > 0 {
-			sb.WriteString(formatTwoCols("CGST Portion:", formatCurrency(bill.CGST), width) + "\n")
-		}
-		if bill.SGST > 0 {
-			sb.WriteString(formatTwoCols("SGST Portion:", formatCurrency(bill.SGST), width) + "\n")
-		}
-		if bill.IGST > 0 {
-			sb.WriteString(formatTwoCols("IGST Portion:", formatCurrency(bill.IGST), width) + "\n")
-		}
-		sb.WriteString(formatTwoCols("Total GST Tax:", formatCurrency(bill.GSTAmt), width) + "\n")
+		sb.WriteString("|" + padLeft("Taxable: ", 50) + "|" + padLeft(fmt.Sprintf("%.2f ", bill.Taxable), 10) + "|\n")
+		sb.WriteString("|" + padLeft("Total GST: ", 50) + "|" + padLeft(fmt.Sprintf("%.2f ", bill.GSTAmt), 10) + "|\n")
 	}
+	sb.WriteString(totDivider)
+	sb.WriteString("|" + padLeft("GRAND TOTAL: ", 50) + "|" + padLeft(fmt.Sprintf("Rs.%.2f ", bill.GrandTotal), 10) + "|\n")
+	sb.WriteString(totDivider)
 
-	sb.WriteString(strings.Repeat("=", width) + "\n")
-	sb.WriteString(formatTwoCols("GRAND TOTAL:", formatCurrency(bill.GrandTotal), width) + "\n")
-	sb.WriteString(formatTwoCols("Amount Paid:", formatCurrency(bill.Paid), width) + "\n")
-	if bill.Balance != 0 {
-		sb.WriteString(formatTwoCols("Balance / Change:", formatCurrency(bill.Balance), width) + "\n")
-	}
-	sb.WriteString(strings.Repeat("=", width) + "\n")
-
-	footerEn := "Thank you! Visit again."
-	if s != nil && s.FooterNoteEn != "" {
-		footerEn = s.FooterNoteEn
-	}
-	sb.WriteString(alignCenter(footerEn, width) + "\n")
-	sb.WriteString(alignCenter(time.Now().Format("02/01/2006 03:04:05 PM"), width) + "\n")
-	sb.WriteString(strings.Repeat("=", width) + "\n")
+	sb.WriteString(formatBoxTwoCols(" Paid: "+fmt.Sprintf("Rs.%.2f", bill.Paid), "Balance: "+fmt.Sprintf("Rs.%.2f ", bill.Balance), width) + "\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
+	sb.WriteString(formatBoxCenter("Thank you! Visit again.", width) + "\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
 
 	return sb.String()
+}
+
+// BuildReceiptSlipText formats a compact receipt slip for 80mm or 58mm plain text
+func BuildReceiptSlipText(bill *db.Bill, s *db.Settings, paperSize string) string {
+	width := 48
+	if paperSize == "58mm" {
+		width = 32
+	}
+
+	var sb strings.Builder
+	companyName := "SIRAAZHI PRO POS"
+	if s != nil && s.CompanyName != "" {
+		companyName = strings.ToUpper(s.CompanyName)
+	}
+	sb.WriteString(strings.Repeat("=", width) + "\n")
+	sb.WriteString(alignCenter(companyName, width) + "\n")
+	if s != nil && s.Address != "" {
+		sb.WriteString(alignCenter(s.Address, width) + "\n")
+	}
+	sb.WriteString(strings.Repeat("=", width) + "\n")
+	sb.WriteString(formatTwoCols(bill.BillNo, bill.Date, width) + "\n")
+	sb.WriteString(strings.Repeat("-", width) + "\n")
+
+	for _, it := range bill.Items {
+		name := it.NameEn
+		if name == "" {
+			name = "Product"
+		}
+		sb.WriteString(name + "\n")
+		line := fmt.Sprintf("%.2f x %.2f", it.Qty, it.Price)
+		sb.WriteString(formatTwoCols(line, fmt.Sprintf("%.2f", it.Amount), width) + "\n")
+	}
+	sb.WriteString(strings.Repeat("-", width) + "\n")
+	sb.WriteString(formatTwoCols("TOTAL:", fmt.Sprintf("Rs.%.2f", bill.GrandTotal), width) + "\n")
+	sb.WriteString(formatTwoCols("PAID ("+bill.PayMode+"):", fmt.Sprintf("Rs.%.2f", bill.Paid), width) + "\n")
+	sb.WriteString(strings.Repeat("=", width) + "\n")
+	sb.WriteString(alignCenter("Thank you! Visit again.", width) + "\n")
+	return sb.String()
+}
+
+// BuildDocumentText generates formatted text for standard office/desktop printers (HP Smart Tank, LaserJet, Inkjet)
+func BuildDocumentText(bill *db.Bill, s *db.Settings, paperSize string) string {
+	ps := strings.ToLower(strings.TrimSpace(paperSize))
+	if ps == "a5" {
+		return BuildA5InvoiceText(bill, s)
+	}
+	if ps == "80mm" || ps == "58mm" {
+		return BuildReceiptSlipText(bill, s, ps)
+	}
+	// Default to full corporate A4 Tax Invoice
+	return BuildA4InvoiceText(bill, s)
 }
 
 // BuildTestDocumentText generates a clean A4/A5 test document for standard desktop printers (HP Smart Tank, etc.)
 func BuildTestDocumentText(printerName, paperSize, orientation, colorMode string, s *db.Settings) string {
-	width := 80
-	if strings.EqualFold(paperSize, "a5") {
-		width = 64
-	}
-
+	const width = 96
 	var sb strings.Builder
-	sb.WriteString(strings.Repeat("=", width) + "\n")
-	sb.WriteString(alignCenter("SIRAAZHI PRO POS — PRINTER VERIFICATION TEST", width) + "\n")
-	sb.WriteString(alignCenter("Vanur Farmer Producer Company Limited", width) + "\n")
-	sb.WriteString(strings.Repeat("=", width) + "\n\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
+	sb.WriteString(formatBoxCenter("SIRAAZHI PRO POS — HARDWARE PRINTER VERIFICATION TEST", width) + "\n")
+	sb.WriteString(formatBoxCenter("Vanur Farmer Producer Company Limited", width) + "\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n\n")
 
-	sb.WriteString(formatTwoCols("Printer Name:", printerName, width) + "\n")
-	sb.WriteString(formatTwoCols("Printer Class:", "Standard Document Printer (Laser / Inkjet / Tank)", width) + "\n")
-	sb.WriteString(formatTwoCols("Paper Size Preset:", strings.ToUpper(paperSize), width) + "\n")
-	sb.WriteString(formatTwoCols("Page Orientation:", strings.Title(orientation), width) + "\n")
-	sb.WriteString(formatTwoCols("Color Mode:", strings.Title(colorMode), width) + "\n")
-	sb.WriteString(formatTwoCols("Status:", "ONLINE - READY", width) + "\n")
-	sb.WriteString(formatTwoCols("Timestamp:", time.Now().Format("02/01/2006 15:04:05"), width) + "\n\n")
+	sb.WriteString(formatBoxTwoCols(" Printer Name:", printerName+" ", width) + "\n")
+	sb.WriteString(formatBoxTwoCols(" Printer Class:", "Standard Document Spooler (Laser / Inkjet / Smart Tank) ", width) + "\n")
+	sb.WriteString(formatBoxTwoCols(" Paper Size Preset:", strings.ToUpper(paperSize)+" Sheet (210 x 297 mm) ", width) + "\n")
+	sb.WriteString(formatBoxTwoCols(" Page Orientation:", strings.Title(orientation)+" ", width) + "\n")
+	sb.WriteString(formatBoxTwoCols(" Color Mode:", strings.Title(colorMode)+" ", width) + "\n")
+	sb.WriteString(formatBoxTwoCols(" Hardware Status:", "ONLINE - READY ", width) + "\n")
+	sb.WriteString(formatBoxTwoCols(" Spool Timestamp:", time.Now().Format("02/01/2006 15:04:05")+" ", width) + "\n\n")
 
-	sb.WriteString(strings.Repeat("-", width) + "\n")
-	sb.WriteString("VERIFICATION RESULTS:\n")
-	sb.WriteString("  [✓] Direct Zero-Dialog Windows Document Spooling Active\n")
-	sb.WriteString("  [✓] Mobile & Tablet Wireless LAN Printing Enabled\n")
-	sb.WriteString("  [✓] Universal Support for HP Smart Tank, LaserJet, Inkjet & Thermal\n")
-	sb.WriteString("  [✓] Full GST Tax Invoicing & Multi-Printer Routing Ready\n")
-	sb.WriteString(strings.Repeat("=", width) + "\n\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
+	sb.WriteString(formatBoxRow(" VERIFICATION RESULTS & SYSTEM CAPABILITIES:", width) + "\n")
+	sb.WriteString(formatBoxRow("  [✓] Direct Zero-Dialog Windows GDI Document Spooling Active", width) + "\n")
+	sb.WriteString(formatBoxRow("  [✓] Mobile & Tablet Wireless LAN Printing Enabled via Master Queue", width) + "\n")
+	sb.WriteString(formatBoxRow("  [✓] Full Corporate A4 Tax Invoicing & Multi-Printer Routing Ready", width) + "\n")
+	sb.WriteString(formatBoxRow("  [✓] Universal Hardware Support for HP Smart Tank, LaserJet, Inkjet & POS Thermal", width) + "\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n\n")
 
-	sb.WriteString(alignCenter("Hardware Test Slip Dispatched Successfully!", width) + "\n")
-	sb.WriteString(alignCenter("Siraazhi Pro POS • Enterprise Retail & Invoicing Suite", width) + "\n")
-	sb.WriteString(strings.Repeat("=", width) + "\n")
+	sb.WriteString(formatBoxCenter("Hardware Test Slip Dispatched Successfully!", width) + "\n")
+	sb.WriteString(formatBoxCenter("Siraazhi Pro POS • Enterprise Retail & Invoicing Suite", width) + "\n")
+	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
 
 	return sb.String()
 }
+
 

@@ -139,6 +139,22 @@ func TestBuildDocumentText(t *testing.T) {
 		t.Errorf("BuildDocumentText failed for A4")
 	}
 
+	// Verify Terms & Conditions and Declarations are completely removed
+	if strings.Contains(docA4, "Terms & Conditions") || strings.Contains(docA4, "Declaration") || strings.Contains(docA4, "Goods once sold") {
+		t.Errorf("A4 invoice still contains Terms & Conditions / Declaration")
+	}
+
+	// Verify signatures and total exist
+	if !strings.Contains(docA4, "Customer Signature") || !strings.Contains(docA4, "TOTAL INVOICE VALUE") {
+		t.Errorf("A4 invoice missing signature or total value block")
+	}
+
+	// Verify line width is 96 chars (+ 1 for \n)
+	lines := strings.Split(docA4, "\n")
+	if len(lines) > 0 && len(lines[0]) != 96 {
+		t.Errorf("Expected A4 box width 96 chars, got %d", len(lines[0]))
+	}
+
 	testDoc := BuildTestDocumentText("HP Smart Tank 525", "a4", "portrait", "color", settings)
 	if !strings.Contains(testDoc, "HP Smart Tank 525") || !strings.Contains(testDoc, "VERIFICATION RESULTS") {
 		t.Errorf("BuildTestDocumentText failed")
@@ -156,4 +172,5 @@ func TestIsThermalPOSPrinter(t *testing.T) {
 		t.Errorf("TVS RP 3200 should be classified as a thermal printer")
 	}
 }
+
 
