@@ -200,8 +200,9 @@ func main() {
 	`
 	exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psScript).Run()
 
-	// 4. Remove Windows Boot Auto-Start
+	// 4. Remove Windows Boot Auto-Start (from both HKLM and HKCU)
 	exec.Command("reg", "delete", `HKLM\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "SiraazhiPOS", "/f").Run()
+	exec.Command("reg", "delete", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "SiraazhiPOS", "/f").Run()
 
 	// 5. Remove Control Panel Registration
 	exec.Command("reg", "delete", `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\SiraazhiPOS`, "/f").Run()

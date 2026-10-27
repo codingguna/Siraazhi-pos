@@ -1,0 +1,40 @@
+    <!-- 7. SALES & INVOICES REGISTER -->
+    <section id="tab-bills" class="tab-pane">
+      <div class="panel-box">
+        <div class="panel-toolbar">
+          <h2>Sales & Invoices Register</h2>
+          <div class="filter-group">
+            <label>From: <input type="date" id="filterFrom"></label>
+            <label>To: <input type="date" id="filterTo"></label>
+            <button class="btn btn-secondary" onclick="loadBills()">Filter</button>
+          </div>
+        </div>
+
+        <!-- Multi-Format Export Bar -->
+        <div class="export-banner">
+          <span class="export-title">Export Sales Data:</span>
+          <button class="btn-export btn-excel" onclick="exportSalesExcel()">📗 Export Excel (.xlsx)</button>
+          <button class="btn-export btn-csv" onclick="exportSalesCSV()">📄 Export CSV</button>
+          <button class="btn-export btn-pdf" onclick="exportSalesPDF()">📑 Export PDF Summary</button>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="billsTable">
+            <thead>
+              <tr>
+                <th>Bill No</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Type</th>
+                <th>Subtotal</th>
+                <th>Tax</th>
+                <th>Grand Total (₹)</th>
+                <th>Pay Mode</th>
+                <th>Reprint & Actions</th>
+              </tr>
+            </thead>
+            <tbody id="billsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>

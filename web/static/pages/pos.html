@@ -1,0 +1,229 @@
+    <!-- 1. POS BILLING SECTION -->
+    <section id="tab-pos" class="tab-pane">
+      
+      <!-- Mobile View Switcher (Visible on mobile/tablets <= 850px) -->
+      <div class="mobile-pos-switcher" id="mobilePosSwitcher">
+        <button type="button" class="mobile-switch-btn active" id="btnShowCatalog" onclick="switchMobilePosView('catalog')">
+          🛢️ Oil Catalog
+        </button>
+        <button type="button" class="mobile-switch-btn" id="btnShowCart" onclick="switchMobilePosView('cart')">
+          🧾 Active Bill (<span id="mobileCartItemCount">0</span>)
+        </button>
+      </div>
+
+      <div class="pos-workspace" id="posWorkspace">
+        
+        <!-- Left: Catalog & Fast Item Selector -->
+        <div class="pos-catalog-panel" id="posCatalogPanel">
+          <div class="catalog-header">
+            <div class="search-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="barcodeScanInput" placeholder="Scan Barcode or Search Item / SKU (F3)..." autofocus autocomplete="off">
+              <button class="clear-search-btn" id="clearSearchBtn" onclick="clearSearch()">✕</button>
+            </div>
+            <div class="category-pills" id="categoryPills">
+              <button class="pill-btn active" data-cat="all">All Oils</button>
+              <button class="pill-btn" data-cat="Coconut">Coconut / தேங்காய்</button>
+              <button class="pill-btn" data-cat="Groundnut">Groundnut / கடலை</button>
+              <button class="pill-btn" data-cat="Sesame">Sesame / எள்</button>
+            </div>
+          </div>
+
+          <!-- Product Cards Grid -->
+          <div class="products-grid" id="productsGrid">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Right: Real-time Cart & Checkout Terminal -->
+        <div class="pos-cart-panel" id="posCartPanel">
+          
+          <!-- Mobile Back to Catalog Button (Mobile only) -->
+          <button type="button" class="mobile-back-catalog-btn" id="mobileBackCatalogBtn" onclick="switchMobilePosView('catalog')">
+            ← Add More Oils from Catalog
+          </button>
+
+          <!-- Multi-Bill Active Tabs Bar -->
+          <div class="bill-tabs-bar">
+            <div class="bill-tabs-list" id="billTabsList">
+              <!-- Dynamically populated bill tabs: Bill 1, Bill 2, etc. -->
+            </div>
+            <button type="button" class="add-bill-tab-btn" id="addBillTabBtn" onclick="addNewBillTab()" title="Open another bill tab (Ctrl+N)">
+              <span>➕</span> New Bill
+            </button>
+          </div>
+
+          <div class="cart-header">
+            <h3 id="currentBillTitleDisplay">Bill 1 / நடப்பு பில்</h3>
+            <span class="active-bill-num" id="activeBillNoPreview">VFPC/2026-27/----</span>
+          </div>
+
+          <!-- Customer Input Box with Instant Autocomplete (Compulsory Name & Phone) -->
+          <div class="customer-box-container" id="customerBoxContainer">
+            <div class="customer-row">
+              <div class="input-with-icon" style="flex:1.2; position:relative;">
+                <span class="field-icon">👤</span>
+                <input type="text" id="custName" placeholder="Customer Name * (Compulsory)" value="" autocomplete="off" oninput="onCustomerSearchInput('name')" onfocus="onCustomerSearchFocus('name')">
+              </div>
+              <div class="input-with-icon" style="flex:1; position:relative;">
+                <span class="field-icon">📞</span>
+                <input type="tel" id="custPhone" placeholder="Mobile No * (Compulsory)" value="" autocomplete="off" oninput="onCustomerSearchInput('phone')" onfocus="onCustomerSearchFocus('phone')">
+              </div>
+            </div>
+
+            <!-- Instant Autocomplete Dropdown -->
+            <div class="customer-dropdown" id="customerDropdown" style="display:none;">
+              <div class="dropdown-header">
+                <span>⚡ Existing Customers / வாடிக்கையாளர்</span>
+                <button type="button" class="close-dropdown-btn" onclick="closeCustomerDropdown()">✕</button>
+              </div>
+              <div class="dropdown-list" id="customerDropdownList">
+                <!-- Suggestions injected dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Optional Customer Details (GSTIN, State & Address) -->
+          <div class="customer-row sub-row" id="gstDetailsRow" style="display:none; gap:6px;">
+            <input type="text" id="custGstin" placeholder="Customer GSTIN (Optional B2B)" style="flex:1.2;" oninput="onGstinInput(this.value)">
+            <select id="custState" style="flex:1; padding:6px 8px; border:1px solid var(--border-color); border-radius:4px; font-size:12px; background:var(--bg-card); color:var(--text-main);" onchange="onStateSelectChange()">
+              <option value="Tamil Nadu">33 - Tamil Nadu</option>
+              <option value="Puducherry">34 - Puducherry</option>
+              <option value="Kerala">32 - Kerala</option>
+              <option value="Karnataka">29 - Karnataka</option>
+              <option value="Andhra Pradesh">37 - Andhra Pradesh</option>
+              <option value="Telangana">36 - Telangana</option>
+              <option value="Maharashtra">27 - Maharashtra</option>
+              <option value="Delhi">07 - Delhi</option>
+              <option value="Gujarat">24 - Gujarat</option>
+              <option value="Uttar Pradesh">09 - Uttar Pradesh</option>
+              <option value="West Bengal">19 - West Bengal</option>
+              <option value="Rajasthan">08 - Rajasthan</option>
+              <option value="Madhya Pradesh">23 - Madhya Pradesh</option>
+              <option value="Haryana">06 - Haryana</option>
+              <option value="Punjab">03 - Punjab</option>
+              <option value="Bihar">10 - Bihar</option>
+              <option value="Odisha">21 - Odisha</option>
+              <option value="Goa">30 - Goa</option>
+              <option value="Other">Other State</option>
+            </select>
+            <input type="text" id="custAddress" placeholder="Address & City (Optional)" style="flex:1.5;">
+          </div>
+
+          <!-- Invoice Settings Bar -->
+          <div class="invoice-config-bar">
+            <label class="toggle-control">
+              <input type="checkbox" id="gstToggle" onchange="toggleGSTMode()">
+              <span class="toggle-slider"></span>
+              <span class="toggle-label" id="gstToggleLabel"><b>Cash Bill</b> (No tax)</span>
+            </label>
+            <div class="date-badge">
+              <input type="date" id="billDate">
+            </div>
+          </div>
+
+          <!-- Cart Line Items Table -->
+          <div class="cart-table-wrapper">
+            <table class="cart-table">
+              <thead>
+                <tr>
+                  <th style="width:40%">Item</th>
+                  <th style="width:20%">Qty</th>
+                  <th style="width:18%">Rate</th>
+                  <th style="width:18%">Amt (₹)</th>
+                  <th style="width:4%"></th>
+                </tr>
+              </thead>
+              <tbody id="cartTableBody">
+                <tr class="empty-cart-row">
+                  <td colspan="5">Cart is empty. Click an item or scan barcode to add.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Bill Calculation Summary -->
+          <div class="cart-summary">
+            <div class="summary-line">
+              <span>Subtotal:</span>
+              <span id="sumSubtotal">₹0.00</span>
+            </div>
+            <div class="summary-line discount-line">
+              <span>Discount (₹):</span>
+              <input type="number" id="billDiscount" min="0" value="0" step="1" oninput="recalcCart()">
+            </div>
+            <div class="summary-line tax-line" id="taxBreakdownRow">
+              <span id="taxSplitLabel">CGST (2.5%) + SGST (2.5%):</span>
+              <span id="sumTaxAmt">₹0.00</span>
+            </div>
+            <div class="summary-line grand-total-line">
+              <span>Grand Total:</span>
+              <span class="grand-total-amount" id="sumGrandTotal">₹0.00</span>
+            </div>
+
+            <!-- Payment Row -->
+            <div class="payment-controls">
+              <div class="pay-mode-group">
+                <label>Pay Mode:</label>
+                <select id="billPayMode">
+                  <option value="Cash">💵 Cash</option>
+                  <option value="UPI">📱 UPI / QR</option>
+                  <option value="Card">💳 Card</option>
+                  <option value="Credit">📝 Credit (Due)</option>
+                </select>
+              </div>
+              <div class="paid-amt-group">
+                <label>Paid (₹):</label>
+                <input type="number" id="billPaid" min="0" step="1" placeholder="Auto" oninput="recalcCart()">
+              </div>
+            </div>
+
+            <!-- Quick Cash Tender Shortcuts -->
+            <div class="quick-cash-row" style="display:flex; gap:6px; margin:6px 0 4px 0;">
+              <button type="button" class="chip-btn" onclick="setQuickCash('exact')" title="Exact Bill Amount" style="flex:1; font-weight:700; background:#f1f5f9; padding:6px 4px;">Exact</button>
+              <button type="button" class="chip-btn" onclick="setQuickCash(100)" title="Add ₹100 Note" style="flex:1; padding:6px 4px;">+₹100</button>
+              <button type="button" class="chip-btn" onclick="setQuickCash(500)" title="Add ₹500 Note" style="flex:1; font-weight:700; color:#15803d; background:#ecfdf5; padding:6px 4px;">+₹500</button>
+              <button type="button" class="chip-btn" onclick="setQuickCash(1000)" title="Add ₹1000" style="flex:1; padding:6px 4px;">+₹1000</button>
+            </div>
+            <div id="billChangeDisplay" style="display:none; font-size:12px; font-weight:700; text-align:right; margin-bottom:8px;"></div>
+
+            <!-- Action Buttons Grid -->
+            <div class="checkout-actions">
+              <button class="btn btn-primary-print" id="saveAndPrintBtn" onclick="checkoutBill('default')">
+                🖨 Save & Print (F10)
+              </button>
+              <button class="btn btn-save-pdf" onclick="checkoutBill('pdf')">
+                📄 Save PDF
+              </button>
+              <button class="btn btn-clear-cart" onclick="clearCart()">
+                ✕ Clear
+              </button>
+            </div>
+
+            <!-- Print Format Quick Switchers -->
+            <div class="reprint-quick-bar">
+              <span class="mini-label">Printer Preset:</span>
+              <button class="chip-btn" onclick="checkoutBill('80mm')" title="Checkout & Print 80mm">80mm Thermal</button>
+              <button class="chip-btn" onclick="checkoutBill('58mm')" title="Checkout & Print 58mm">58mm Thermal</button>
+              <button class="chip-btn" onclick="checkoutBill('a4')" title="Checkout & Print A4">A4 Invoice</button>
+              <button class="chip-btn" style="background:#e0f2fe; color:#0369a1; font-weight:700;" onclick="reprintLastBill()" title="Reprint Last Bill">🔄 Reprint Last</button>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Sticky Floating Mobile Cart Bar (Appears on mobile when in catalog view and cart has items) -->
+      <div class="mobile-floating-cart-bar" id="mobileFloatingCartBar" style="display:none;" onclick="switchMobilePosView('cart')">
+        <div class="mfcb-left">
+          <span class="mfcb-icon">🛒</span>
+          <div class="mfcb-details">
+            <span class="mfcb-count" id="mfcbCount">0 items in bill</span>
+            <span class="mfcb-total" id="mfcbTotal">₹0.00</span>
+          </div>
+        </div>
+        <button type="button" class="mfcb-btn">View Bill & Pay ➔</button>
+      </div>
+
+    </section>

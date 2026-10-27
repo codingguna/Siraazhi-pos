@@ -114,7 +114,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 
 :: 4. Register Auto-Start with Windows Boot (Runs Silently in Background)
 echo [4/6] Configuring Background Auto-Start on Windows Boot...
-reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" /v "SiraazhiPOS" /t REG_SZ /d "\"%INSTALL_DIR%\siraazhi-pos.exe\" -headless -port 8080 -db \"%DATA_DIR%\pos.db\"" /f >nul
+reg delete "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" /v "SiraazhiPOS" /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "SiraazhiPOS" /t REG_SZ /d "\"%INSTALL_DIR%\siraazhi-pos.exe\" -headless -port 8080 -db \"%DATA_DIR%\pos.db\"" /f >nul
 
 :: 5. Register in Windows "Installed Apps" / Control Panel Add-Remove Programs
 echo [5/6] Registering in Windows Add/Remove Programs...

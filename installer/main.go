@@ -245,9 +245,11 @@ func createShortcuts(targetExe, dataDir, installDir, targetIcon, targetUninstall
 }
 
 func registerWindowsIntegration(targetExe, dataDir, installDir, targetIcon, targetUninstaller string) {
-	// Auto-start in Windows Run registry
-	regCmd := fmt.Sprintf(`reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" /v "SiraazhiPOS" /t REG_SZ /d "\"%s\" -headless -port 8080 -db \"%s\pos.db\"" /f`, targetExe, dataDir)
-	exec.Command("cmd", "/c", regCmd).Run()
+	// Auto-start in Windows Run registry:
+	// Register strictly in HKCU (headless silent background) and delete any HKLM entry to avoid duplicate entries in Task Manager
+	runCmd := fmt.Sprintf(`"%s" -headless -port 8080 -db "%s\pos.db"`, targetExe, dataDir)
+	exec.Command("reg", "delete", `HKLM\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "SiraazhiPOS", "/f").Run()
+	exec.Command("reg", "add", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "SiraazhiPOS", "/t", "REG_SZ", "/d", runCmd, "/f").Run()
 
 	// Windows Settings / Control Panel (Add or Remove Programs)
 	regUninstall := `HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\SiraazhiPOS`

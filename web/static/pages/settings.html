@@ -1,0 +1,275 @@
+    <!-- 9. SETTINGS & PRINTERS -->
+    <section id="tab-settings" class="tab-pane">
+      <div class="dash-columns">
+        <div class="panel-box">
+          <h3>⚙ Company & Shop Configuration</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Company Legal Name:</label>
+              <input type="text" id="setCompany">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Brand (English):</label>
+                <input type="text" id="setBrandEn">
+              </div>
+              <div class="form-group">
+                <label>Brand (Tamil / தமிழ்):</label>
+                <input type="text" id="setBrandTa">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Tagline / Motto:</label>
+              <input type="text" id="setTagline">
+            </div>
+            <div class="form-group">
+              <label>Shop Address:</label>
+              <input type="text" id="setAddr">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Phone Number:</label>
+                <input type="text" id="setPhone">
+              </div>
+              <div class="form-group">
+                <label>FSSAI License No:</label>
+                <input type="text" id="setFssai">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>GSTIN:</label>
+                <input type="text" id="setGstin" placeholder="33XXXXX0000X1Z5">
+              </div>
+              <div class="form-group">
+                <label>Bill Prefix:</label>
+                <input type="text" id="setPrefix">
+              </div>
+              <div class="form-group">
+                <label>Financial Year:</label>
+                <input type="text" id="setFY">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-2">
+                <label>Footer Note (English):</label>
+                <input type="text" id="setFooterEn">
+              </div>
+              <div class="form-group flex-2">
+                <label>Footer Note (Tamil):</label>
+                <input type="text" id="setFooterTa">
+              </div>
+            </div>
+            <button class="btn btn-primary" onclick="saveSettingsForm()">Save Business Profile</button>
+          </div>
+        </div>
+
+        <div class="panel-box">
+          <h3>🖨 Hardware Printer Properties & Multi-Printer Setup</h3>
+          <p class="muted-text" style="font-size:12px; margin-bottom:12px;">
+            Configure direct silent printing to physical USB or Network thermal printers. Bills print directly from software without opening browser dialogs.
+          </p>
+
+          <div class="form-grid">
+            <!-- Connection Mode -->
+            <div class="form-group">
+              <label>Primary Printer Connection Interface:</label>
+              <select id="setPrinterInterface" onchange="togglePrinterInterfaceUI()">
+                <option value="browser">🌐 Browser Dialog (Manual window.print)</option>
+                <option value="spooler">🔌 Windows USB / Driver Spooler (Direct Silent Hardware Print)</option>
+                <option value="network">📡 Network LAN / Wi-Fi Printer (Direct Raw TCP Socket)</option>
+              </select>
+            </div>
+
+            <!-- Windows Spooler Target -->
+            <div class="form-group" id="groupSpoolerPrinter" style="display:none;">
+              <label>Target Windows Printer (Desktop or Thermal):</label>
+              <div style="display:flex; gap:8px;">
+                <select id="setPrinterTarget" style="flex:1;" onchange="onPrinterSelectChange()">
+                  <option value="">-- Select Installed Windows Printer --</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="loadInstalledPrintersList()" title="Refresh printers">🔄 Refresh</button>
+              </div>
+              <small class="muted-text">Auto-detected Windows printers on Master PC (HP Smart Tank, LaserJet, POS-80, TVS, Epson, etc.).</small>
+            </div>
+
+            <!-- Printer Machine Type -->
+            <div class="form-group">
+              <label>Printer Machine Hardware Class:</label>
+              <select id="setPrinterType" onchange="onPrinterTypeChange()">
+                <option value="document">📄 Standard Desktop / Office Printer (HP Smart Tank, LaserJet, Inkjet — A4/A5)</option>
+                <option value="thermal">🧻 Thermal POS Receipt Printer (80mm / 58mm Roll — USB / Serial / LAN)</option>
+              </select>
+            </div>
+
+            <!-- Network Target -->
+            <div class="form-row" id="groupNetworkPrinter" style="display:none;">
+              <div class="form-group flex-2">
+                <label>Printer IP Address:</label>
+                <input type="text" id="setPrinterIP" placeholder="e.g. 192.168.1.150">
+              </div>
+              <div class="form-group">
+                <label>Port:</label>
+                <input type="number" id="setPrinterPort" placeholder="9100" value="9100">
+              </div>
+            </div>
+
+            <!-- Paper Size & Invoice Format -->
+            <div class="form-row">
+              <div class="form-group">
+                <label>Paper Size & Invoice Format Preset:</label>
+                <select id="setPaperSize" onchange="onPaperSizeChange()">
+                  <option value="a4">📄 Standard Office A4 Corporate Tax Invoice (210 x 297 mm Sheet)</option>
+                  <option value="a5">📑 Compact A5 Half Sheet / Delivery Memo (148 x 210 mm)</option>
+                  <option value="80mm">🧻 Standard 80mm Roll (48 Columns Thermal Receipt)</option>
+                  <option value="58mm">🧻 Compact 58mm Roll (32 Columns Portable Thermal)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Print Copies:</label>
+                <select id="setPrintCopies">
+                  <option value="1">1 Copy (Customer)</option>
+                  <option value="2">2 Copies (Customer + Shop)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Document Specific Settings -->
+            <div class="form-row" id="boxDocumentSettings" style="display:none;">
+              <div class="form-group">
+                <label>Page Orientation:</label>
+                <select id="setOrientation">
+                  <option value="portrait">Portrait</option>
+                  <option value="landscape">Landscape</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Color Mode:</label>
+                <select id="setColorMode">
+                  <option value="color">Color</option>
+                  <option value="monochrome">Monochrome / Black & White</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Thermal Specific Settings -->
+            <div class="form-row" id="boxThermalSettings" style="display:none; margin-top:4px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="setAutoCut" checked> ✂️ Auto-Cut Paper
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="setCashDrawer"> 💵 Kick Cash Drawer
+              </label>
+            </div>
+
+            <!-- Hardware Actions Toggles -->
+            <div class="form-row" style="margin-top:4px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="setAutoPrintMobile" checked> ⚡ Direct Auto-Print Mobile Bills
+              </label>
+            </div>
+
+            <!-- Test Print Button -->
+            <div style="margin-top:6px;">
+              <button type="button" class="btn btn-secondary" onclick="testHardwarePrinterSlip()">🖨 Send Test Receipt to Hardware</button>
+            </div>
+
+            <div style="margin:14px 0; border-top:1px dashed #cbd5e1;"></div>
+
+            <!-- Secondary Multi-Printer (Dispatch / Packaging) -->
+            <div class="form-group">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:700;">
+                <input type="checkbox" id="setSecPrinterEnabled" onchange="toggleSecPrinterUI()"> 📦 Enable Secondary Printer (Dispatch / Packaging / Kitchen)
+              </label>
+            </div>
+
+            <div id="groupSecPrinter" style="display:none; padding:12px; background:#f8fafc; border-radius:6px; border:1px solid #e2e8f0; margin-bottom:12px;">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Secondary Interface:</label>
+                  <select id="setSecPrinterInterface" onchange="toggleSecPrinterTargetUI()">
+                    <option value="spooler">Windows Driver / USB</option>
+                    <option value="network">Network LAN / Wi-Fi</option>
+                  </select>
+                </div>
+                <div class="form-group flex-2" id="secPrinterSpoolerBox">
+                  <label>Secondary Printer Name:</label>
+                  <select id="setSecPrinterTarget">
+                    <option value="">-- Select Secondary Printer --</option>
+                  </select>
+                </div>
+                <div class="form-group flex-2" id="secPrinterNetworkBox" style="display:none;">
+                  <label>Secondary IP Address:</label>
+                  <input type="text" id="setSecPrinterIP" placeholder="192.168.1.160">
+                </div>
+              </div>
+            </div>
+
+            <div style="margin:14px 0; border-top:1px dashed #cbd5e1;"></div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Default Bill Mode (POS Counter):</label>
+                <select id="setDefaultGSTMode">
+                  <option value="false">Non-GST Retail Cash Bill by default</option>
+                  <option value="true">GST Tax Invoice by default</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Default Payment Mode:</label>
+                <select id="setDefaultPayMode">
+                  <option value="Cash">Cash by default</option>
+                  <option value="UPI">UPI / GPay / PhonePe</option>
+                  <option value="Card">Credit / Debit Card</option>
+                  <option value="Credit">Customer Credit Ledger</option>
+                </select>
+                <input type="hidden" id="setDefaultPrinter" value="a4">
+              </div>
+            </div>
+
+            <h3 style="margin-top:15px;">🔐 Master Terminal Security & Staff PIN</h3>
+            <div class="form-group">
+              <label>Master Admin PIN (Resettable):</label>
+              <div style="display:flex; gap:8px;">
+                <input type="text" id="setMasterPin" placeholder="e.g. 1234" maxlength="10" style="max-width:180px; font-weight:bold; font-size:15px; letter-spacing:2px;">
+                <button type="button" class="btn btn-secondary" onclick="generateRandomPin()" title="Generate random 4-digit PIN">🎲 Random</button>
+              </div>
+            </div>
+
+            <!-- Windows System & Auto-Startup -->
+            <h3 style="margin-top:20px;">🚀 Windows Auto-Startup</h3>
+            <p class="muted-text" style="font-size:12px; margin-bottom:10px;">
+              Automatically start Siraazhi Pro POS silently in the background on port 8080 when Windows boots up.
+            </p>
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px; margin-bottom:14px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-weight:700; font-size:13px; color:#1e293b;">Auto-Startup on Windows Boot</div>
+                  <div style="font-size:12px; color:#64748b; margin-top:2px;" id="autoStartStatusText">Status: Checking...</div>
+                </div>
+                <label class="toggle-control">
+                  <input type="checkbox" id="setAutoStartup" onchange="toggleAutoStartupSetting()">
+                  <span class="toggle-slider"></span>
+                  <span class="toggle-label" id="autoStartToggleLabel" style="font-weight:600;">Disabled</span>
+                </label>
+              </div>
+              <small class="muted-text" style="display:block; margin-top:8px; font-size:11px;">
+                💡 <b>Headless Mode:</b> POS runs silently in the background on port 8080. Store phones & tablets can bill immediately, and clicking the Desktop icon opens the counter billing screen instantly.
+              </small>
+            </div>
+
+            <button class="btn btn-primary" style="margin-top:10px; width:100%;" onclick="saveSettingsForm()">💾 Save All Configuration & Printer Properties</button>
+          </div>
+
+          <h3 style="margin-top:25px;">💾 Data Backup & Disaster Recovery</h3>
+          <p class="muted-text">Safeguard your records: download a copy onto a pen drive weekly.</p>
+          <div class="form-row">
+            <button class="btn btn-outline" onclick="downloadBackupJSON()">⬇ Download Full Backup (.json)</button>
+            <label class="btn btn-outline file-btn">
+              ⬆ Restore Backup
+              <input type="file" id="backupFileInput" accept=".json" onchange="restoreBackupFile(this)" style="display:none;">
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>

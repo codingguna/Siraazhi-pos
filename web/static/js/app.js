@@ -151,6 +151,27 @@ async function initApp() {
 
   setupKeyboardShortcuts();
 
+  // 1. Immediately determine and visually activate the current tab BEFORE any async network calls
+  // This eliminates any visual delay or jumping when refreshing on #settings or any other tab
+  let activePage = (window.location.hash || '').replace(/^#/, '').trim();
+  if (!activePage) {
+    try {
+      activePage = localStorage.getItem('siraazhi_active_tab') || '';
+    } catch (_) {}
+  }
+  const validTabs = ['dash', 'pos', 'inventory', 'production', 'purchases', 'expenses', 'bills', 'gstr1', 'settings'];
+  if (!validTabs.includes(activePage)) {
+    activePage = 'dash';
+  }
+
+  // Pre-activate tab in DOM immediately
+  document.querySelectorAll('#navTabs button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  const preBtn = document.querySelector(`#navTabs button[data-tab="${activePage}"]`);
+  const prePane = $(`tab-${activePage}`);
+  if (preBtn) preBtn.classList.add('active');
+  if (prePane) prePane.classList.add('active');
+
   try {
     SETTINGS = await api('GET', '/api/settings');
     PRODUCTS = await api('GET', '/api/products');
@@ -165,6 +186,11 @@ async function initApp() {
     renderCart();
     renderBillTabs();
 
+    // Remote staff terminals are restricted to POS billing tab
+    if (!IS_MASTER_MODE && activePage !== 'pos') {
+      activePage = 'pos';
+    }
+
     if (IS_MASTER_MODE) {
       loadDashboard();
       loadInventoryTable();
@@ -175,10 +201,10 @@ async function initApp() {
       loadBills();
       loadGSTR1Report();
       populateSettingsForm();
-      switchTab('dash');
-    } else {
-      switchTab('pos');
     }
+
+    // Switch directly to the restored active page
+    switchTab(activePage);
   } catch (err) {
     console.error('Initialization error:', err);
   }
@@ -329,6 +355,19 @@ function switchTab(tabId) {
   if (targetBtn) targetBtn.classList.add('active');
   if (targetPane) targetPane.classList.add('active');
 
+  // Update browser URL hash and localStorage so refreshing preserves this exact page
+  const cleanTab = tabId.replace(/^#/, '');
+  if (window.location.hash !== '#' + cleanTab) {
+    try {
+      history.replaceState(null, '', '#' + cleanTab);
+    } catch (_) {
+      window.location.hash = '#' + cleanTab;
+    }
+  }
+  try {
+    localStorage.setItem('siraazhi_active_tab', cleanTab);
+  } catch (_) {}
+
   // Trigger data refreshes on tab activation
   if (tabId === 'pos') {
     if (CART.length === 0) {
@@ -353,8 +392,17 @@ function switchTab(tabId) {
   } else if (tabId === 'settings') {
     populateSettingsForm();
     loadInstalledPrintersList();
+    loadAutoStartupStatus();
   }
 }
+
+// Browser navigation and hashchange listener
+window.addEventListener('hashchange', () => {
+  const hashTab = (window.location.hash || '').replace(/^#/, '').trim();
+  if (hashTab && $(`tab-${hashTab}`)) {
+    switchTab(hashTab);
+  }
+});
 
 // --------------------------------------------------------------------------
 // 3. POS Billing & Catalog
@@ -1021,6 +1069,17 @@ async function checkoutBill(printFormat) {
 // --------------------------------------------------------------------------
 function setupKeyboardShortcuts() {
   window.addEventListener('keydown', (e) => {
+    // Normal F5 or Ctrl+R refresh handling (especially critical for Chromium --app mode)
+    if (e.key === 'F5' || (e.ctrlKey && (e.key === 'r' || e.key === 'R'))) {
+      e.preventDefault();
+      const currentTab = (window.location.hash || '').replace(/^#/, '').trim() || localStorage.getItem('siraazhi_active_tab') || 'pos';
+      try {
+        localStorage.setItem('siraazhi_active_tab', currentTab);
+      } catch (_) {}
+      window.location.reload();
+      return;
+    }
+
     if (e.key === 'F2') {
       e.preventDefault();
       switchTab('pos');
@@ -1044,6 +1103,16 @@ function setupKeyboardShortcuts() {
     } else if (e.key === 'Escape') {
       closeCustomerDropdown();
       closeAllModals();
+    }
+  });
+
+  // Preserve active tab state across standard browser refresh button & unloads
+  window.addEventListener('beforeunload', () => {
+    const currentTab = (window.location.hash || '').replace(/^#/, '').trim() || localStorage.getItem('siraazhi_active_tab');
+    if (currentTab) {
+      try {
+        localStorage.setItem('siraazhi_active_tab', currentTab);
+      } catch (_) {}
     }
   });
 }
@@ -1844,6 +1913,65 @@ function populateSettingsForm() {
 
   togglePrinterInterfaceUI();
   toggleSecPrinterUI();
+  loadAutoStartupStatus();
+}
+
+// --------------------------------------------------------------------------
+// Windows System & Auto-Startup Handlers
+// --------------------------------------------------------------------------
+
+async function loadAutoStartupStatus() {
+  if (!$('setAutoStartup')) return;
+  try {
+    const res = await api('GET', '/api/autostart');
+    const toggle = $('setAutoStartup');
+    const label = $('autoStartToggleLabel');
+    const statusText = $('autoStartStatusText');
+
+    if (toggle) toggle.checked = !!res.enabled;
+    if (label) label.textContent = res.enabled ? 'Enabled' : 'Disabled';
+    if (statusText) {
+      if (res.enabled) {
+        statusText.innerHTML = `<span style="color:#15803d; font-weight:600;">● ${res.statusText || 'Active on Windows Boot'}</span>`;
+      } else {
+        statusText.innerHTML = `<span style="color:#64748b;">○ Inactive (Manual Launch Only)</span>`;
+      }
+    }
+  } catch (err) {
+    console.warn('AutoStart query error:', err);
+    if ($('autoStartStatusText')) {
+      $('autoStartStatusText').textContent = 'Status: Available on Windows host';
+    }
+  }
+}
+
+async function toggleAutoStartupSetting() {
+  const toggle = $('setAutoStartup');
+  if (!toggle) return;
+  const enabled = toggle.checked;
+
+  try {
+    const res = await api('POST', '/api/autostart', { enabled, mode: 'headless' });
+    if ($('autoStartToggleLabel')) {
+      $('autoStartToggleLabel').textContent = res.enabled ? 'Enabled' : 'Disabled';
+    }
+    if ($('autoStartStatusText')) {
+      if (res.enabled) {
+        $('autoStartStatusText').innerHTML = `<span style="color:#15803d; font-weight:600;">● ${res.statusText}</span>`;
+      } else {
+        $('autoStartStatusText').innerHTML = `<span style="color:#64748b;">○ Inactive (Manual Launch Only)</span>`;
+      }
+    }
+
+    if (res.enabled) {
+      showToast('🚀 Windows Auto-Startup Activated! (Runs silently in background on boot)', 'success', 4000);
+    } else {
+      showToast('Windows Auto-Startup disabled.', 'info', 3000);
+    }
+  } catch (err) {
+    toggle.checked = !enabled; // Revert switch on failure
+    showToast('❌ Failed to update Auto-Startup: ' + err.message, 'danger', 4000);
+  }
 }
 
 function generateRandomPin() {

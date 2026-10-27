@@ -1,0 +1,61 @@
+    <!-- 2. DASHBOARD SECTION -->
+    <section id="tab-dash" class="tab-pane">
+      <div class="dash-grid">
+        <div class="kpi-card">
+          <div class="kpi-icon">💰</div>
+          <div class="kpi-body">
+            <div class="kpi-title">Today's Sales</div>
+            <div class="kpi-value" id="kpiTodaySales">₹0.00</div>
+            <div class="kpi-sub" id="kpiTodayCount">0 bills issued</div>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon">📅</div>
+          <div class="kpi-body">
+            <div class="kpi-title">This Month Sales</div>
+            <div class="kpi-value" id="kpiMonthSales">₹0.00</div>
+            <div class="kpi-sub" id="kpiMonthCount">0 bills issued</div>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon">🛢</div>
+          <div class="kpi-body">
+            <div class="kpi-title">Total Stock Valuation</div>
+            <div class="kpi-value" id="kpiStockValue">₹0.00</div>
+            <div class="kpi-sub" id="kpiProdCount">9 Catalog SKUs</div>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-icon">🌾</div>
+          <div class="kpi-body">
+            <div class="kpi-title">Month Purchases & Costs</div>
+            <div class="kpi-value" id="kpiMonthPurchases">₹0.00</div>
+            <div class="kpi-sub" id="kpiMonthExpenses">Overheads: ₹0.00</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-columns">
+        <div class="panel-box">
+          <div class="panel-title">
+            <span>⚠ Low Stock Warnings / குறைந்த இருப்பு எச்சரிக்கை</span>
+          </div>
+          <div class="low-stock-list" id="lowStockContainer">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <div class="panel-box">
+          <div class="panel-title">
+            <span>🕘 Recent Transactions</span>
+            <button class="btn-link" onclick="switchTab('bills')">View All →</button>
+          </div>
+          <div class="recent-bills-list" id="recentBillsContainer">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </div>
+    </section>
