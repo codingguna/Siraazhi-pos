@@ -179,6 +179,10 @@ async function initApp() {
     } else {
       switchTab('pos');
     }
+
+    if (window.innerWidth <= 850) {
+      switchMobilePosView(CURRENT_MOBILE_POS_VIEW);
+    }
   } catch (err) {
     console.error('Initialization error:', err);
   }
@@ -228,7 +232,7 @@ function enableClientStaffMode() {
   });
 
   // Update header indicator
-  $('statusText').textContent = 'Staff Billing Mode';
+  $('statusText').textContent = 'Staff';
   $('statusPill').style.background = '#0284c7';
 
   // Mobile/Client terminals print to Master System
@@ -238,14 +242,17 @@ function enableClientStaffMode() {
   if ($('printQueueBtn')) {
     $('printQueueBtn').style.display = 'none';
   }
+  if ($('qrBtn')) {
+    $('qrBtn').style.display = 'none';
+  }
 
-  // Add an unlock master button
+  // Add a compact unlock master button
   const tools = document.querySelector('.header-tools');
   if (!$('unlockMasterBtn')) {
     const unlockBtn = document.createElement('button');
     unlockBtn.id = 'unlockMasterBtn';
     unlockBtn.className = 'tool-btn';
-    unlockBtn.innerHTML = '🔑 Unlock Master';
+    unlockBtn.innerHTML = '🔑 Master';
     unlockBtn.onclick = promptMasterPin;
     tools.prepend(unlockBtn);
   }
@@ -276,6 +283,9 @@ function enableMasterMode() {
 
   if ($('unlockMasterBtn')) {
     $('unlockMasterBtn').remove();
+  }
+  if ($('qrBtn')) {
+    $('qrBtn').style.display = 'inline-flex';
   }
 
   startMasterPrintQueuePoller();
@@ -1784,7 +1794,8 @@ function applySettingsToUI() {
   // 3. Update brand titles in header
   const brandTamil = document.querySelector('.brand-tamil');
   if (brandTamil && SETTINGS.brandEn) {
-    const ta = (!SETTINGS.brandTa || SETTINGS.brandTa.includes('?')) ? 'சீராழி' : SETTINGS.brandTa;
+    const isTaMoji = !SETTINGS.brandTa || SETTINGS.brandTa.includes('?') || SETTINGS.brandTa.includes('à®') || SETTINGS.brandTa.includes('à¯') || /[\u0080-\u00ff]/.test(SETTINGS.brandTa);
+    const ta = isTaMoji ? 'சீராழி' : SETTINGS.brandTa;
     brandTamil.innerHTML = `${ta} <span class="brand-en">${SETTINGS.brandEn}</span>`;
   }
   const brandSub = document.querySelector('.brand-sub');
@@ -1793,11 +1804,29 @@ function applySettingsToUI() {
   }
 }
 
+function sanitizeTamilBrand(val) {
+  if (!val || typeof val !== 'string') return 'சீராழி';
+  const trimmed = val.trim();
+  if (!trimmed || trimmed.includes('?') || trimmed.includes('à®') || trimmed.includes('à¯') || /[\u0080-\u00ff]/.test(trimmed)) {
+    return 'சீராழி';
+  }
+  return trimmed;
+}
+
+function sanitizeTamilFooter(val) {
+  if (!val || typeof val !== 'string') return 'நன்றி! மீண்டும் வருக!';
+  const trimmed = val.trim();
+  if (!trimmed || trimmed.includes('?') || trimmed.includes('à®') || trimmed.includes('à¯') || /[\u0080-\u00ff]/.test(trimmed)) {
+    return 'நன்றி! மீண்டும் வருக!';
+  }
+  return trimmed;
+}
+
 function populateSettingsForm() {
   const s = SETTINGS || {};
   $('setCompany').value = s.companyName || '';
   $('setBrandEn').value = s.brandEn || '';
-  $('setBrandTa').value = s.brandTa || '';
+  $('setBrandTa').value = sanitizeTamilBrand(s.brandTa);
   $('setTagline').value = s.tagline || '';
   $('setAddr').value = s.address || '';
   $('setPhone').value = s.phone || '';
@@ -1806,7 +1835,7 @@ function populateSettingsForm() {
   $('setPrefix').value = s.billPrefix || 'VFPC';
   $('setFY').value = s.financialYear || '2026-27';
   $('setFooterEn').value = s.footerNoteEn || '';
-  $('setFooterTa').value = s.footerNoteTa || '';
+  $('setFooterTa').value = sanitizeTamilFooter(s.footerNoteTa);
   $('setDefaultGSTMode').value = (s.gstDefaultOn === true) ? 'true' : 'false';
   if ($('setMasterPin')) $('setMasterPin').value = s.masterPin || '1234';
 
@@ -1876,7 +1905,7 @@ async function saveSettingsForm() {
     ...SETTINGS,
     companyName: $('setCompany').value.trim(),
     brandEn: $('setBrandEn').value.trim(),
-    brandTa: $('setBrandTa').value.trim(),
+    brandTa: sanitizeTamilBrand($('setBrandTa').value),
     tagline: $('setTagline').value.trim(),
     address: $('setAddr').value.trim(),
     phone: $('setPhone').value.trim(),
@@ -1885,7 +1914,7 @@ async function saveSettingsForm() {
     billPrefix: $('setPrefix').value.trim(),
     financialYear: $('setFY').value.trim(),
     footerNoteEn: $('setFooterEn').value.trim(),
-    footerNoteTa: $('setFooterTa').value.trim(),
+    footerNoteTa: sanitizeTamilFooter($('setFooterTa').value),
     defaultPrinter: $('setPaperSize') ? $('setPaperSize').value : (SETTINGS.paperSize || 'a4'),
     gstDefaultOn: $('setDefaultGSTMode').value === 'true',
     masterPin: masterPin,

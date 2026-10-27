@@ -321,6 +321,22 @@ func seedDefaults() error {
 	return nil
 }
 
+func cleanTamilBrand(ta string) string {
+	t := strings.TrimSpace(ta)
+	if t == "" || strings.Contains(t, "?") || strings.Contains(t, "à®") || strings.Contains(t, "à¯") || strings.Contains(t, "\u00e0\u00ae") {
+		return "சீராழி"
+	}
+	return t
+}
+
+func cleanTamilFooter(ta string) string {
+	t := strings.TrimSpace(ta)
+	if t == "" || strings.Contains(t, "?") || strings.Contains(t, "à®") || strings.Contains(t, "à¯") || strings.Contains(t, "\u00e0\u00ae") {
+		return "நன்றி! மீண்டும் வருக!"
+	}
+	return t
+}
+
 // GetSettings loads current business configuration from settings table.
 // Flow: queries JSON string from settings -> unmarshals into Settings struct.
 func GetSettings() (Settings, error) {
@@ -334,6 +350,8 @@ func GetSettings() (Settings, error) {
 	if strings.TrimSpace(s.MasterPin) == "" {
 		s.MasterPin = "1234"
 	}
+	s.BrandTa = cleanTamilBrand(s.BrandTa)
+	s.FooterNoteTa = cleanTamilFooter(s.FooterNoteTa)
 	return s, err
 }
 
@@ -356,6 +374,8 @@ func SaveSettings(s Settings) error {
 			s.MasterPin = "1234"
 		}
 	}
+	s.BrandTa = cleanTamilBrand(s.BrandTa)
+	s.FooterNoteTa = cleanTamilFooter(s.FooterNoteTa)
 	data, err := json.Marshal(s)
 	if err != nil {
 		return err

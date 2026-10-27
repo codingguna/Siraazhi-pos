@@ -966,8 +966,8 @@ func drawInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
 	if s != nil && s.BrandEn != "" {
 		brandEn = s.BrandEn
 	}
-	brandTa := "சிராழி"
-	if s != nil && s.BrandTa != "" {
+	brandTa := "சீராழி"
+	if s != nil && s.BrandTa != "" && !strings.Contains(s.BrandTa, "?") && !strings.Contains(s.BrandTa, "à®") && !strings.Contains(s.BrandTa, "à¯") {
 		brandTa = s.BrandTa
 	}
 	tagline := "Pure Traditional Marachekku Oils"
@@ -1231,8 +1231,8 @@ func drawReceipt80mmGDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
 	if s != nil && s.BrandEn != "" {
 		brandEn = s.BrandEn
 	}
-	brandTa := "சிராழி"
-	if s != nil && s.BrandTa != "" {
+	brandTa := "சீராழி"
+	if s != nil && s.BrandTa != "" && !strings.Contains(s.BrandTa, "?") && !strings.Contains(s.BrandTa, "à®") && !strings.Contains(s.BrandTa, "à¯") {
 		brandTa = s.BrandTa
 	}
 	tagline := "Pure Traditional Marachekku Oils"
@@ -1425,7 +1425,7 @@ func drawTestSlipA4GDI(hdc uintptr, printerName, orientation, colorMode string, 
 	drawText("HARDWARE VERIFICATION TEST", right-badgeW, curY, right, curY+badgeH, fBadge, colorWhite, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
 
 	curY += scaleY(6.5)
-	drawText("Siraazhi (சிராழி) — Pure Traditional Marachekku Oils", left, curY, left+scaleX(120), curY+scaleY(5), fBrand, colorDarkGreen, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Siraazhi (சீராழி) — Pure Traditional Marachekku Oils", left, curY, left+scaleX(120), curY+scaleY(5), fBrand, colorDarkGreen, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
 	curY += scaleY(5)
 	drawText("Thailapuram Village, Vanur, Villupuram, Tamil Nadu", left, curY, left+scaleX(120), curY+scaleY(4.5), fSub, colorDarkGray, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
 	curY += scaleY(4.5)
@@ -1517,7 +1517,7 @@ func drawTestSlip80mmGDI(hdc uintptr, printerName string, s *db.Settings) {
 	// Header
 	drawText(companyName, left, curY, right, curY+scaleY(4.5), fTitle80, colorBlack, DT_CENTER|DT_NOPREFIX)
 	curY += scaleY(4.8)
-	drawText("Siraazhi (சிராழி)", left, curY, right, curY+scaleY(5.5), fBrand80, colorBlack, DT_CENTER|DT_NOPREFIX)
+	drawText("Siraazhi (சீராழி)", left, curY, right, curY+scaleY(5.5), fBrand80, colorBlack, DT_CENTER|DT_NOPREFIX)
 	curY += scaleY(5.5)
 	drawText("Pure Traditional Marachekku Oils", left, curY, right, curY+scaleY(4), fSub80, colorBlack, DT_CENTER|DT_NOPREFIX)
 	curY += scaleY(4)

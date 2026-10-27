@@ -249,12 +249,14 @@
               <button class="btn btn-primary-print" id="saveAndPrintBtn" onclick="checkoutBill('default')">
                 🖨 Save & Print (F10)
               </button>
-              <button class="btn btn-save-pdf" onclick="checkoutBill('pdf')">
-                📄 Save PDF
-              </button>
-              <button class="btn btn-clear-cart" onclick="clearCart()">
-                ✕ Clear
-              </button>
+              <div class="checkout-sub-actions">
+                <button class="btn btn-save-pdf" onclick="checkoutBill('pdf')">
+                  📄 Save PDF
+                </button>
+                <button class="btn btn-clear-cart" onclick="clearCart()">
+                  ✕ Clear
+                </button>
+              </div>
             </div>
 
             <!-- Print Format Quick Switchers -->
@@ -1113,7 +1115,17 @@
   <script src="js/app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(console.error);
+      navigator.serviceWorker.register('sw.js').then(function(reg) {
+        reg.update();
+      }).catch(console.error);
+
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
     }
   </script>
 </body>

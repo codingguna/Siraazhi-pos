@@ -12,7 +12,7 @@
         API calls (/api/*) always bypass cache to guarantee real-time stock & sales.
    ========================================================================== */
 
-const CACHE_NAME = 'siraazhi-pos-v4';
+const CACHE_NAME = 'siraazhi-pos-v7';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -28,11 +28,6 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
-  );
   self.skipWaiting();
 });
 
@@ -42,9 +37,8 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -56,10 +50,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first for static UI assets
+  // Network-first for static UI assets so updates are loaded immediately, with cache fallback for offline
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      return cachedResponse || fetch(event.request);
-    })
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const clone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return networkResponse;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

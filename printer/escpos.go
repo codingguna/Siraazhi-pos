@@ -473,7 +473,7 @@ func BuildA4InvoiceText(bill *db.Bill, s *db.Settings) string {
 		brandEn = s.BrandEn
 	}
 	brandTa := "சீராழி"
-	if s != nil && s.BrandTa != "" && !strings.Contains(s.BrandTa, "?") {
+	if s != nil && s.BrandTa != "" && !strings.Contains(s.BrandTa, "?") && !strings.Contains(s.BrandTa, "à®") && !strings.Contains(s.BrandTa, "à¯") {
 		brandTa = s.BrandTa
 	}
 

@@ -934,6 +934,10 @@ body {
   gap: 8px;
 }
 
+.checkout-sub-actions {
+  display: contents;
+}
+
 .btn {
   padding: 10px 14px;
   border-radius: var(--radius);
@@ -1536,24 +1540,53 @@ body {
 }
 
 /* ==========================================================================
+   CLIENT STAFF MODE & MOBILE ADAPTATIONS
+   ========================================================================== */
+body.client-staff-mode .nav-tabs {
+  display: none !important;
+}
+
+body.client-staff-mode #qrBtn {
+  display: none !important;
+}
+
+body.client-staff-mode .status-indicator {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
    RESPONSIVE DESIGN BREAKPOINTS (MOBILE & TABLET ADAPTATION)
    ========================================================================== */
 @media (max-width: 850px) {
+  body {
+    min-height: 100dvh;
+  }
+
   .app-header {
-    padding: 8px 12px;
+    padding: 6px 10px;
+    gap: 8px;
+  }
+
+  .brand-cluster {
+    gap: 8px;
   }
 
   .brand-logo {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
   }
 
   .brand-tamil {
-    font-size: 18px;
+    font-size: 16px;
+    gap: 4px;
+    line-height: 1;
   }
 
   .brand-en {
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .brand-sub {
@@ -1561,17 +1594,21 @@ body {
   }
 
   .header-tools {
-    gap: 6px;
+    gap: 4px;
   }
 
   .tool-btn {
-    padding: 6px 10px;
-    font-size: 12px;
+    padding: 5px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
   }
 
   .status-indicator {
     padding: 4px 8px;
     font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
   }
 
   .nav-tabs {
@@ -1584,22 +1621,62 @@ body {
   }
 
   .main-content {
-    padding: 10px;
+    padding: 4px 6px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
   }
 
   /* Show mobile segmented switcher */
   .mobile-pos-switcher {
-    display: grid;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 4px !important;
+    margin: 0 0 6px 0 !important;
+    padding: 3px !important;
+    position: sticky;
+    top: 0;
+    z-index: 35;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .mobile-switch-btn {
+    padding: 8px 10px;
+    font-size: 13px;
+    font-weight: 700;
   }
 
   .mobile-back-catalog-btn {
     display: block;
+    padding: 8px 12px;
+    font-size: 12px;
+    margin-bottom: 8px;
+    border-radius: var(--radius-sm);
   }
 
   /* Handle dynamic switching between Catalog & Cart on mobile */
   .pos-workspace {
-    grid-template-columns: 1fr;
-    gap: 12px;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .pos-catalog-panel,
+  .pos-cart-panel {
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+    background: transparent !important;
   }
 
   .pos-catalog-panel.mobile-hidden,
@@ -1607,66 +1684,391 @@ body {
     display: none !important;
   }
 
-  /* Customer inputs stack cleanly on mobile */
-  .customer-row {
-    flex-direction: column;
-    gap: 8px;
+  /* Search & Category Pills on Mobile */
+  .catalog-header {
+    margin-bottom: 6px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
-  .customer-row .input-with-icon input {
-    min-height: 44px; /* Apple/Android touch guideline */
+  .search-box {
+    margin-bottom: 6px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    position: relative !important;
+  }
+
+  .search-box input {
+    height: 38px !important;
+    padding: 6px 30px 6px 32px !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .search-icon {
+    font-size: 13px;
+    left: 10px;
+  }
+
+  /* Category pills broken down into EXACTLY 2 rows (2x2 grid) */
+  .category-pills {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 5px !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin-bottom: 8px !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
+  }
+
+  .category-pills::-webkit-scrollbar {
+    display: none;
+  }
+
+  .category-pills .pill-btn {
+    padding: 6px 4px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 6px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+    line-height: 1.25 !important;
+    min-height: 36px !important;
+  }
+
+  /* Compact 2-column cards fitting 100% inside window width with reduced width */
+  .products-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    max-height: calc(100dvh - 215px) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 0 0 80px 0 !important;
+    margin: 0 !important;
+  }
+
+  .product-card {
+    padding: 6px 6px !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    border-radius: 8px !important;
+    border: 1px solid var(--border) !important;
+    background: #ffffff !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    position: relative !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  }
+
+  .prod-title-en {
+    font-size: 11.5px !important;
+    font-weight: 700 !important;
+    line-height: 1.25 !important;
+    word-break: break-word !important;
+    padding-right: 36px !important; /* Clear stock badge */
+    color: var(--text-main) !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+  }
+
+  .prod-title-ta {
+    font-size: 9.5px !important;
+    color: var(--text-muted) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    margin-top: 1px !important;
+    line-height: 1.2 !important;
+  }
+
+  .prod-variant {
+    font-size: 9.5px !important;
+    font-weight: 600 !important;
+    color: var(--primary) !important;
+    margin: 1px 0 2px 0 !important;
+    line-height: 1.2 !important;
+  }
+
+  .prod-footer {
+    margin-top: 4px !important;
+    padding-top: 4px !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: baseline !important;
+    border-top: 1px dashed var(--border) !important;
+  }
+
+  .prod-price {
+    font-size: 13px !important;
+    font-weight: 800 !important;
+    color: var(--primary-dark) !important;
+    line-height: 1.2 !important;
+  }
+
+  .prod-mrp {
+    font-size: 9px !important;
+    color: #94a3b8 !important;
+    text-decoration: line-through !important;
+    margin-left: 2px !important;
+  }
+
+  .prod-stock-tag {
+    font-size: 9px !important;
+    color: var(--text-muted) !important;
+    font-weight: 600 !important;
+  }
+
+  .prod-badge {
+    position: absolute !important;
+    top: 4px !important;
+    right: 4px !important;
+    font-size: 8.5px !important;
+    font-weight: 700 !important;
+    padding: 1px 4px !important;
+    border-radius: 4px !important;
+    white-space: nowrap !important;
+    line-height: 1.2 !important;
+  }
+
+  /* Multi-bill tabs bar on mobile */
+  .bill-tabs-bar {
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .bill-tabs-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .bill-tab {
+    padding: 4px 8px;
+    font-size: 11.5px;
+  }
+
+  .add-bill-tab-btn {
+    padding: 4px 8px;
+    font-size: 11.5px;
+  }
+
+  .cart-header {
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+  }
+
+  .cart-header h3 {
     font-size: 14px;
   }
 
+  .active-bill-num {
+    font-size: 11px;
+    padding: 2px 6px;
+  }
+
+  /* Customer inputs stack cleanly on mobile */
+  .customer-box-container {
+    margin-bottom: 6px;
+  }
+
+  .customer-row {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .customer-row .input-with-icon input {
+    height: 38px;
+    min-height: 38px;
+    font-size: 12.5px;
+    padding: 4px 6px 4px 26px !important;
+    border-radius: 6px;
+  }
+
+  .customer-row .field-icon {
+    left: 8px;
+    font-size: 12px;
+  }
+
+  .invoice-config-bar {
+    padding: 4px 8px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+  }
+
+  .toggle-label {
+    font-size: 11px;
+  }
+
+  .date-badge input {
+    padding: 2px 4px;
+    font-size: 11px;
+  }
+
   /* Cart table touch optimization */
+  .cart-table-wrapper {
+    max-height: 180px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+  }
+
   .cart-table th, .cart-table td {
-    padding: 8px 4px;
-    font-size: 13px;
+    padding: 6px 4px;
+    font-size: 12px;
+  }
+
+  .empty-cart-row td {
+    padding: 16px 8px;
+    font-size: 12px;
   }
 
   .qty-control {
-    gap: 4px;
+    gap: 3px;
   }
 
   .qty-btn {
-    width: 30px;
-    height: 30px;
-    font-size: 16px;
+    width: 26px;
+    height: 26px;
+    font-size: 14px;
+    border-radius: 4px;
   }
 
   .qty-input {
-    width: 38px;
-    height: 30px;
-    font-size: 13px;
+    width: 32px;
+    height: 26px;
+    font-size: 12px;
   }
 
-  /* Checkout actions full width */
-  .checkout-actions {
-    flex-direction: column;
-    gap: 8px;
+  /* Summary & Payment Touch Block */
+  .cart-summary {
+    padding: 8px 10px;
+    border-radius: 8px;
+    margin-bottom: 6px;
   }
 
-  .btn-primary-print,
-  .btn-save-pdf,
-  .btn-clear-cart {
-    width: 100%;
-    min-height: 44px;
-    font-size: 15px;
-    justify-content: center;
+  .summary-line {
+    font-size: 12px;
+    margin-bottom: 3px;
+  }
+
+  .discount-line input {
+    width: 60px;
+    padding: 2px 4px;
+    font-size: 12px;
+  }
+
+  .grand-total-line {
+    font-size: 14px;
+    padding-top: 6px;
+    margin-top: 6px;
+  }
+
+  .grand-total-amount {
+    font-size: 20px;
+    font-weight: 900;
   }
 
   .payment-controls {
-    flex-direction: column;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin: 6px 0;
   }
 
   .pay-mode-group, .paid-amt-group {
-    width: 100%;
+    width: auto;
+    margin: 0;
+  }
+
+  .payment-controls select, .payment-controls input {
+    padding: 6px 8px;
+    height: 38px;
+    font-size: 12.5px;
+    border-radius: 6px;
+  }
+
+  .pay-mode-group label, .paid-amt-group label {
+    font-size: 10px;
+  }
+
+  .quick-cash-row {
+    margin: 4px 0 6px 0 !important;
+    gap: 4px !important;
+  }
+
+  .quick-cash-row .chip-btn {
+    padding: 5px 2px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+  }
+
+  /* Checkout actions full width & prominent on mobile */
+  .checkout-actions {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    margin-top: 6px;
+  }
+
+  .btn-primary-print {
+    width: 100% !important;
+    min-height: 48px !important;
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 12px rgba(27, 94, 32, 0.35) !important;
+  }
+
+  .checkout-sub-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+
+  .btn-save-pdf,
+  .btn-clear-cart {
+    width: 100% !important;
+    min-height: 38px !important;
+    font-size: 12.5px !important;
+    border-radius: 6px !important;
   }
 
   .reprint-quick-bar {
     justify-content: center;
     flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+
+  .reprint-quick-bar .chip-btn {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+
+  .pos-cart-panel {
+    padding-bottom: 35px;
   }
 
   .toast-container {
@@ -1680,47 +2082,13 @@ body {
   }
 }
 
-@media (max-width: 480px) {
-  /* Compact 2-column oil cards for small smartphones */
-  .products-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-    max-height: calc(100vh - 230px);
+@media (max-width: 380px) {
+  .customer-row {
+    grid-template-columns: 1fr;
   }
 
-  .product-card {
-    padding: 8px;
-  }
-
-  .prod-name-en {
-    font-size: 13px;
-    line-height: 1.2;
-  }
-
-  .prod-name-ta {
-    font-size: 11px;
-  }
-
-  .prod-price {
-    font-size: 15px;
-  }
-
-  .prod-mrp {
-    font-size: 11px;
-  }
-
-  .prod-stock-badge {
-    font-size: 10px;
-    padding: 2px 5px;
-  }
-
-  .bill-tabs-bar {
-    overflow-x: auto;
-  }
-
-  .modal-card {
-    padding: 14px;
-    width: 96%;
+  .payment-controls {
+    grid-template-columns: 1fr;
   }
 }
 

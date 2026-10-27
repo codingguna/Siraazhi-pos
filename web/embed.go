@@ -23,17 +23,24 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"os"
 )
 
 //go:embed static/*
 var staticFS embed.FS
 
-// Handler returns a standard http.Handler that serves the embedded static files.
-// Flow: creates sub-filesystem rooted at 'static' -> returns standard http.FileServer.
+// Handler returns a standard http.Handler that serves the static files.
+// If the local 'web/static' directory exists on disk (development/local running),
+// it serves directly from disk so CSS/JS changes are reflected instantly without recompiling.
+// When distributed as a standalone binary without loose assets, it seamlessly falls back to staticFS.
 func Handler() http.Handler {
+	if fi, err := os.Stat("web/static"); err == nil && fi.IsDir() {
+		return http.FileServer(http.Dir("web/static"))
+	}
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {
 		panic(err)
 	}
 	return http.FileServer(http.FS(sub))
 }
+

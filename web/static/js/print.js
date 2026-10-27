@@ -22,6 +22,20 @@
    ========================================================================== */
 
 const PrintEngine = {
+  cleanBrandTa(s) {
+    const val = (s && s.brandTa) || '';
+    if (!val || val.includes('?') || val.includes('à®') || val.includes('à¯') || /[\u0080-\u00ff]/.test(val)) {
+      return 'சீராழி';
+    }
+    return val;
+  },
+  cleanFooterTa(s) {
+    const val = (s && s.footerNoteTa) || '';
+    if (!val || val.includes('?') || val.includes('à®') || val.includes('à¯') || /[\u0080-\u00ff]/.test(val)) {
+      return 'நன்றி! மீண்டும் வருக!';
+    }
+    return val;
+  },
   /**
    * formatINR formats numeric currency into Indian Rupee format: ₹1,250.00
    */
@@ -64,7 +78,7 @@ const PrintEngine = {
       <div class="receipt-80mm">
         <div class="center">
           <div class="header-title">${s.companyName || 'VANUR FARMER PRODUCER COMPANY LTD'}</div>
-          <div class="header-title" style="font-size:16px; color:#000;">${s.brandEn || 'Siraazhi'} (${s.brandTa || 'சீராழி'})</div>
+          <div class="header-title" style="font-size:16px; color:#000;">${s.brandEn || 'Siraazhi'} (${this.cleanBrandTa(s)})</div>
           <div class="header-sub">${s.tagline || 'Pure Traditional Marachekku Oils'}</div>
           <div class="header-sub">${s.address || 'Vanur, Villupuram, Tamil Nadu'}</div>
           <div class="header-sub">Ph: ${s.phone || '-'} | FSSAI: ${s.fssai || '-'}</div>
@@ -113,7 +127,7 @@ const PrintEngine = {
         <div class="dashed-line"></div>
         <div class="center" style="margin-top:6px; font-size:11px;">
           <div>${s.footerNoteEn || 'Thank you! Visit again.'}</div>
-          <div>${s.footerNoteTa || 'நன்றி! மீண்டும் வருக!'}</div>
+          <div>${this.cleanFooterTa(s)}</div>
         </div>
       </div>
     `;
@@ -140,7 +154,7 @@ const PrintEngine = {
     return `
       <div class="receipt-58mm">
         <div class="center">
-          <div class="header-title">${s.brandEn || 'Siraazhi'} (${s.brandTa || 'சீராழி'})</div>
+          <div class="header-title">${s.brandEn || 'Siraazhi'} (${this.cleanBrandTa(s)})</div>
           <div style="font-size:8px;">${s.companyName || 'VFPC Ltd'}</div>
           <div style="font-size:8px;">FSSAI: ${s.fssai || '-'}</div>
           ${bill.gstOn && s.gstin ? `<div style="font-size:8px;">GSTIN: ${s.gstin}</div>` : ''}
@@ -232,7 +246,7 @@ const PrintEngine = {
           <div>
             <h1>${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}</h1>
             <div style="font-size:15px; font-weight:bold; color:#1b5e20;">
-              ${s.brandEn || 'Siraazhi'} (${s.brandTa || 'சீராழி'}) — ${s.tagline || 'Pure Marachekku Oils'}
+              ${s.brandEn || 'Siraazhi'} (${this.cleanBrandTa(s)}) — ${s.tagline || 'Pure Marachekku Oils'}
             </div>
             <div>${s.address || 'Vanur, Villupuram, Tamil Nadu'}</div>
             <div>Phone: <b>${s.phone || '-'}</b> | FSSAI Lic. No: <b>${s.fssai || '12423031000494'}</b></div>
@@ -322,7 +336,7 @@ const PrintEngine = {
       <div class="receipt-80mm">
         <div class="center">
           <div class="header-title">${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}</div>
-          <div class="header-title" style="font-size:15px;">${s.brandEn || 'Siraazhi'} (${s.brandTa || 'சிராழி'})</div>
+          <div class="header-title" style="font-size:15px;">${s.brandEn || 'Siraazhi'} (${this.cleanBrandTa(s)})</div>
           <div class="header-sub">${s.tagline || 'Pure Traditional Marachekku Oils'}</div>
           <div class="header-sub">${s.address || 'Vanur, Villupuram, Tamil Nadu'}</div>
           <div class="header-sub">Ph: ${s.phone || '-'} | FSSAI: ${s.fssai || '-'}</div>
@@ -353,7 +367,7 @@ const PrintEngine = {
         <div class="dashed-line"></div>
         <div class="center" style="font-size:10.5px; margin-top:4px;">
           <div>${s.footerNoteEn || 'Thank you! Visit again.'}</div>
-          <div>${s.footerNoteTa || 'நன்றி! மீண்டும் வருக!'}</div>
+          <div>${this.cleanFooterTa(s)}</div>
         </div>
       </div>
     `;
@@ -371,7 +385,7 @@ const PrintEngine = {
           <div>
             <h1>${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}</h1>
             <div style="font-size:15px; font-weight:bold; color:#1b5e20;">
-              ${s.brandEn || 'Siraazhi'} (${s.brandTa || 'சிராழி'}) — ${s.tagline || 'Pure Traditional Marachekku Oils'}
+              ${s.brandEn || 'Siraazhi'} (${this.cleanBrandTa(s)}) — ${s.tagline || 'Pure Traditional Marachekku Oils'}
             </div>
             <div>${s.address || 'Vanur, Villupuram, Tamil Nadu'}</div>
             <div>Phone: <b>${s.phone || '-'}</b> | FSSAI Lic. No: <b>${s.fssai || '12423031000494'}</b></div>
