@@ -2,8 +2,15 @@
     <section id="tab-gstr1" class="tab-pane">
       <div class="panel-box">
         <div class="panel-toolbar">
-          <h2>🏛 GST Tax Filing (GSTR-1 Ready Reports)</h2>
-          <button class="btn btn-export btn-excel" onclick="exportGSTR1Excel()">📗 Export GSTR-1 Excel File</button>
+          <h2>🏛 GST & Financial Accounting Reports</h2>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:6px; background:#f8fafc; padding:4px 8px; border-radius:6px; border:1px solid #cbd5e1;">
+              <label for="reportMonthPicker" style="font-size:12px; font-weight:700; color:#475569;">Month:</label>
+              <input type="month" id="reportMonthPicker" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px; font-weight:700; font-size:12px;">
+            </div>
+            <button class="btn btn-export btn-excel" onclick="exportMonthlyPnLExcel()" style="background:#15803d; color:#fff;" title="Export Monthly Income & Expense Report in VFPCL Format">📊 Monthly Income & Expense (Excel)</button>
+            <button class="btn btn-export btn-excel" onclick="exportGSTR1Excel()">📗 Export GSTR-1 Excel File</button>
+          </div>
         </div>
 
         <div class="gstr1-summary-cards" id="gstr1Cards">

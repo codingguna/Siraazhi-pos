@@ -165,16 +165,29 @@
             <div class="payment-controls">
               <div class="pay-mode-group">
                 <label>Pay Mode:</label>
-                <select id="billPayMode">
+                <select id="billPayMode" onchange="onPayModeChange()">
                   <option value="Cash">💵 Cash</option>
                   <option value="UPI">📱 UPI / QR</option>
+                  <option value="Split">⚡ Split (Cash + UPI)</option>
                   <option value="Card">💳 Card</option>
                   <option value="Credit">📝 Credit (Due)</option>
                 </select>
               </div>
-              <div class="paid-amt-group">
+              <div class="paid-amt-group" id="singlePaidGroup">
                 <label>Paid (₹):</label>
                 <input type="number" id="billPaid" min="0" step="1" placeholder="Auto" oninput="recalcCart()">
+              </div>
+            </div>
+
+            <!-- Split Payment Controls (Active when Pay Mode == 'Split') -->
+            <div class="split-pay-row" id="splitPayRow" style="display:none; gap:8px; margin:6px 0;">
+              <div style="flex:1;">
+                <label style="font-size:11px; font-weight:700; color:#1e293b;">💵 Cash (₹):</label>
+                <input type="number" id="billSplitCash" min="0" step="1" placeholder="Cash ₹" oninput="onSplitPayInput('cash')" style="width:100%; padding:6px 8px; font-size:13px; font-weight:700; border:1px solid #cbd5e1; border-radius:4px; box-sizing:border-box;">
+              </div>
+              <div style="flex:1;">
+                <label style="font-size:11px; font-weight:700; color:#1e293b;">📱 UPI (₹):</label>
+                <input type="number" id="billSplitUPI" min="0" step="1" placeholder="UPI ₹" oninput="onSplitPayInput('upi')" style="width:100%; padding:6px 8px; font-size:13px; font-weight:700; border:1px solid #cbd5e1; border-radius:4px; box-sizing:border-box;">
               </div>
             </div>
 

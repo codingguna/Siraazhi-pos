@@ -158,6 +158,152 @@ const ExportEngine = {
   },
 
   /**
+   * exportMonthlyPnLToExcel creates an executive Monthly Income & Expense Excel workbook
+   * matching the exact multi-section format of the VFPCL Purchase & Sales register.
+   */
+  exportMonthlyPnLToExcel(monthStr, bills, purchases, expenses, settings) {
+    if (typeof XLSX === 'undefined') {
+      alert('Excel library not loaded.');
+      return;
+    }
+
+    const s = settings || {};
+    let totalSalesCash = 0;
+    let totalSalesBank = 0;
+    let totalPurchasesCash = 0;
+    let totalPurchasesBank = 0;
+    let totalExpensesCash = 0;
+    let totalExpensesBank = 0;
+
+    // 1. Process Sales Line Items
+    const salesRows = [];
+    (bills || []).forEach(b => {
+      let bCash = 0;
+      let bBank = 0;
+      if (b.payMode === 'Split' || (b.cashPaid > 0 && b.upiPaid > 0)) {
+        bCash = Number(b.cashPaid) || 0;
+        bBank = Number(b.upiPaid) || 0;
+      } else if (b.payMode === 'UPI' || b.payMode === 'Card') {
+        bBank = Number(b.paid) || Number(b.grandTotal) || 0;
+      } else {
+        bCash = Number(b.paid) || Number(b.grandTotal) || 0;
+      }
+      totalSalesCash += bCash;
+      totalSalesBank += bBank;
+
+      if (b.items && b.items.length > 0) {
+        b.items.forEach(it => {
+          const ratio = b.grandTotal > 0 ? (it.amount / b.grandTotal) : (1 / b.items.length);
+          const itCash = Math.round(bCash * ratio * 100) / 100;
+          const itBank = Math.round(bBank * ratio * 100) / 100;
+
+          salesRows.push({
+            'DATE': b.date,
+            'INVOICE NO': b.billNo,
+            'DESCRIPTIVE OF GOODS': it.nameEn + (it.nameTa ? ` (${it.nameTa})` : ''),
+            'QUANTITY': it.qty,
+            'UNIT RATE (₹)': Number(it.price.toFixed(2)),
+            'CASH (₹)': itCash > 0 ? itCash : '',
+            'BANK (₹)': itBank > 0 ? itBank : '',
+            'TOTAL (₹)': Number(it.amount.toFixed(2)),
+            'CUSTOMER': b.customer ? (b.customer.name || 'Consumer') : 'Consumer'
+          });
+        });
+      } else {
+        salesRows.push({
+          'DATE': b.date,
+          'INVOICE NO': b.billNo,
+          'DESCRIPTIVE OF GOODS': 'General Counter Sales',
+          'QUANTITY': 1,
+          'UNIT RATE (₹)': Number(b.grandTotal.toFixed(2)),
+          'CASH (₹)': bCash > 0 ? bCash : '',
+          'BANK (₹)': bBank > 0 ? bBank : '',
+          'TOTAL (₹)': Number(b.grandTotal.toFixed(2)),
+          'CUSTOMER': b.customer ? (b.customer.name || 'Consumer') : 'Consumer'
+        });
+      }
+    });
+
+    // 2. Process Purchases
+    const purchaseRows = (purchases || []).map(p => {
+      const pCost = Number(p.cost) || 0;
+      const isCash = (p.note && p.note.toLowerCase().includes('cash'));
+      const pCash = isCash ? pCost : 0;
+      const pBank = isCash ? 0 : pCost;
+      totalPurchasesCash += pCash;
+      totalPurchasesBank += pBank;
+
+      return {
+        'DATE': p.date,
+        'SUPPLIER': p.supplier || 'Farmer / Vendor',
+        'MATERIAL / ITEM': p.item,
+        'QUANTITY': p.qty || '',
+        'UNIT': p.unit || 'kg',
+        'CASH (₹)': pCash > 0 ? pCash : '',
+        'BANK (₹)': pBank > 0 ? pBank : '',
+        'TOTAL COST (₹)': pCost,
+        'NOTES': p.note || ''
+      };
+    });
+
+    // 3. Process Expenses
+    const expenseRows = (expenses || []).map(e => {
+      const eAmt = Number(e.amount) || 0;
+      const isCash = (e.note && e.note.toLowerCase().includes('cash')) || (e.head && e.head.toLowerCase().includes('cash'));
+      const eCash = isCash ? eAmt : 0;
+      const eBank = isCash ? 0 : eAmt;
+      totalExpensesCash += eCash;
+      totalExpensesBank += eBank;
+
+      return {
+        'DATE': e.date,
+        'EXPENSE HEAD': e.head || 'Operating Expense',
+        'PAYEE / PURPOSE': e.note || e.head,
+        'CASH (₹)': eCash > 0 ? eCash : '',
+        'BANK (₹)': eBank > 0 ? eBank : '',
+        'TOTAL AMOUNT (₹)': eAmt
+      };
+    });
+
+    // 4. Executive Reconciliation Summary (Exact VFPCL Format)
+    const totalSales = totalSalesCash + totalSalesBank;
+    const totalPurchases = totalPurchasesCash + totalPurchasesBank;
+    const totalExpenses = totalExpensesCash + totalExpensesBank;
+    const totalOutflowCash = totalPurchasesCash + totalExpensesCash;
+    const totalOutflowBank = totalPurchasesBank + totalExpensesBank;
+    const totalOutflow = totalPurchases + totalExpenses;
+    const netSurplusCash = totalSalesCash - totalOutflowCash;
+    const netSurplusBank = totalSalesBank - totalOutflowBank;
+    const netSurplusTotal = totalSales - totalOutflow;
+
+    const summaryRows = [
+      { 'FINANCIAL ACCOUNTING HEAD': '1. GROSS SALES REVENUE (INCOME)', 'CASH (₹)': totalSalesCash, 'BANK (₹)': totalSalesBank, 'TOTAL (₹)': totalSales },
+      { 'FINANCIAL ACCOUNTING HEAD': '2. RAW MATERIAL PURCHASES (COGS)', 'CASH (₹)': totalPurchasesCash, 'BANK (₹)': totalPurchasesBank, 'TOTAL (₹)': totalPurchases },
+      { 'FINANCIAL ACCOUNTING HEAD': '3. OPERATIONAL & CAPITAL EXPENSES', 'CASH (₹)': totalExpensesCash, 'BANK (₹)': totalExpensesBank, 'TOTAL (₹)': totalExpenses },
+      { 'FINANCIAL ACCOUNTING HEAD': '---------------------------------------', 'CASH (₹)': '------------', 'BANK (₹)': '------------', 'TOTAL (₹)': '------------' },
+      { 'FINANCIAL ACCOUNTING HEAD': 'TOTAL GROSS OUTFLOW (2 + 3)', 'CASH (₹)': totalOutflowCash, 'BANK (₹)': totalOutflowBank, 'TOTAL (₹)': totalOutflow },
+      { 'FINANCIAL ACCOUNTING HEAD': 'NET OPERATIONAL CASH FLOW (SURPLUS)', 'CASH (₹)': netSurplusCash, 'BANK (₹)': netSurplusBank, 'TOTAL (₹)': netSurplusTotal }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Executive Summary');
+
+    const wsSales = XLSX.utils.json_to_sheet(salesRows);
+    XLSX.utils.book_append_sheet(wb, wsSales, 'Sales Register');
+
+    const wsPurchases = XLSX.utils.json_to_sheet(purchaseRows);
+    XLSX.utils.book_append_sheet(wb, wsPurchases, 'Purchases');
+
+    const wsExpenses = XLSX.utils.json_to_sheet(expenseRows);
+    XLSX.utils.book_append_sheet(wb, wsExpenses, 'Expenses');
+
+    const cleanMonth = (monthStr || new Date().toISOString().slice(0, 7));
+    const fileName = `Siraazhi_Monthly_Income_Expense_${cleanMonth}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  },
+
+  /**
    * downloadCSV opens the server CSV endpoint for immediate streaming download.
    */
   downloadCSV(bills) {

@@ -319,3 +319,95 @@ func TestHandleBackupAndRestore(t *testing.T) {
 		t.Fatalf("Expected 200 for restore, got %d: %s", recRestore.Code, recRestore.Body.String())
 	}
 }
+
+func TestSplitPaymentBill(t *testing.T) {
+	tmpDir := setupTestDBForHandlers(t)
+	defer os.RemoveAll(tmpDir)
+
+	// Create test product with stock
+	prod := db.Product{
+		ID:       "PROD_SPLIT_01",
+		NameEn:   "Groundnut Oil 1L",
+		Price:    350.0,
+		Stock:    10,
+		Category: "Oil",
+		GSTPct:   5.0,
+	}
+	if err := db.SaveProduct(prod); err != nil {
+		t.Fatalf("Failed to save product: %v", err)
+	}
+
+	// Create Split Bill (2 x 350 = 700: 200 Cash + 500 UPI)
+	createReq := map[string]interface{}{
+		"date": "2026-10-28",
+		"customer": map[string]string{
+			"name":  "Sundar",
+			"phone": "9876543210",
+			"state": "Tamil Nadu",
+		},
+		"items": []map[string]interface{}{
+			{
+				"productId": prod.ID,
+				"nameEn":    prod.NameEn,
+				"qty":       2,
+				"price":     350.0,
+				"gstPct":    5.0,
+			},
+		},
+		"discount": 0.0,
+		"gstOn":    true,
+		"payMode":  "Split",
+		"paid":     700.0,
+		"cashPaid": 200.0,
+		"upiPaid":  500.0,
+	}
+
+	body, _ := json.Marshal(createReq)
+	req := httptest.NewRequest("POST", "/api/bills", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	HandleBills(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("Expected 201 Created, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var created db.Bill
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if created.PayMode != "Split" {
+		t.Errorf("Expected PayMode 'Split', got '%s'", created.PayMode)
+	}
+	if created.CashPaid != 200.0 {
+		t.Errorf("Expected CashPaid 200.0, got %.2f", created.CashPaid)
+	}
+	if created.UPIPaid != 500.0 {
+		t.Errorf("Expected UPIPaid 500.0, got %.2f", created.UPIPaid)
+	}
+	if created.Paid != 700.0 {
+		t.Errorf("Expected Paid 700.0, got %.2f", created.Paid)
+	}
+	if created.Balance != 0.0 {
+		t.Errorf("Expected Balance 0.0, got %.2f", created.Balance)
+	}
+
+	// Fetch via GET /api/bills/{id}
+	reqGet := httptest.NewRequest("GET", "/api/bills/"+created.ID, nil)
+	recGet := httptest.NewRecorder()
+	HandleBillByID(recGet, reqGet)
+
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("Expected 200 OK for GET bill, got %d: %s", recGet.Code, recGet.Body.String())
+	}
+
+	var fetched db.Bill
+	if err := json.NewDecoder(recGet.Body).Decode(&fetched); err != nil {
+		t.Fatalf("Failed to decode fetched bill: %v", err)
+	}
+
+	if fetched.PayMode != "Split" || fetched.CashPaid != 200.0 || fetched.UPIPaid != 500.0 {
+		t.Errorf("Fetched bill mismatch: PayMode=%s, CashPaid=%.2f, UPIPaid=%.2f",
+			fetched.PayMode, fetched.CashPaid, fetched.UPIPaid)
+	}
+}

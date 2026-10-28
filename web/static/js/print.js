@@ -36,6 +36,13 @@ const PrintEngine = {
     }
     return val;
   },
+  formatPayMode(bill) {
+    if (!bill) return 'Cash';
+    if (bill.payMode === 'Split' || (bill.cashPaid > 0 && bill.upiPaid > 0)) {
+      return `Split (Cash: ${this.formatINR(bill.cashPaid)}, UPI: ${this.formatINR(bill.upiPaid)})`;
+    }
+    return bill.payMode || 'Cash';
+  },
   /**
    * formatINR formats numeric currency into Indian Rupee format: ₹1,250.00
    */
@@ -119,7 +126,7 @@ const PrintEngine = {
         </div>
 
         <div class="right" style="font-size:11px;">
-          Paid (${bill.payMode || 'Cash'}): ${this.formatINR(bill.paid)} &nbsp;|&nbsp; Balance: ${this.formatINR(bill.balance)}
+          Paid: <b>${this.formatINR(bill.paid)}</b> (${this.formatPayMode(bill)}) &nbsp;|&nbsp; Balance: ${this.formatINR(bill.balance)}
         </div>
 
         ${taxBreakdown}
@@ -183,7 +190,7 @@ const PrintEngine = {
           TOTAL: ${this.formatINR(bill.grandTotal)}
         </div>
         <div class="right" style="font-size:8.5px;">
-          ${bill.payMode || 'Cash'}: ${this.formatINR(bill.paid)}
+          ${this.formatPayMode(bill)}: ${this.formatINR(bill.paid)}
         </div>
 
         <div class="dashed-line"></div>
@@ -307,7 +314,7 @@ const PrintEngine = {
               <div style="margin-top:${isHalf ? '2px' : '6px'}; font-size:${isHalf ? '10px' : '13px'};">
                 Invoice No: <b>${bill.billNo || ''}</b><br>
                 Date: <b>${bill.date || ''}</b><br>
-                Mode: <b>${bill.payMode || 'Cash'}</b>
+                Mode: <b>${this.formatPayMode(bill)}</b>
               </div>
             </div>
           </div>

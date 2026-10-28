@@ -1,6 +1,6 @@
 /* ==========================================================================
    Package db — SQLite Database Engine & Data Access Object (DAO)
-   
+
    WHAT IT IS:
      The persistent data layer of Siraazhi Pro POS:
      - Embedded SQLite engine running via pure Go (modernc.org/sqlite).
@@ -169,6 +169,8 @@ func createTables() error {
 		pay_mode TEXT DEFAULT 'Cash',
 		paid REAL DEFAULT 0,
 		balance REAL DEFAULT 0,
+		cash_paid REAL DEFAULT 0,
+		upi_paid REAL DEFAULT 0,
 		note TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -240,7 +242,12 @@ func createTables() error {
 	CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
 	`
 	_, err := DB.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+	_, _ = DB.Exec("ALTER TABLE bills ADD COLUMN cash_paid REAL DEFAULT 0")
+	_, _ = DB.Exec("ALTER TABLE bills ADD COLUMN upi_paid REAL DEFAULT 0")
+	return nil
 }
 
 // seedDefaults checks if the database is newly initialized and inserts initial products & settings.
@@ -527,13 +534,26 @@ func CreateBill(bill Bill) (Bill, error) {
 		}
 	}
 
+	if bill.PayMode == "Split" || (bill.CashPaid > 0 && bill.UPIPaid > 0) {
+		bill.PayMode = "Split"
+		if bill.Paid == 0 {
+			bill.Paid = bill.CashPaid + bill.UPIPaid
+		}
+	} else if bill.CashPaid == 0 && bill.UPIPaid == 0 {
+		if bill.PayMode == "Cash" {
+			bill.CashPaid = bill.Paid
+		} else if bill.PayMode == "UPI" {
+			bill.UPIPaid = bill.Paid
+		}
+	}
+
 	// Insert bill header
 	_, err = tx.Exec(`INSERT INTO bills 
 		(id, bill_no, date, customer_name, customer_phone, customer_address, customer_gstin, customer_state, 
-		 subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, note)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, cash_paid, upi_paid, note)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		bill.ID, bill.BillNo, bill.Date, bill.Customer.Name, bill.Customer.Phone, bill.Customer.Address, bill.Customer.Gstin, bill.Customer.State,
-		bill.Subtotal, bill.Discount, bill.Taxable, bill.GSTOn, bill.GSTAmt, bill.CGST, bill.SGST, bill.IGST, bill.GrandTotal, bill.PayMode, bill.Paid, bill.Balance, bill.Note,
+		bill.Subtotal, bill.Discount, bill.Taxable, bill.GSTOn, bill.GSTAmt, bill.CGST, bill.SGST, bill.IGST, bill.GrandTotal, bill.PayMode, bill.Paid, bill.Balance, bill.CashPaid, bill.UPIPaid, bill.Note,
 	)
 	if err != nil {
 		return bill, fmt.Errorf("insert bill failed: %w", err)
@@ -656,6 +676,19 @@ func UpdateBill(bill Bill) (Bill, error) {
 		gstOnInt = 1
 	}
 
+	if bill.PayMode == "Split" || (bill.CashPaid > 0 && bill.UPIPaid > 0) {
+		bill.PayMode = "Split"
+		if bill.Paid == 0 {
+			bill.Paid = bill.CashPaid + bill.UPIPaid
+		}
+	} else if bill.CashPaid == 0 && bill.UPIPaid == 0 {
+		if bill.PayMode == "Cash" {
+			bill.CashPaid = bill.Paid
+		} else if bill.PayMode == "UPI" {
+			bill.UPIPaid = bill.Paid
+		}
+	}
+
 	_, err = tx.Exec(`UPDATE bills SET 
 		date = ?,
 		customer_name = ?,
@@ -675,12 +708,14 @@ func UpdateBill(bill Bill) (Bill, error) {
 		pay_mode = ?,
 		paid = ?,
 		balance = ?,
+		cash_paid = ?,
+		upi_paid = ?,
 		note = ?
 		WHERE id = ?`,
 		bill.Date,
 		bill.Customer.Name, bill.Customer.Phone, bill.Customer.Address, bill.Customer.Gstin, bill.Customer.State,
 		bill.Subtotal, bill.Discount, bill.Taxable, gstOnInt, bill.GSTAmt,
-		bill.CGST, bill.SGST, bill.IGST, bill.GrandTotal, bill.PayMode, bill.Paid, bill.Balance, bill.Note,
+		bill.CGST, bill.SGST, bill.IGST, bill.GrandTotal, bill.PayMode, bill.Paid, bill.Balance, bill.CashPaid, bill.UPIPaid, bill.Note,
 		bill.ID,
 	)
 	if err != nil {
@@ -801,7 +836,8 @@ func CancelBill(id string) error {
 func GetBills(from, to string) ([]Bill, error) {
 	query := `SELECT id, bill_no, date, COALESCE(customer_name, ''), COALESCE(customer_phone, ''), 
 		COALESCE(customer_address, ''), COALESCE(customer_gstin, ''), COALESCE(customer_state, ''),
-		subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, COALESCE(note, ''), created_at
+		subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance,
+		COALESCE(cash_paid, 0), COALESCE(upi_paid, 0), COALESCE(note, ''), created_at
 		FROM bills`
 	var args []interface{}
 	var conds []string
@@ -830,12 +866,19 @@ func GetBills(from, to string) ([]Bill, error) {
 		var gstOnInt int
 		err := rows.Scan(
 			&b.ID, &b.BillNo, &b.Date, &b.Customer.Name, &b.Customer.Phone, &b.Customer.Address, &b.Customer.Gstin, &b.Customer.State,
-			&b.Subtotal, &b.Discount, &b.Taxable, &gstOnInt, &b.GSTAmt, &b.CGST, &b.SGST, &b.IGST, &b.GrandTotal, &b.PayMode, &b.Paid, &b.Balance, &b.Note, &b.CreatedAt,
+			&b.Subtotal, &b.Discount, &b.Taxable, &gstOnInt, &b.GSTAmt, &b.CGST, &b.SGST, &b.IGST, &b.GrandTotal, &b.PayMode, &b.Paid, &b.Balance, &b.CashPaid, &b.UPIPaid, &b.Note, &b.CreatedAt,
 		)
 		if err != nil {
 			return nil, err
 		}
 		b.GSTOn = gstOnInt == 1
+		if b.CashPaid == 0 && b.UPIPaid == 0 {
+			if b.PayMode == "Cash" {
+				b.CashPaid = b.Paid
+			} else if b.PayMode == "UPI" {
+				b.UPIPaid = b.Paid
+			}
+		}
 		list = append(list, b)
 	}
 
@@ -861,16 +904,24 @@ func GetBillByID(id string) (Bill, error) {
 	var gstOnInt int
 	err := DB.QueryRow(`SELECT id, bill_no, date, COALESCE(customer_name, ''), COALESCE(customer_phone, ''), 
 		COALESCE(customer_address, ''), COALESCE(customer_gstin, ''), COALESCE(customer_state, ''),
-		subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, COALESCE(note, ''), created_at
+		subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance,
+		COALESCE(cash_paid, 0), COALESCE(upi_paid, 0), COALESCE(note, ''), created_at
 		FROM bills WHERE id = ?`, id).
 		Scan(
 			&b.ID, &b.BillNo, &b.Date, &b.Customer.Name, &b.Customer.Phone, &b.Customer.Address, &b.Customer.Gstin, &b.Customer.State,
-			&b.Subtotal, &b.Discount, &b.Taxable, &gstOnInt, &b.GSTAmt, &b.CGST, &b.SGST, &b.IGST, &b.GrandTotal, &b.PayMode, &b.Paid, &b.Balance, &b.Note, &b.CreatedAt,
+			&b.Subtotal, &b.Discount, &b.Taxable, &gstOnInt, &b.GSTAmt, &b.CGST, &b.SGST, &b.IGST, &b.GrandTotal, &b.PayMode, &b.Paid, &b.Balance, &b.CashPaid, &b.UPIPaid, &b.Note, &b.CreatedAt,
 		)
 	if err != nil {
 		return b, err
 	}
 	b.GSTOn = gstOnInt == 1
+	if b.CashPaid == 0 && b.UPIPaid == 0 {
+		if b.PayMode == "Cash" {
+			b.CashPaid = b.Paid
+		} else if b.PayMode == "UPI" {
+			b.UPIPaid = b.Paid
+		}
+	}
 
 	rows, err := DB.Query("SELECT product_id, name_en, name_ta, hsn, barcode, qty, price, gst_pct, amount, gst_portion FROM bill_items WHERE bill_id = ?", b.ID)
 	if err == nil {
@@ -1160,8 +1211,8 @@ func RestoreBillsAndMoves(bills []Bill, moves []StockMove) error {
 		}
 		_, err := tx.Exec(`INSERT INTO bills 
 			(id, bill_no, date, customer_name, customer_phone, customer_address, customer_gstin, customer_state, 
-			 subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, note, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, cash_paid, upi_paid, note, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				bill_no = excluded.bill_no,
 				date = excluded.date,
@@ -1182,9 +1233,11 @@ func RestoreBillsAndMoves(bills []Bill, moves []StockMove) error {
 				pay_mode = excluded.pay_mode,
 				paid = excluded.paid,
 				balance = excluded.balance,
+				cash_paid = excluded.cash_paid,
+				upi_paid = excluded.upi_paid,
 				note = excluded.note`,
 			b.ID, b.BillNo, b.Date, b.Customer.Name, b.Customer.Phone, b.Customer.Address, b.Customer.Gstin, b.Customer.State,
-			b.Subtotal, b.Discount, b.Taxable, gstOnInt, b.GSTAmt, b.CGST, b.SGST, b.IGST, b.GrandTotal, b.PayMode, b.Paid, b.Balance, b.Note, b.CreatedAt,
+			b.Subtotal, b.Discount, b.Taxable, gstOnInt, b.GSTAmt, b.CGST, b.SGST, b.IGST, b.GrandTotal, b.PayMode, b.Paid, b.Balance, b.CashPaid, b.UPIPaid, b.Note, b.CreatedAt,
 		)
 		if err != nil {
 			return err

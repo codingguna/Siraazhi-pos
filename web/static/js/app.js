@@ -149,6 +149,9 @@ async function initApp() {
   const firstOfMonth = today.slice(0, 8) + '01';
   $('filterFrom').value = firstOfMonth;
   $('filterTo').value = today;
+  if ($('reportMonthPicker')) {
+    $('reportMonthPicker').value = today.slice(0, 7);
+  }
 
   setupKeyboardShortcuts();
 
@@ -602,6 +605,9 @@ function clearCart() {
     BILL_TABS[ACTIVE_BILL_INDEX].customer = { name: '', phone: '', gstin: '', address: '' };
     BILL_TABS[ACTIVE_BILL_INDEX].discount = 0;
     BILL_TABS[ACTIVE_BILL_INDEX].paid = '';
+    BILL_TABS[ACTIVE_BILL_INDEX].payMode = 'Cash';
+    BILL_TABS[ACTIVE_BILL_INDEX].splitCash = '';
+    BILL_TABS[ACTIVE_BILL_INDEX].splitUPI = '';
     BILL_TABS[ACTIVE_BILL_INDEX].gstOn = isGstDefault;
   }
   CART = BILL_TABS[ACTIVE_BILL_INDEX].cart;
@@ -611,6 +617,10 @@ function clearCart() {
   if ($('custGstin')) $('custGstin').value = '';
   if ($('custAddress')) $('custAddress').value = '';
   if ($('billPaid')) $('billPaid').value = '';
+  if ($('billPayMode')) $('billPayMode').value = 'Cash';
+  if ($('billSplitCash')) $('billSplitCash').value = '';
+  if ($('billSplitUPI')) $('billSplitUPI').value = '';
+  onPayModeChange();
   if ($('gstToggle')) {
     $('gstToggle').checked = isGstDefault;
     toggleGSTMode();
@@ -716,6 +726,8 @@ function saveCurrentBillTabForm() {
   b.discount = $('billDiscount') ? Number($('billDiscount').value) || 0 : 0;
   b.paid = $('billPaid') ? $('billPaid').value : '';
   b.payMode = $('billPayMode') ? $('billPayMode').value : 'Cash';
+  b.splitCash = $('billSplitCash') ? $('billSplitCash').value : '';
+  b.splitUPI = $('billSplitUPI') ? $('billSplitUPI').value : '';
   b.gstOn = $('gstToggle') ? $('gstToggle').checked : true;
 }
 
@@ -730,6 +742,9 @@ function loadActiveBillTabForm() {
   if ($('billDiscount')) $('billDiscount').value = b.discount || 0;
   if ($('billPaid')) $('billPaid').value = b.paid || '';
   if ($('billPayMode')) $('billPayMode').value = b.payMode || 'Cash';
+  if ($('billSplitCash')) $('billSplitCash').value = b.splitCash || '';
+  if ($('billSplitUPI')) $('billSplitUPI').value = b.splitUPI || '';
+  onPayModeChange();
   if ($('gstToggle')) {
     const isGstDefault = SETTINGS && SETTINGS.gstDefaultOn === true;
     const tabGst = (b.gstOn !== undefined) ? b.gstOn : isGstDefault;
@@ -892,6 +907,65 @@ function renderCart() {
 }
 
 /**
+ * Payment Mode & Split Payment Handler
+ */
+function onPayModeChange() {
+  const mode = $('billPayMode') ? $('billPayMode').value : 'Cash';
+  const splitRow = $('splitPayRow');
+  const singlePaid = $('singlePaidGroup');
+
+  if (mode === 'Split') {
+    if (splitRow) splitRow.style.display = 'flex';
+    if (singlePaid) singlePaid.style.display = 'none';
+
+    // Auto-initialize split amounts if empty
+    const subtotal = CART.reduce((s, it) => s + (it.qty * it.price), 0);
+    const discount = Math.max(0, Number($('billDiscount') ? $('billDiscount').value : 0) || 0);
+    const grandTotal = Math.max(0, subtotal - discount);
+
+    if ($('billSplitCash') && !$('billSplitCash').value && $('billSplitUPI') && !$('billSplitUPI').value) {
+      if ($('billPaid') && $('billPaid').value) {
+        $('billSplitCash').value = $('billPaid').value;
+      }
+    }
+  } else {
+    if (splitRow) splitRow.style.display = 'none';
+    if (singlePaid) singlePaid.style.display = 'flex';
+    if ($('billSplitCash')) $('billSplitCash').value = '';
+    if ($('billSplitUPI')) $('billSplitUPI').value = '';
+  }
+
+  recalcCart();
+  saveCurrentBillTabForm();
+}
+
+function onSplitPayInput(source) {
+  const subtotal = CART.reduce((s, it) => s + (it.qty * it.price), 0);
+  const discount = Math.max(0, Number($('billDiscount') ? $('billDiscount').value : 0) || 0);
+  const grandTotal = Math.max(0, subtotal - discount);
+
+  const cashVal = Number($('billSplitCash') ? $('billSplitCash').value : 0) || 0;
+
+  if (source === 'cash') {
+    if (grandTotal > cashVal) {
+      if ($('billSplitUPI')) $('billSplitUPI').value = (grandTotal - cashVal).toFixed(0);
+    } else if (cashVal >= grandTotal) {
+      if ($('billSplitUPI')) $('billSplitUPI').value = '0';
+    }
+  }
+
+  const updatedCash = Number($('billSplitCash') ? $('billSplitCash').value : 0) || 0;
+  const updatedUPI = Number($('billSplitUPI') ? $('billSplitUPI').value : 0) || 0;
+  if ($('billPaid')) {
+    const totalPaid = updatedCash + updatedUPI;
+    $('billPaid').value = totalPaid > 0 ? totalPaid.toFixed(0) : '';
+  }
+
+  recalcCart();
+  saveCurrentBillTabForm();
+}
+
+/**
  * recalcCart computes subtotal, taxes, discount, and grand total.
  */
 function recalcCart() {
@@ -914,11 +988,25 @@ function recalcCart() {
   $('sumTaxAmt').textContent = formatINR(taxPortion);
   $('sumGrandTotal').textContent = formatINR(grandTotal);
 
-  if (!$('billPaid').value) {
+  const isSplit = $('billPayMode') && $('billPayMode').value === 'Split';
+  let paid = 0;
+  let hasPaidInput = false;
+
+  if (isSplit) {
+    const c = Number($('billSplitCash') ? $('billSplitCash').value : 0) || 0;
+    const u = Number($('billSplitUPI') ? $('billSplitUPI').value : 0) || 0;
+    paid = c + u;
+    hasPaidInput = ($('billSplitCash') && $('billSplitCash').value !== '') || ($('billSplitUPI') && $('billSplitUPI').value !== '');
+    if ($('billPaid')) $('billPaid').value = paid > 0 ? paid.toFixed(0) : '';
+  } else {
+    hasPaidInput = !!($('billPaid') && $('billPaid').value);
+    paid = hasPaidInput ? (Number($('billPaid').value) || 0) : 0;
+  }
+
+  if (!hasPaidInput) {
     $('billPaid').placeholder = grandTotal.toFixed(0);
     if ($('billChangeDisplay')) $('billChangeDisplay').style.display = 'none';
   } else if ($('billChangeDisplay')) {
-    const paid = Number($('billPaid').value) || 0;
     if (paid > 0) {
       const diff = paid - grandTotal;
       if (diff >= 0) {
@@ -942,12 +1030,28 @@ function setQuickCash(val) {
   const subtotal = CART.reduce((s, it) => s + (it.qty * it.price), 0);
   const discount = Math.max(0, Number($('billDiscount') ? $('billDiscount').value : 0) || 0);
   const grandTotal = Math.max(0, subtotal - discount);
+  const isSplit = $('billPayMode') && $('billPayMode').value === 'Split';
 
-  if (val === 'exact') {
-    $('billPaid').value = grandTotal > 0 ? grandTotal.toFixed(0) : '';
-  } else if (typeof val === 'number') {
-    const current = Number($('billPaid').value) || 0;
-    $('billPaid').value = (current + val).toString();
+  if (isSplit) {
+    if (val === 'exact') {
+      if ($('billSplitCash')) $('billSplitCash').value = grandTotal > 0 ? grandTotal.toFixed(0) : '';
+      if ($('billSplitUPI')) $('billSplitUPI').value = '0';
+    } else if (typeof val === 'number') {
+      const currentCash = Number($('billSplitCash') ? $('billSplitCash').value : 0) || 0;
+      const newCash = currentCash + val;
+      if ($('billSplitCash')) $('billSplitCash').value = newCash.toString();
+      const remainingUPI = Math.max(0, grandTotal - newCash);
+      if ($('billSplitUPI')) $('billSplitUPI').value = remainingUPI > 0 ? remainingUPI.toFixed(0) : '0';
+    }
+    const totalPaid = (Number($('billSplitCash') ? $('billSplitCash').value : 0) || 0) + (Number($('billSplitUPI') ? $('billSplitUPI').value : 0) || 0);
+    if ($('billPaid')) $('billPaid').value = totalPaid > 0 ? totalPaid.toFixed(0) : '';
+  } else {
+    if (val === 'exact') {
+      $('billPaid').value = grandTotal > 0 ? grandTotal.toFixed(0) : '';
+    } else if (typeof val === 'number') {
+      const current = Number($('billPaid').value) || 0;
+      $('billPaid').value = (current + val).toString();
+    }
   }
   recalcCart();
   saveCurrentBillTabForm();
@@ -980,7 +1084,30 @@ async function checkoutBill(printFormat) {
 
   const isGst = $('gstToggle').checked;
   const grandTotal = Math.max(0, CART.reduce((s, it) => s + (it.qty * it.price), 0) - Number($('billDiscount').value || 0));
-  const paidVal = $('billPaid').value ? Number($('billPaid').value) : grandTotal;
+
+  const payMode = $('billPayMode') ? $('billPayMode').value : 'Cash';
+  let cashPaid = 0;
+  let upiPaid = 0;
+  let paidVal = 0;
+
+  if (payMode === 'Split') {
+    cashPaid = Number($('billSplitCash') ? $('billSplitCash').value : 0) || 0;
+    upiPaid = Number($('billSplitUPI') ? $('billSplitUPI').value : 0) || 0;
+    paidVal = cashPaid + upiPaid;
+    if (paidVal <= 0) {
+      showToast('⚠️ Please enter Cash and/or UPI amounts for split payment', 'warning', 3500);
+      if ($('billSplitCash')) $('billSplitCash').focus();
+      return;
+    }
+  } else if (payMode === 'Cash') {
+    paidVal = $('billPaid').value ? Number($('billPaid').value) : grandTotal;
+    cashPaid = paidVal;
+  } else if (payMode === 'UPI') {
+    paidVal = $('billPaid').value ? Number($('billPaid').value) : grandTotal;
+    upiPaid = paidVal;
+  } else {
+    paidVal = $('billPaid').value ? Number($('billPaid').value) : grandTotal;
+  }
 
   const gstinInput = ($('custGstin') ? $('custGstin').value : '').trim().toUpperCase();
   let billCustState = ($('custState') ? $('custState').value : '').trim() || 'Tamil Nadu';
@@ -1004,8 +1131,10 @@ async function checkoutBill(printFormat) {
     items: CART,
     discount: Number($('billDiscount').value) || 0,
     gstOn: isGst,
-    payMode: $('billPayMode').value || 'Cash',
+    payMode: payMode,
     paid: paidVal,
+    cashPaid: cashPaid,
+    upiPaid: upiPaid,
     note: ''
   };
 
@@ -1567,16 +1696,27 @@ async function loadBills() {
       return;
     }
 
-    tbody.innerHTML = ALL_BILLS.map(b => `
+    tbody.innerHTML = ALL_BILLS.map(b => {
+      let payBadge = b.payMode || 'Cash';
+      if (b.payMode === 'Split') {
+        const c = b.cashPaid != null ? formatINR(b.cashPaid) : '₹0';
+        const u = b.upiPaid != null ? formatINR(b.upiPaid) : '₹0';
+        payBadge = `<span class="chip-btn" style="background:#fef3c7; color:#92400e; font-weight:700;" title="Cash: ${c} + UPI: ${u}">⚡ Split (${c} + ${u})</span>`;
+      } else if (b.payMode === 'UPI') {
+        payBadge = `<span class="chip-btn" style="background:#e0f2fe; color:#0369a1; font-weight:600;">📱 UPI</span>`;
+      } else if (b.payMode === 'Cash') {
+        payBadge = `<span class="chip-btn" style="background:#f0fdf4; color:#15803d; font-weight:600;">💵 Cash</span>`;
+      }
+      return `
       <tr>
         <td><b>${b.billNo}</b></td>
         <td>${b.date}</td>
-        <td>${b.customer.name}</td>
+        <td>${escapeHtml(b.customer.name || '')}</td>
         <td>${b.gstOn ? '<span class="chip-btn" style="color:#1b5e20;">GST</span>' : '<span class="chip-btn">Cash</span>'}</td>
         <td>${formatINR(b.subtotal)}</td>
         <td>${formatINR(b.gstAmt)}</td>
         <td><b style="font-size:14px;">${formatINR(b.grandTotal)}</b></td>
-        <td>${b.payMode}</td>
+        <td>${payBadge}</td>
         <td>
           <button class="chip-btn" style="color:#0284c7; font-weight:700;" onclick="editExistingBill('${b.id}')">✏️ Edit</button>
           <button class="chip-btn" onclick="reprintBill('${b.id}', '80mm')">🧻 80mm</button>
@@ -1586,7 +1726,7 @@ async function loadBills() {
           <button class="chip-btn" style="color:#ef4444;" onclick="cancelBill('${b.id}')">Cancel</button>
         </td>
       </tr>
-    `).join('');
+    `}).join('');
   } catch (err) {
     console.error('Bills load failed:', err);
   }
@@ -1636,6 +1776,8 @@ async function editExistingBill(id) {
       discount: bill.discount || 0,
       paid: bill.paid || '',
       payMode: bill.payMode || 'Cash',
+      splitCash: (bill.cashPaid != null && bill.cashPaid > 0) ? bill.cashPaid : '',
+      splitUPI: (bill.upiPaid != null && bill.upiPaid > 0) ? bill.upiPaid : '',
       date: bill.date || ''
     };
 
@@ -1835,6 +1977,34 @@ function exportGSTR1Excel() {
     return;
   }
   ExportEngine.exportGSTR1ToExcel(GSTR1_DATA);
+}
+
+async function exportMonthlyPnLExcel() {
+  const monthInput = $('reportMonthPicker');
+  const monthStr = (monthInput && monthInput.value) ? monthInput.value : new Date().toISOString().slice(0, 7);
+
+  try {
+    showToast('📊 Generating Monthly Income & Expense Report...', 'info', 2000);
+    const [bills, purchases, expenses] = await Promise.all([
+      api('GET', '/api/bills'),
+      api('GET', '/api/purchases'),
+      api('GET', '/api/expenses')
+    ]);
+
+    const monthlyBills = (bills || []).filter(b => b.date && b.date.startsWith(monthStr));
+    const monthlyPurchases = (purchases || []).filter(p => p.date && p.date.startsWith(monthStr));
+    const monthlyExpenses = (expenses || []).filter(e => e.date && e.date.startsWith(monthStr));
+
+    if (!monthlyBills.length && !monthlyPurchases.length && !monthlyExpenses.length) {
+      showToast(`No transactions found for ${monthStr}. Generating blank register...`, 'warning', 3000);
+    }
+
+    ExportEngine.exportMonthlyPnLToExcel(monthStr, monthlyBills, monthlyPurchases, monthlyExpenses, SETTINGS);
+    showToast(`✅ Exported Monthly P&L for ${monthStr}`, 'success', 3000);
+  } catch (err) {
+    console.error('Failed to export Monthly P&L:', err);
+    showToast('❌ Export failed: ' + err.message, 'danger', 4000);
+  }
 }
 
 // --------------------------------------------------------------------------

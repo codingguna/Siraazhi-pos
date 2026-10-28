@@ -3,22 +3,22 @@
 
 /* ==========================================================================
    Package printer — Native Windows Print Spooler & GDI Driver (Zero-Dialog)
-   
+
    WHAT IT IS:
      100% in-process Win32 Print Spooler and GDI interface using Windows native
      winspool.drv and gdi32.dll.
-     
+
    HOW IT WORKS:
      1. Thermal Roll Printers (80mm / 58mm):
         Uses direct winspool.drv OpenPrinterW, StartDocPrinterW (pDatatype="RAW"),
         StartPagePrinter, WritePrinter, EndPagePrinter, and EndDocPrinterW.
         Zero dialogs, zero modals, zero external processes.
-        
+
      2. Standard Office / Desktop Printers (HP Smart Tank 525, LaserJet, Inkjet):
         Uses direct gdi32.dll CreateDCW, DEVMODE document properties (A4/A5,
         portrait/landscape, color/monochrome), StartDocW, StartPage, TextOutW,
         EndPage, and EndDoc.
-        
+
      CRITICAL GUARANTEE:
        NO subprocesses (no cmd.exe, no powershell.exe) are ever launched.
        Execution is 100% in-process via OS system DLLs. No terminal, console,
@@ -86,12 +86,12 @@ const (
 	FW_NORMAL  = 400
 	FW_BOLD    = 700
 
-	ANSI_CHARSET       = 0
-	DEFAULT_CHARSET    = 1
-	OUT_DEFAULT_PRECIS = 0
+	ANSI_CHARSET        = 0
+	DEFAULT_CHARSET     = 1
+	OUT_DEFAULT_PRECIS  = 0
 	CLIP_DEFAULT_PRECIS = 0
-	DEFAULT_QUALITY    = 0
-	DEFAULT_PITCH      = 0
+	DEFAULT_QUALITY     = 0
+	DEFAULT_PITCH       = 0
 
 	PS_SOLID = 0
 	PS_DASH  = 1
@@ -551,7 +551,7 @@ func PrintDocumentWin32(printerName, docName, content, paperSize, orientation, c
 
 	// 2. Calculate Height: STRICTLY FIT WITHIN TOP HALF OF A4 PAPER (< 148.5 mm)
 	halfPageHeight := int32(pageHeight) / 2
-	topMargin := int32(float64(dpiY) * 0.30) // ~7.6 mm top gap
+	topMargin := int32(float64(dpiY) * 0.30)                                  // ~7.6 mm top gap
 	availableHeight := halfPageHeight - topMargin - int32(float64(dpiY)*0.10) // safety buffer before middle fold
 
 	lineSpacing := int32(float64(fontHeight) * 1.30)
@@ -1110,7 +1110,11 @@ func drawSingleInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings, startYmm
 	curY += scaleY(4.5 * vMult)
 	phoneLine := fmt.Sprintf("Phone: %s | FSSAI Lic. No: %s", phone, fssai)
 	drawText(phoneLine, left, curY, left+scaleX(120), curY+scaleY(4.5*vMult), fSub, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
-	drawText("Mode: "+bill.PayMode, right-scaleX(60), curY, right, curY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
+	modeText := "Mode: " + bill.PayMode
+	if bill.PayMode == "Split" || (bill.CashPaid > 0 && bill.UPIPaid > 0) {
+		modeText = fmt.Sprintf("Mode: Split (Cash: ₹%.0f, UPI: ₹%.0f)", bill.CashPaid, bill.UPIPaid)
+	}
+	drawText(modeText, right-scaleX(75), curY, right, curY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
 
 	curY += scaleY(4.5 * vMult)
 	if s != nil && s.Gstin != "" {
@@ -1296,7 +1300,11 @@ func drawSingleInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings, startYmm
 	drawLine(left, curY, right, curY, hPenThick)
 	curY += scaleY(2 * vMult)
 
-	drawText(fmt.Sprintf("Amount Paid: ₹%.2f (%s)", bill.Paid, bill.PayMode), right-scaleX(85), curY, right, curY+scaleY(4.5*vMult), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	paidText := fmt.Sprintf("Amount Paid: ₹%.2f (%s)", bill.Paid, bill.PayMode)
+	if bill.PayMode == "Split" || (bill.CashPaid > 0 && bill.UPIPaid > 0) {
+		paidText = fmt.Sprintf("Paid: ₹%.2f (Cash: ₹%.0f, UPI: ₹%.0f)", bill.Paid, bill.CashPaid, bill.UPIPaid)
+	}
+	drawText(paidText, right-scaleX(95), curY, right, curY+scaleY(4.5*vMult), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
 	curY += scaleY(4.5 * vMult)
 	drawText(fmt.Sprintf("Balance Due: ₹%.2f", bill.Balance), right-scaleX(85), curY, right, curY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
 	curY += scaleY(6 * vMult)
@@ -1477,7 +1485,11 @@ func drawReceipt80mmGDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
 	drawLine(left, curY, right, curY, hPenDashed)
 	curY += scaleY(2)
 
-	drawText(fmt.Sprintf("Paid (%s): ₹%.2f | Balance: ₹%.2f", bill.PayMode, bill.Paid, bill.Balance), left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	paid80 := fmt.Sprintf("Paid (%s): ₹%.2f | Balance: ₹%.2f", bill.PayMode, bill.Paid, bill.Balance)
+	if bill.PayMode == "Split" || (bill.CashPaid > 0 && bill.UPIPaid > 0) {
+		paid80 = fmt.Sprintf("Paid: ₹%.2f (Cash: ₹%.0f, UPI: ₹%.0f)", bill.Paid, bill.CashPaid, bill.UPIPaid)
+	}
+	drawText(paid80, left, curY, right, curY+scaleY(4), fText80, colorBlack, DT_RIGHT|DT_NOPREFIX)
 	curY += scaleY(4.2)
 
 	if !bill.GSTOn {

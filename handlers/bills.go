@@ -1,6 +1,6 @@
 /* ==========================================================================
    Package handlers — Billing & POS Tax Calculation Handlers
-   
+
    WHAT IT IS:
      This module manages the core point-of-sale invoice operations:
      - Mathematical computation of line item totals, prorated discounts, and tax splits.
@@ -152,6 +152,8 @@ func HandleBills(w http.ResponseWriter, r *http.Request) {
 			GSTOn    *bool         `json:"gstOn"`
 			PayMode  string        `json:"payMode"`
 			Paid     *float64      `json:"paid"`
+			CashPaid *float64      `json:"cashPaid"`
+			UPIPaid  *float64      `json:"upiPaid"`
 			Note     string        `json:"note"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -203,6 +205,26 @@ func HandleBills(w http.ResponseWriter, r *http.Request) {
 		if req.Paid != nil {
 			paid = *req.Paid
 		}
+		cashPaid := 0.0
+		if req.CashPaid != nil {
+			cashPaid = *req.CashPaid
+		}
+		upiPaid := 0.0
+		if req.UPIPaid != nil {
+			upiPaid = *req.UPIPaid
+		}
+		if payMode == "Split" || (cashPaid > 0 && upiPaid > 0) {
+			payMode = "Split"
+			if req.Paid == nil {
+				paid = cashPaid + upiPaid
+			}
+		} else if cashPaid == 0 && upiPaid == 0 {
+			if payMode == "Cash" {
+				cashPaid = paid
+			} else if payMode == "UPI" {
+				upiPaid = paid
+			}
+		}
 		balance := roundMoney(grandTotal - paid)
 
 		// Generate sequential bill number atomically
@@ -231,6 +253,8 @@ func HandleBills(w http.ResponseWriter, r *http.Request) {
 			PayMode:    payMode,
 			Paid:       paid,
 			Balance:    balance,
+			CashPaid:   cashPaid,
+			UPIPaid:    upiPaid,
 			Note:       req.Note,
 			CreatedAt:  time.Now(),
 		}
@@ -310,6 +334,8 @@ func HandleBillByID(w http.ResponseWriter, r *http.Request) {
 			GSTOn    *bool         `json:"gstOn"`
 			PayMode  string        `json:"payMode"`
 			Paid     *float64      `json:"paid"`
+			CashPaid *float64      `json:"cashPaid"`
+			UPIPaid  *float64      `json:"upiPaid"`
 			Note     string        `json:"note"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -370,6 +396,26 @@ func HandleBillByID(w http.ResponseWriter, r *http.Request) {
 		if req.Paid != nil {
 			paid = *req.Paid
 		}
+		cashPaid := existingBill.CashPaid
+		if req.CashPaid != nil {
+			cashPaid = *req.CashPaid
+		}
+		upiPaid := existingBill.UPIPaid
+		if req.UPIPaid != nil {
+			upiPaid = *req.UPIPaid
+		}
+		if payMode == "Split" || (cashPaid > 0 && upiPaid > 0) {
+			payMode = "Split"
+			if req.Paid == nil {
+				paid = cashPaid + upiPaid
+			}
+		} else if cashPaid == 0 && upiPaid == 0 {
+			if payMode == "Cash" {
+				cashPaid = paid
+			} else if payMode == "UPI" {
+				upiPaid = paid
+			}
+		}
 		balance := roundMoney(grandTotal - paid)
 
 		updatedBill := db.Bill{
@@ -390,6 +436,8 @@ func HandleBillByID(w http.ResponseWriter, r *http.Request) {
 			PayMode:    payMode,
 			Paid:       paid,
 			Balance:    balance,
+			CashPaid:   cashPaid,
+			UPIPaid:    upiPaid,
 			Note:       req.Note,
 			CreatedAt:  existingBill.CreatedAt,
 		}

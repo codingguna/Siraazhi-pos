@@ -1,6 +1,6 @@
 /* ==========================================================================
    Package db — Data Models & Schemas for Siraazhi Pro POS
-   
+
    WHAT IT IS:
      This file defines the domain models and JSON transfer structures for:
      - Company & Shop settings (GSTIN, FSSAI, brand names in English and Tamil).
@@ -47,27 +47,27 @@ type Settings struct {
 	MasterPin      string   `json:"masterPin"`      // Resettable Master Admin PIN (default "1234")
 
 	// Hardware Printer Configuration (Direct Zero-Dialog Printing & Multi-Printer)
-	PrinterInterface          string `json:"printerInterface"`          // "spooler" (Windows USB/driver), "network" (LAN TCP/IP), "browser" (manual dialog)
-	PrinterTarget             string `json:"printerTarget"`             // Windows printer name (e.g. "POS-80") or IP ("192.168.1.150")
-	PrinterPort               int    `json:"printerPort"`               // Port for network printer (default 9100)
-	PrinterType               string `json:"printerType"`               // "thermal" (roll POS) or "document" (A4/A5/Deskjet/Laser)
-	PaperSize                 string `json:"paperSize"`                 // "80mm", "58mm", "a4", "a5", "letter"
-	Orientation               string `json:"orientation"`               // "portrait" or "landscape"
-	ColorMode                 string `json:"colorMode"`                 // "color" or "monochrome"
-	ThermalPaperSize          string `json:"thermalPaperSize"`          // "80mm", "58mm"
-	AutoCut                   bool   `json:"autoCut"`                   // Feed and cut paper automatically
-	OpenCashDrawer            bool   `json:"cashDrawer"`                // Send pulse to cash drawer kick pin
-	PrintCopies               int    `json:"printCopies"`               // Number of copies (default 1)
-	AutoPrintMobile           bool   `json:"autoPrintMobile"`           // Instantly print mobile/tablet orders without manual approval
-	A4PrinterName             string `json:"a4PrinterName"`             // Designated Windows printer for A4 corporate invoices
-	SecondaryPrinterEnabled   bool   `json:"secPrinterEnabled"`         // Enable duplicate slip to secondary printer
-	SecondaryPrinterInterface string `json:"secPrinterInterface"`       // "spooler" or "network"
-	SecondaryPrinterTarget    string `json:"secPrinterTarget"`          // Secondary printer name or IP
-	SecondaryPrinterPort      int    `json:"secPrinterPort"`            // Secondary network port
-	SecondaryPrinterType      string `json:"secPrinterType"`            // "thermal" or "document"
-	SecondaryPaperSize        string `json:"secPaperSize"`              // "80mm", "58mm", "a4", "a5"
-	SecondaryOrientation      string `json:"secOrientation"`            // "portrait" or "landscape"
-	SecondaryColorMode        string `json:"secColorMode"`              // "color" or "monochrome"
+	PrinterInterface          string `json:"printerInterface"`    // "spooler" (Windows USB/driver), "network" (LAN TCP/IP), "browser" (manual dialog)
+	PrinterTarget             string `json:"printerTarget"`       // Windows printer name (e.g. "POS-80") or IP ("192.168.1.150")
+	PrinterPort               int    `json:"printerPort"`         // Port for network printer (default 9100)
+	PrinterType               string `json:"printerType"`         // "thermal" (roll POS) or "document" (A4/A5/Deskjet/Laser)
+	PaperSize                 string `json:"paperSize"`           // "80mm", "58mm", "a4", "a5", "letter"
+	Orientation               string `json:"orientation"`         // "portrait" or "landscape"
+	ColorMode                 string `json:"colorMode"`           // "color" or "monochrome"
+	ThermalPaperSize          string `json:"thermalPaperSize"`    // "80mm", "58mm"
+	AutoCut                   bool   `json:"autoCut"`             // Feed and cut paper automatically
+	OpenCashDrawer            bool   `json:"cashDrawer"`          // Send pulse to cash drawer kick pin
+	PrintCopies               int    `json:"printCopies"`         // Number of copies (default 1)
+	AutoPrintMobile           bool   `json:"autoPrintMobile"`     // Instantly print mobile/tablet orders without manual approval
+	A4PrinterName             string `json:"a4PrinterName"`       // Designated Windows printer for A4 corporate invoices
+	SecondaryPrinterEnabled   bool   `json:"secPrinterEnabled"`   // Enable duplicate slip to secondary printer
+	SecondaryPrinterInterface string `json:"secPrinterInterface"` // "spooler" or "network"
+	SecondaryPrinterTarget    string `json:"secPrinterTarget"`    // Secondary printer name or IP
+	SecondaryPrinterPort      int    `json:"secPrinterPort"`      // Secondary network port
+	SecondaryPrinterType      string `json:"secPrinterType"`      // "thermal" or "document"
+	SecondaryPaperSize        string `json:"secPaperSize"`        // "80mm", "58mm", "a4", "a5"
+	SecondaryOrientation      string `json:"secOrientation"`      // "portrait" or "landscape"
+	SecondaryColorMode        string `json:"secColorMode"`        // "color" or "monochrome"
 
 	// Windows Boot Auto-Startup
 	AutoStartup     bool   `json:"autoStartup"`     // Automatically start on Windows boot
@@ -144,6 +144,8 @@ type Bill struct {
 	PayMode    string     `json:"payMode"`
 	Paid       float64    `json:"paid"`
 	Balance    float64    `json:"balance"`
+	CashPaid   float64    `json:"cashPaid"`
+	UPIPaid    float64    `json:"upiPaid"`
 	Note       string     `json:"note"`
 	CreatedAt  time.Time  `json:"createdAt"`
 }

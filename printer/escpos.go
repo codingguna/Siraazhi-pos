@@ -1,6 +1,6 @@
 /* ==========================================================================
    Package printer — ESC/POS Thermal Receipt Generator for Siraazhi Pro POS
-   
+
    WHAT IT IS:
      High-performance, pure Go ESC/POS command and layout engine.
      Generates byte streams for standard 80mm (48 columns) and 58mm (32 columns)
@@ -29,15 +29,15 @@ import (
 
 // ESC/POS Command Constants
 var (
-	cmdInit         = []byte{0x1B, 0x40}             // ESC @ (Initialize printer)
-	cmdAlignLeft    = []byte{0x1B, 0x61, 0x00}       // ESC a 0
-	cmdAlignCenter  = []byte{0x1B, 0x61, 0x01}       // ESC a 1
-	cmdAlignRight   = []byte{0x1B, 0x61, 0x02}       // ESC a 2
-	cmdBoldOn       = []byte{0x1B, 0x45, 0x01}       // ESC E 1
-	cmdBoldOff      = []byte{0x1B, 0x45, 0x00}       // ESC E 0
-	cmdDoubleSizeOn = []byte{0x1D, 0x21, 0x11}       // GS ! 17 (Double width & height)
-	cmdNormalSize   = []byte{0x1D, 0x21, 0x00}       // GS ! 0  (Standard font size)
-	cmdCutPaper     = []byte{0x1D, 0x56, 0x41, 0x03} // GS V A 3 (Feed 3 lines and cut)
+	cmdInit         = []byte{0x1B, 0x40}                   // ESC @ (Initialize printer)
+	cmdAlignLeft    = []byte{0x1B, 0x61, 0x00}             // ESC a 0
+	cmdAlignCenter  = []byte{0x1B, 0x61, 0x01}             // ESC a 1
+	cmdAlignRight   = []byte{0x1B, 0x61, 0x02}             // ESC a 2
+	cmdBoldOn       = []byte{0x1B, 0x45, 0x01}             // ESC E 1
+	cmdBoldOff      = []byte{0x1B, 0x45, 0x00}             // ESC E 0
+	cmdDoubleSizeOn = []byte{0x1D, 0x21, 0x11}             // GS ! 17 (Double width & height)
+	cmdNormalSize   = []byte{0x1D, 0x21, 0x00}             // GS ! 0  (Standard font size)
+	cmdCutPaper     = []byte{0x1D, 0x56, 0x41, 0x03}       // GS V A 3 (Feed 3 lines and cut)
 	cmdOpenDrawer   = []byte{0x1B, 0x70, 0x00, 0x19, 0xFA} // ESC p 0 25 250 (Pulse pin 2)
 )
 
@@ -284,7 +284,13 @@ func BuildReceiptESC(bill *db.Bill, s *db.Settings, paperSize string, autoCut bo
 	if payMode == "" {
 		payMode = "Cash"
 	}
-	buf.WriteString(formatTwoCols("Paid ("+payMode+"):", formatCurrency(bill.Paid), width) + "\n")
+	if payMode == "Split" || (bill.CashPaid > 0 && bill.UPIPaid > 0) {
+		buf.WriteString(formatTwoCols("Paid (Split):", formatCurrency(bill.Paid), width) + "\n")
+		buf.WriteString(formatTwoCols("  - Cash:", formatCurrency(bill.CashPaid), width) + "\n")
+		buf.WriteString(formatTwoCols("  - UPI:", formatCurrency(bill.UPIPaid), width) + "\n")
+	} else {
+		buf.WriteString(formatTwoCols("Paid ("+payMode+"):", formatCurrency(bill.Paid), width) + "\n")
+	}
 	if bill.Balance > 0 {
 		buf.WriteString(formatTwoCols("Balance Due:", formatCurrency(bill.Balance), width) + "\n")
 	}
@@ -648,6 +654,9 @@ func BuildA4InvoiceText(bill *db.Bill, s *db.Settings) string {
 	sb.WriteString(formatBoxRow(" Amount in Words: "+words, width) + "\n")
 
 	payDetails := fmt.Sprintf(" Amount Paid    : Rs. %.2f (%s)", bill.Paid, bill.PayMode)
+	if bill.PayMode == "Split" || (bill.CashPaid > 0 && bill.UPIPaid > 0) {
+		payDetails = fmt.Sprintf(" Paid: Rs.%.2f (Cash:%.0f, UPI:%.0f)", bill.Paid, bill.CashPaid, bill.UPIPaid)
+	}
 	balDetails := fmt.Sprintf("Balance Due : Rs. %.2f ", bill.Balance)
 	sb.WriteString(formatBoxTwoCols(payDetails, balDetails, width) + "\n")
 	sb.WriteString("+" + strings.Repeat("-", width-2) + "+\n")
@@ -837,5 +846,3 @@ func BuildTestDocumentText(printerName, paperSize, orientation, colorMode string
 
 	return sb.String()
 }
-
-
