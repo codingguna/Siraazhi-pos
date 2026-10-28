@@ -38,6 +38,34 @@
         </div>
       </div>
 
+      <!-- Product Category & Item Sales Summary -->
+      <div class="panel-box" style="margin-top:16px;">
+        <div class="panel-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <span>📦 Product Category & Item Sales Summary / உற்பத்தி பொருள் விற்பனை சுருக்கம்</span>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button class="btn btn-export btn-excel" onclick="exportMonthlyPnLExcel()" style="background:#15803d; color:#fff; font-size:12px; padding:4px 10px;" title="Download complete Excel report">📊 Download Excel Report</button>
+            <button class="btn-link" onclick="switchTab('gstr1')" style="font-size:12px;">Full CA & GST Reports →</button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Product Category</th>
+                <th>Volume / Units Sold</th>
+                <th>Cash Sales (₹)</th>
+                <th>Bank / UPI Sales (₹)</th>
+                <th>Total Sales (₹)</th>
+                <th>Revenue Share (%)</th>
+              </tr>
+            </thead>
+            <tbody id="dashCategorySummaryBody">
+              <!-- Dynamically populated in loadDashboard() -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="dash-columns">
         <div class="panel-box">
           <div class="panel-title">

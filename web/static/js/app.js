@@ -155,14 +155,40 @@ async function initApp() {
 
   setupKeyboardShortcuts();
 
-  // 1. Immediately determine and visually activate the current tab BEFORE any async network calls
-  // This eliminates any visual delay or jumping when refreshing on #settings or any other tab
-  let activePage = (window.location.hash || '').replace(/^#/, '').trim();
-  if (!activePage) {
+  // 1. Immediately determine and visually activate the current tab BEFORE any async network calls.
+  // Rule: Fresh launch, first-time open, or reopening after closing ALWAYS opens on 'dash' (Dashboard).
+  // Within the same running session, refreshing/reloading preserves the previous active page.
+  const isSessionReload = (function() {
     try {
-      activePage = localStorage.getItem('siraazhi_active_tab') || '';
+      const navEntries = performance.getEntriesByType('navigation');
+      if (navEntries && navEntries.length > 0) {
+        return navEntries[0].type === 'reload';
+      }
+      return performance.navigation && performance.navigation.type === 1;
+    } catch (_) {
+      return false;
+    }
+  })();
+
+  let activePage = 'dash';
+  if (isSessionReload) {
+    try {
+      activePage = sessionStorage.getItem('siraazhi_session_tab') || (window.location.hash || '').replace(/^#/, '').trim() || 'dash';
+    } catch (_) {
+      activePage = (window.location.hash || '').replace(/^#/, '').trim() || 'dash';
+    }
+  } else {
+    // Fresh launch / new session: clear temporary storage and URL hash
+    try {
+      sessionStorage.removeItem('siraazhi_session_tab');
+      localStorage.removeItem('siraazhi_active_tab');
+      if (window.location.hash) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
     } catch (_) {}
+    activePage = 'dash';
   }
+
   const validTabs = ['dash', 'pos', 'inventory', 'production', 'purchases', 'expenses', 'bills', 'gstr1', 'settings'];
   if (!validTabs.includes(activePage)) {
     activePage = 'dash';
@@ -369,7 +395,7 @@ function switchTab(tabId) {
   if (targetBtn) targetBtn.classList.add('active');
   if (targetPane) targetPane.classList.add('active');
 
-  // Update browser URL hash and localStorage so refreshing preserves this exact page
+  // Update browser URL hash and sessionStorage so in-session refreshing preserves this exact page
   const cleanTab = tabId.replace(/^#/, '');
   if (window.location.hash !== '#' + cleanTab) {
     try {
@@ -379,7 +405,7 @@ function switchTab(tabId) {
     }
   }
   try {
-    localStorage.setItem('siraazhi_active_tab', cleanTab);
+    sessionStorage.setItem('siraazhi_session_tab', cleanTab);
   } catch (_) {}
 
   // Trigger data refreshes on tab activation
@@ -1212,9 +1238,9 @@ function setupKeyboardShortcuts() {
     // Normal F5 or Ctrl+R refresh handling (especially critical for Chromium --app mode)
     if (e.key === 'F5' || (e.ctrlKey && (e.key === 'r' || e.key === 'R'))) {
       e.preventDefault();
-      const currentTab = (window.location.hash || '').replace(/^#/, '').trim() || localStorage.getItem('siraazhi_active_tab') || 'pos';
+      const currentTab = (window.location.hash || '').replace(/^#/, '').trim() || 'dash';
       try {
-        localStorage.setItem('siraazhi_active_tab', currentTab);
+        sessionStorage.setItem('siraazhi_session_tab', currentTab);
       } catch (_) {}
       window.location.reload();
       return;
@@ -1246,12 +1272,12 @@ function setupKeyboardShortcuts() {
     }
   });
 
-  // Preserve active tab state across standard browser refresh button & unloads
+  // Preserve active tab state across in-session browser refresh button
   window.addEventListener('beforeunload', () => {
-    const currentTab = (window.location.hash || '').replace(/^#/, '').trim() || localStorage.getItem('siraazhi_active_tab');
+    const currentTab = (window.location.hash || '').replace(/^#/, '').trim();
     if (currentTab) {
       try {
-        localStorage.setItem('siraazhi_active_tab', currentTab);
+        sessionStorage.setItem('siraazhi_session_tab', currentTab);
       } catch (_) {}
     }
   });
@@ -1306,6 +1332,27 @@ async function loadDashboard() {
         </div>
       </div>
     `).join('') : '<div style="color:#64748b; padding:10px 0;">No sales recorded yet.</div>';
+
+    // Product Category & Item Sales Summary for current month
+    if ($('dashCategorySummaryBody')) {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const monthBills = (bills || []).filter(b => b.date && b.date.startsWith(currentMonth));
+      const summary = ExportEngine.computeCategorySummary(monthBills);
+      if (summary.categories && summary.categories.length > 1) {
+        $('dashCategorySummaryBody').innerHTML = summary.categories.map(c => `
+          <tr style="${c.isTotal ? 'font-weight:700; background:#f8fafc; border-top:2px solid #cbd5e1;' : ''}">
+            <td><b>${c.icon} ${c.name}</b></td>
+            <td>${c.qty > 0 ? c.qty.toFixed(2) + ' ' + c.unit : (c.isTotal ? '—' : '0')}</td>
+            <td style="color:#15803d; font-weight:600;">${formatINR(c.cash)}</td>
+            <td style="color:#0284c7; font-weight:600;">${formatINR(c.bank)}</td>
+            <td><b style="font-size:14px;">${formatINR(c.total)}</b></td>
+            <td><span class="chip-btn" style="background:${c.isTotal ? '#e2e8f0' : '#f0fdf4'}; color:#0f172a; font-weight:700;">${c.pct}%</span></td>
+          </tr>
+        `).join('');
+      } else {
+        $('dashCategorySummaryBody').innerHTML = `<tr><td colspan="6" class="center muted-text" style="padding:16px;">No sales recorded for this month yet</td></tr>`;
+      }
+    }
 
   } catch (err) {
     console.error('Dashboard load failed:', err);
