@@ -76,9 +76,15 @@ func HasMasterAuth(r *http.Request) bool {
 		host = r.RemoteAddr
 	}
 	isLocalhost := host == "127.0.0.1" || host == "::1" || host == "localhost"
+	if isLocalhost {
+		return true
+	}
 	adminToken := r.Header.Get("X-Admin-Token")
+	if adminToken == "" {
+		return false
+	}
 	activePIN := db.GetMasterPin()
-	return isLocalhost || (adminToken != "" && strings.TrimSpace(adminToken) == strings.TrimSpace(activePIN))
+	return strings.TrimSpace(adminToken) == strings.TrimSpace(activePIN)
 }
 
 // HandleAuthVerify handles POST /api/auth/verify to validate Master Admin PIN without exposing it in plaintext.

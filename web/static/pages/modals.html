@@ -1,0 +1,190 @@
+  <!-- MODAL: ADD / EDIT PRODUCT -->
+  <div id="productModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="productModalTitle">Add / Edit Product</h3>
+        <button class="modal-close" onclick="closeProductModal()">✕</button>
+      </div>
+      <div class="modal-body form-grid">
+        <input type="hidden" id="mpId">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Name (English)*:</label>
+            <input type="text" id="mpNameEn" placeholder="e.g. Coconut Oil 1L">
+          </div>
+          <div class="form-group">
+            <label>Name (Tamil / தமிழ்):</label>
+            <input type="text" id="mpNameTa" placeholder="e.g. தேங்காய் எண்ணெய் 1லி">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Category:</label>
+            <select id="mpCategory">
+              <option value="Coconut">Coconut</option>
+              <option value="Groundnut">Groundnut</option>
+              <option value="Sesame">Sesame</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Variant / Size:</label>
+            <input type="text" id="mpVariant" placeholder="e.g. 1 Litre, 500 ml, 5 Litre">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>HSN Code:</label>
+            <input type="text" id="mpHsn" placeholder="e.g. 1513">
+          </div>
+          <div class="form-group">
+            <label>Barcode / SKU:</label>
+            <input type="text" id="mpBarcode" placeholder="e.g. 8901513010001">
+          </div>
+          <div class="form-group">
+            <label>GST Rate %:</label>
+            <input type="number" id="mpGstPct" value="5">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Selling Price (₹)*:</label>
+            <input type="number" id="mpPrice" placeholder="Selling Rate">
+          </div>
+          <div class="form-group">
+            <label>MRP (₹):</label>
+            <input type="number" id="mpMrp" placeholder="MRP">
+          </div>
+          <div class="form-group">
+            <label>Opening Stock:</label>
+            <input type="number" id="mpStock" placeholder="Stock">
+          </div>
+          <div class="form-group">
+            <label>Low Alert Qty:</label>
+            <input type="number" id="mpLowAlert" value="5">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeProductModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveProductModal()">Save Product</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: QUICK STOCK ADJUSTMENT -->
+  <div id="adjustModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>⚖ Quick Stock Adjustment</h3>
+        <button class="modal-close" onclick="closeAdjustModal()">✕</button>
+      </div>
+      <div class="modal-body form-grid">
+        <div class="form-group">
+          <label>Select Product:</label>
+          <select id="adjProductSelect"></select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Delta Quantity (+ to add, - to subtract):</label>
+            <input type="number" id="adjQty" placeholder="e.g. +10 or -2">
+          </div>
+          <div class="form-group">
+            <label>Reason / Type:</label>
+            <select id="adjType">
+              <option value="recount">Physical Stock Recount</option>
+              <option value="damage">Damage / Leakage</option>
+              <option value="sampling">Sampling / Promotion</option>
+              <option value="adjust">General Adjustment</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Note:</label>
+          <input type="text" id="adjNote" placeholder="e.g. Found 2 bottles leaked in storage">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeAdjustModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitStockAdjustment()">Apply Adjustment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: NETWORK / MOBILE ACCESS -->
+  <div id="networkModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>📱 Mobile & Multi-Device Access over Wi-Fi</h3>
+        <button class="modal-close" onclick="closeNetworkModal()">✕</button>
+      </div>
+      <div class="modal-body" style="text-align:center;">
+        <p>Any smartphone, tablet, or laptop connected to your shop's Wi-Fi can bill simultaneously.</p>
+        <div id="qrcodeDisplay" style="margin:20px auto; display:inline-block; padding:10px; background:#fff; border-radius:8px;"></div>
+        <div id="networkUrlsContainer" style="margin-top:10px; font-weight:bold; font-size:16px;"></div>
+        <p class="muted-text" style="margin-top:15px; font-size:12px;">
+          Tip on mobile: Tap browser menu & select <b>"Add to Home Screen"</b> to install Siraazhi POS as an offline app!
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeNetworkModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: MASTER SYSTEM PRINT QUEUE -->
+  <div id="printQueueModal" class="modal-overlay">
+    <div class="modal-card print-queue-modal-card">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:22px;">🖨️</span>
+          <div>
+            <h3 style="margin:0;">Master System Print Queue</h3>
+            <span class="muted-text" style="font-size:11px;">Central hardware printer spooler for shop floor mobile terminals</span>
+          </div>
+        </div>
+        <button class="modal-close" onclick="closePrintQueueModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Queue controls -->
+        <div class="print-queue-toolbar">
+          <label class="toggle-control">
+            <input type="checkbox" id="autoPrintToggle" checked onchange="toggleAutoPrintRemote(this.checked)">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label"><b>⚡ Auto-Print Incoming Mobile Bills</b> (Thermal Roll)</span>
+          </label>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-sm btn-secondary" onclick="loadPrintQueueModalData()">🔄 Refresh</button>
+            <button class="btn btn-sm btn-secondary" onclick="clearFinishedPrintJobs()">🧹 Clear Done</button>
+          </div>
+        </div>
+
+        <!-- Queue Items List -->
+        <div class="print-queue-list-wrapper">
+          <table class="data-table print-queue-table">
+            <thead>
+              <tr>
+                <th>Bill No</th>
+                <th>Time</th>
+                <th>Terminal / Device</th>
+                <th>Customer</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th class="center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="printQueueTableBody">
+              <tr><td colspan="7" class="center muted-text" style="padding:24px;">No print jobs in queue</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="muted-text" style="font-size:12px;" id="printQueueFooterStatus">Printer: Ready on Master PC</span>
+        <button class="btn btn-secondary" onclick="closePrintQueueModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastNotificationContainer" class="toast-container"></div>

@@ -1,0 +1,58 @@
+    <!-- 4. BATCH CRUSHING / PRODUCTION -->
+    <section id="tab-production" class="tab-pane">
+      <div class="panel-box">
+        <h2>🏭 Marachekku Crushing — Finished Oil Stock In</h2>
+        <p class="muted-text">
+          After crushing oilseeds (Coconut, Groundnut, Sesame), enter the bottles and cans produced to automatically credit inventory.
+        </p>
+
+        <div class="production-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Crushing Date:</label>
+              <input type="date" id="prodBatchDate">
+            </div>
+            <div class="form-group flex-2">
+              <label>Batch / Machine Note:</label>
+              <input type="text" id="prodBatchNote" placeholder="e.g. Traditional Woodpress Batch #14 - Thailapuram">
+            </div>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Oil SKU</th>
+                <th>Current Stock</th>
+                <th>Add Produced Bottles/Cans</th>
+              </tr>
+            </thead>
+            <tbody id="productionTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="submitProductionBatch()">✅ Commit Finished Goods to Stock</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stock Moves Audit Ledger -->
+      <div class="panel-box" style="margin-top:20px;">
+        <h3>Stock Movement Audit Trail (Ledger)</h3>
+        <div class="table-responsive">
+          <table class="data-table" id="stockMovesTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Item</th>
+                <th>Type</th>
+                <th>Delta Qty</th>
+                <th>Note / Reference</th>
+              </tr>
+            </thead>
+            <tbody id="stockMovesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>

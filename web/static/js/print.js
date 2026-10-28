@@ -195,18 +195,46 @@ const PrintEngine = {
   },
 
   /**
-   * renderA4 generates full corporate tax invoice for office laser/inkjet printers.
-   * Flow: constructs official letterhead -> customer details grid -> items table -> HSN summary -> signature boxes.
+   * renderA4 generates corporate tax invoice for office laser/inkjet printers.
+   * If printCopies is 2, it prints BOTH copies on the SAME A4 paper (top & bottom half with middle cut line).
+   * If printCopies is 1, it prints a single full-page invoice (no change).
    */
   renderA4(bill, settings) {
+    const s = settings || {};
+    const copies = parseInt(s.printCopies, 10) || 1;
+
+    if (copies === 2) {
+      const topHalf = this.renderA4Single(bill, s, 'ORIGINAL FOR RECIPIENT', true);
+      const bottomHalf = this.renderA4Single(bill, s, 'DUPLICATE FOR SUPPLIER', true);
+      const cutLine = `
+        <div class="a4-cutting-line">
+          <span>✂ - - - - - - - - - - - - - - - - - - - - CUT HERE - - - - - - - - - - - - - - - - - - - - ✂</span>
+        </div>
+      `;
+      return `
+        <div class="invoice-a4-two-up">
+          ${topHalf}
+          ${cutLine}
+          ${bottomHalf}
+        </div>
+      `;
+    }
+
+    return this.renderA4Single(bill, s, '', false);
+  },
+
+  /**
+   * renderA4Single renders a single A4 tax invoice block.
+   * When isHalf is true, it renders a compact half-page version suited for 2-in-1 same paper printing.
+   */
+  renderA4Single(bill, settings, copyLabel, isHalf) {
     const s = settings || {};
     const cust = (bill && bill.customer) || {};
     const rows = (bill.items || []).map((it, idx) => `
       <tr>
         <td class="center" style="width:5%">${idx + 1}</td>
         <td style="width:40%">
-          <b>${it.nameEn || ''}</b><br>
-          <small style="color:#444;">${it.nameTa || ''}</small>
+          <b>${it.nameEn || ''}</b>${it.nameTa && !isHalf ? `<br><small style="color:#444;">${it.nameTa}</small>` : (it.nameTa ? ` <small style="color:#555;">(${it.nameTa})</small>` : '')}
         </td>
         <td class="center" style="width:12%">${it.hsn || '-'}</td>
         <td class="center" style="width:8%">${it.qty || 0}</td>
@@ -214,6 +242,24 @@ const PrintEngine = {
         <td class="right" style="width:20%"><b>${this.formatINR(it.amount)}</b></td>
       </tr>
     `).join('');
+
+    let blankRows = '';
+    if (isHalf) {
+      const minRows = 3;
+      const count = (bill.items || []).length;
+      for (let i = count; i < minRows; i++) {
+        blankRows += `
+          <tr class="blank-row">
+            <td class="center">&nbsp;</td>
+            <td>&nbsp;</td>
+            <td class="center">&nbsp;</td>
+            <td class="center">&nbsp;</td>
+            <td class="right">&nbsp;</td>
+            <td class="right">&nbsp;</td>
+          </tr>
+        `;
+      }
+    }
 
     const taxTable = bill.gstOn ? `
       <table class="tax-summary-table">
@@ -240,80 +286,88 @@ const PrintEngine = {
       </table>
     ` : '<div></div>';
 
+    const copyBadge = copyLabel ? `<div class="copy-tag">${copyLabel}</div>` : '';
+
     return `
-      <div class="invoice-a4">
-        <div class="header-block">
-          <div>
-            <h1>${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}</h1>
-            <div style="font-size:15px; font-weight:bold; color:#1b5e20;">
-              ${s.brandEn || 'Siraazhi'} (${this.cleanBrandTa(s)}) — ${s.tagline || 'Pure Marachekku Oils'}
+      <div class="invoice-a4 ${isHalf ? 'invoice-a4-half' : ''}">
+        <div class="half-top-block">
+          ${copyBadge}
+          <div class="header-block">
+            <div>
+              <h1>${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}</h1>
+              <div style="font-size:${isHalf ? '11.5px' : '15px'}; font-weight:bold; color:#1b5e20;">
+                ${s.brandEn || 'Siraazhi'} (${this.cleanBrandTa(s)}) — ${s.tagline || 'Pure Marachekku Oils'}
+              </div>
+              <div>${s.address || 'Vanur, Villupuram, Tamil Nadu'}</div>
+              <div>Phone: <b>${s.phone || '-'}</b> | FSSAI Lic. No: <b>${s.fssai || '12423031000494'}</b></div>
+              ${s.gstin ? `<div>GSTIN: <b>${s.gstin}</b> | State: <b>33 - Tamil Nadu</b></div>` : ''}
             </div>
-            <div>${s.address || 'Vanur, Villupuram, Tamil Nadu'}</div>
-            <div>Phone: <b>${s.phone || '-'}</b> | FSSAI Lic. No: <b>${s.fssai || '12423031000494'}</b></div>
-            ${s.gstin ? `<div>GSTIN: <b>${s.gstin}</b> | State: <b>33 - Tamil Nadu</b></div>` : ''}
-          </div>
-          <div style="text-align:right;">
-            <div class="badge-invoice">${bill.gstOn ? 'TAX INVOICE' : 'RETAIL CASH BILL'}</div>
-            <div style="margin-top:6px; font-size:13px;">
-              Invoice No: <b>${bill.billNo || ''}</b><br>
-              Date: <b>${bill.date || ''}</b><br>
-              Mode: <b>${bill.payMode || 'Cash'}</b>
+            <div style="text-align:right;">
+              <div class="badge-invoice">${bill.gstOn ? 'TAX INVOICE' : 'RETAIL CASH BILL'}</div>
+              <div style="margin-top:${isHalf ? '2px' : '6px'}; font-size:${isHalf ? '10px' : '13px'};">
+                Invoice No: <b>${bill.billNo || ''}</b><br>
+                Date: <b>${bill.date || ''}</b><br>
+                Mode: <b>${bill.payMode || 'Cash'}</b>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="meta-grid">
-          <div>
-            <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#666;">Billed To (Customer):</div>
-            <div style="font-size:14px; font-weight:bold;">${cust.name || '-'}</div>
-            <div>Mobile / Phone: <b>${cust.phone || '-'}</b></div>
-            <div>Address: ${cust.address || 'Tamil Nadu'}</div>
-          </div>
-          <div>
-            ${cust.gstin ? `<div>Customer GSTIN: <b>${cust.gstin}</b></div>` : '<div>Customer Type: <b>Consumer / Unregistered</b></div>'}
-            <div>Place of Supply: <b>${cust.state || 'Tamil Nadu (33)'}</b></div>
-          </div>
-        </div>
-
-        <table class="items-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Description of Goods</th>
-              <th>HSN</th>
-              <th>Qty</th>
-              <th>Unit Rate</th>
-              <th>Total Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
-
-        <div class="totals-block">
-          ${taxTable}
-
-          <div class="final-calc">
-            <div>Subtotal: <b>${this.formatINR(bill.subtotal)}</b></div>
-            ${bill.discount > 0 ? `<div>Discount: <b>-${this.formatINR(bill.discount)}</b></div>` : ''}
-            ${bill.gstOn ? `<div>Taxable Value: <b>${this.formatINR(bill.taxable)}</b></div>` : ''}
-            ${bill.gstOn ? `<div>Total GST (incl.): <b>${this.formatINR(bill.gstAmt)}</b></div>` : ''}
-            <div class="grand-total-row">
-              GRAND TOTAL: ${this.formatINR(bill.grandTotal)}
+          <div class="meta-grid">
+            <div>
+              <div style="font-size:9px; font-weight:bold; text-transform:uppercase; color:#666;">Billed To (Customer):</div>
+              <div style="font-size:${isHalf ? '11px' : '14px'}; font-weight:bold;">${cust.name || '-'}</div>
+              <div>Mobile / Phone: <b>${cust.phone || '-'}</b></div>
+              <div>Address: ${cust.address || 'Tamil Nadu'}</div>
             </div>
-            <div>Amount Paid: <b>${this.formatINR(bill.paid)}</b></div>
-            <div>Balance Due: <b>${this.formatINR(bill.balance)}</b></div>
+            <div>
+              ${cust.gstin ? `<div>Customer GSTIN: <b>${cust.gstin}</b></div>` : '<div>Customer Type: <b>Consumer / Unregistered</b></div>'}
+              <div>Place of Supply: <b>${cust.state || 'Tamil Nadu (33)'}</b></div>
+            </div>
           </div>
+
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Description of Goods</th>
+                <th>HSN</th>
+                <th>Qty</th>
+                <th>Unit Rate</th>
+                <th>Total Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+              ${blankRows}
+            </tbody>
+          </table>
         </div>
 
-        <div class="sign-block">
-          <div>Customer Signature</div>
-          <div>For ${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}<br><br><small>(Authorised Signatory)</small></div>
-        </div>
+        <div class="half-bottom-block">
+          <div class="totals-block">
+            ${taxTable}
 
-        <div style="margin-top:14px; font-size:10px; font-style:italic; color:#444;">
-          Declaration: We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+            <div class="final-calc">
+              <div>Subtotal: <b>${this.formatINR(bill.subtotal)}</b></div>
+              ${bill.discount > 0 ? `<div>Discount: <b>-${this.formatINR(bill.discount)}</b></div>` : ''}
+              ${bill.gstOn ? `<div>Taxable Value: <b>${this.formatINR(bill.taxable)}</b></div>` : ''}
+              ${bill.gstOn ? `<div>Total GST (incl.): <b>${this.formatINR(bill.gstAmt)}</b></div>` : ''}
+              <div class="grand-total-row">
+                GRAND TOTAL: ${this.formatINR(bill.grandTotal)}
+              </div>
+              <div>Amount Paid: <b>${this.formatINR(bill.paid)}</b></div>
+              <div>Balance Due: <b>${this.formatINR(bill.balance)}</b></div>
+            </div>
+          </div>
+
+          <div class="sign-block">
+            <div>Customer Signature</div>
+            <div>For ${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}<br><br><small>(Authorised Signatory)</small></div>
+          </div>
+
+          <div style="margin-top:${isHalf ? '3px' : '14px'}; font-size:8px; font-style:italic; color:#444;">
+            Declaration: We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+          </div>
         </div>
       </div>
     `;
@@ -477,7 +531,12 @@ const PrintEngine = {
     if (mode === '80mm' || mode === '58mm') {
       pageStyle.innerHTML = `@page { size: ${mode === '58mm' ? '48mm' : '80mm'} auto; margin: 2mm 3mm; }`;
     } else {
-      pageStyle.innerHTML = `@page { size: A4 portrait; margin: 8mm 10mm; }`;
+      const copies = (settings && parseInt(settings.printCopies, 10)) || 1;
+      if (mode === 'a4' && copies === 2) {
+        pageStyle.innerHTML = `@page { size: A4 portrait; margin: 4mm 6mm; }`;
+      } else {
+        pageStyle.innerHTML = `@page { size: A4 portrait; margin: 8mm 10mm; }`;
+      }
     }
 
     switch (mode) {

@@ -398,7 +398,14 @@ func createDevMode(hPrinter uintptr, printerName, paperSize, orientation, colorM
 		if copies < 1 {
 			copies = 1
 		}
-		*pCopies = int16(copies)
+		psLower := strings.ToLower(paperSize)
+		// When 2 copies are selected on A4/document, both copies are drawn on the SAME single sheet (top & bottom half),
+		// so spooler feeds only 1 physical page.
+		if copies == 2 && !strings.Contains(psLower, "80mm") && !strings.Contains(psLower, "58mm") {
+			*pCopies = 1
+		} else {
+			*pCopies = int16(copies)
+		}
 
 		*fields |= DM_ORIENTATION
 		if strings.EqualFold(orientation, "landscape") {
@@ -710,7 +717,11 @@ func PrintBillGDI(printerName, docName string, bill *db.Bill, s *db.Settings, pa
 	if ps == "80mm" || ps == "58mm" {
 		drawReceipt80mmGDI(hdc, bill, s)
 	} else {
-		drawInvoiceA4GDI(hdc, bill, s)
+		if copies == 2 {
+			drawInvoiceA4TwoUpGDI(hdc, bill, s)
+		} else {
+			drawInvoiceA4GDI(hdc, bill, s)
+		}
 	}
 
 	procEndPage.Call(hdc)
@@ -927,6 +938,34 @@ func setupGDIHelpers(hdc uintptr) (
 
 // drawInvoiceA4GDI renders the pristine corporate A4 tax invoice template (bill2) using vector GDI
 func drawInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
+	drawSingleInvoiceA4GDI(hdc, bill, s, 10.0, "", false)
+}
+
+// drawInvoiceA4TwoUpGDI renders 2 copies on the same A4 sheet (top & bottom half with middle cut line)
+func drawInvoiceA4TwoUpGDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
+	scaleX, scaleY, _, pageWidth, _, createFont, createPen, _, drawText, drawLine, _, _, cleanup := setupGDIHelpers(hdc)
+	defer cleanup()
+
+	// 1. Top Half: Original for Recipient (fills 6.0mm to 141.0mm)
+	drawSingleInvoiceA4GDI(hdc, bill, s, 6.0, "ORIGINAL FOR RECIPIENT", true)
+
+	// 2. Middle Cut Line with Scissors at 148.5mm (halfway down 297mm A4 page)
+	colorCut := uint32(0x00555555)
+	hPenDashed := createPen(PS_DASH, 1, colorCut)
+	fCut := createFont(7.5, true)
+	midY := scaleY(148.5)
+	left := scaleX(10)
+	right := pageWidth - scaleX(10)
+
+	drawLine(left, midY, right, midY, hPenDashed)
+	drawText("✂ - - - - - - - - - - - - - - - - - - - - CUT HERE - - - - - - - - - - - - - - - - - - - - ✂", left, midY-scaleY(2.2), right, midY+scaleY(2.2), fCut, colorCut, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+
+	// 3. Bottom Half: Duplicate for Supplier (fills 154.5mm to 289.5mm)
+	drawSingleInvoiceA4GDI(hdc, bill, s, 154.5, "DUPLICATE FOR SUPPLIER", true)
+}
+
+// drawSingleInvoiceA4GDI renders the pristine corporate A4 tax invoice template (bill2) using vector GDI
+func drawSingleInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings, startYmm float64, copyTag string, isHalf bool) {
 	scaleX, scaleY, _, pageWidth, _, createFont, createPen, createBrush, drawText, drawLine, fillRect, drawRect, cleanup := setupGDIHelpers(hdc)
 	defer cleanup()
 
@@ -938,18 +977,49 @@ func drawInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
 	colorDarkGray := uint32(0x00444444)
 	colorMuted := uint32(0x00666666)
 
-	fTitle := createFont(15.5, true)
-	fBrand := createFont(12.5, true)
-	fBadge := createFont(11.5, true)
-	fSub := createFont(9.5, false)
-	fSubBold := createFont(9.5, true)
-	fTableH := createFont(9.5, true)
-	fTableR := createFont(9.5, false)
-	fTableB := createFont(9.5, true)
-	fTableTa := createFont(8.0, false)
-	fTotal := createFont(13.5, true)
-	fDecl := createFont(8.5, false)
-	fSign := createFont(9.5, false)
+	fTitleSize := 15.5
+	fBrandSize := 12.5
+	fBadgeSize := 11.5
+	fSubSize := 9.5
+	fSubBoldSize := 9.5
+	fTableHSize := 9.5
+	fTableRSize := 9.5
+	fTableBSize := 9.5
+	fTableTaSize := 8.0
+	fTotalSize := 13.5
+	fDeclSize := 8.5
+	fSignSize := 9.5
+	vMult := 1.0
+
+	if isHalf {
+		fTitleSize = 12.0
+		fBrandSize = 10.0
+		fBadgeSize = 9.5
+		fSubSize = 8.0
+		fSubBoldSize = 8.0
+		fTableHSize = 8.5
+		fTableRSize = 8.0
+		fTableBSize = 8.0
+		fTableTaSize = 7.0
+		fTotalSize = 11.5
+		fDeclSize = 7.0
+		fSignSize = 8.0
+		vMult = 0.85
+	}
+
+	fTitle := createFont(fTitleSize, true)
+	fBrand := createFont(fBrandSize, true)
+	fBadge := createFont(fBadgeSize, true)
+	fSub := createFont(fSubSize, false)
+	fSubBold := createFont(fSubBoldSize, true)
+	fTableH := createFont(fTableHSize, true)
+	fTableR := createFont(fTableRSize, false)
+	fTableB := createFont(fTableBSize, true)
+	fTableTa := createFont(fTableTaSize, false)
+	fTotal := createFont(fTotalSize, true)
+	fDecl := createFont(fDeclSize, false)
+	fSign := createFont(fSignSize, false)
+	fCopyTag := createFont(8.0, true)
 
 	hPenThick := createPen(PS_SOLID, scaleX(0.60), colorBlack)
 	hPenBorder := createPen(PS_SOLID, scaleX(0.20), colorBlack)
@@ -1011,52 +1081,57 @@ func drawInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
 	left := scaleX(10)
 	right := pageWidth - scaleX(10)
 	width := right - left
-	curY := scaleY(10)
+	curY := scaleY(startYmm)
+
+	if copyTag != "" {
+		drawText(copyTag, left, curY, right, curY+scaleY(3.5), fCopyTag, colorDarkGray, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
+		curY += scaleY(3.2)
+	}
 
 	// 1. Header Block
-	drawText(companyName, left, curY, left+scaleX(120), curY+scaleY(6), fTitle, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	drawText(companyName, left, curY, left+scaleX(120), curY+scaleY(6*vMult), fTitle, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
 	badgeText := "RETAIL CASH BILL"
 	if bill.GSTOn {
 		badgeText = "TAX INVOICE"
 	}
 	badgeW := scaleX(36)
-	badgeH := scaleY(5.5)
+	badgeH := scaleY(5.5 * vMult)
 	fillRect(right-badgeW, curY, right, curY+badgeH, hBrushBlack)
 	drawText(badgeText, right-badgeW, curY, right, curY+badgeH, fBadge, colorWhite, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
 
-	curY += scaleY(6.5)
-	drawText(fmt.Sprintf("%s (%s) — %s", brandEn, brandTa, tagline), left, curY, left+scaleX(120), curY+scaleY(5), fBrand, colorDarkGreen, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
-	drawText("Invoice No: "+bill.BillNo, right-scaleX(60), curY, right, curY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
+	curY += scaleY(6.5 * vMult)
+	drawText(fmt.Sprintf("%s (%s) — %s", brandEn, brandTa, tagline), left, curY, left+scaleX(120), curY+scaleY(5*vMult), fBrand, colorDarkGreen, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Invoice No: "+bill.BillNo, right-scaleX(60), curY, right, curY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
 
-	curY += scaleY(5)
-	drawText(address, left, curY, left+scaleX(120), curY+scaleY(4.5), fSub, colorDarkGray, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
-	drawText("Date: "+bill.Date, right-scaleX(60), curY, right, curY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
+	curY += scaleY(5 * vMult)
+	drawText(address, left, curY, left+scaleX(120), curY+scaleY(4.5*vMult), fSub, colorDarkGray, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Date: "+bill.Date, right-scaleX(60), curY, right, curY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
 
-	curY += scaleY(4.5)
+	curY += scaleY(4.5 * vMult)
 	phoneLine := fmt.Sprintf("Phone: %s | FSSAI Lic. No: %s", phone, fssai)
-	drawText(phoneLine, left, curY, left+scaleX(120), curY+scaleY(4.5), fSub, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
-	drawText("Mode: "+bill.PayMode, right-scaleX(60), curY, right, curY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
+	drawText(phoneLine, left, curY, left+scaleX(120), curY+scaleY(4.5*vMult), fSub, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+	drawText("Mode: "+bill.PayMode, right-scaleX(60), curY, right, curY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX)
 
-	curY += scaleY(4.5)
+	curY += scaleY(4.5 * vMult)
 	if s != nil && s.Gstin != "" {
-		drawText("GSTIN: "+s.Gstin+" | State: 33 - Tamil Nadu", left, curY, left+scaleX(120), curY+scaleY(4.5), fSubBold, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
-		curY += scaleY(5)
+		drawText("GSTIN: "+s.Gstin+" | State: 33 - Tamil Nadu", left, curY, left+scaleX(120), curY+scaleY(4.5*vMult), fSubBold, colorBlack, DT_LEFT|DT_SINGLELINE|DT_NOPREFIX)
+		curY += scaleY(5 * vMult)
 	}
 
 	drawLine(left, curY, right, curY, hPenThick)
-	curY += scaleY(3)
+	curY += scaleY(3 * vMult)
 
 	// 2. Billed To Details Grid
-	bH := scaleY(20)
+	bH := scaleY(20 * vMult)
 	drawRect(left, curY, right, curY+bH, hPenBorder, hBrushWhite)
-	drawText("BILLED TO (CUSTOMER):", left+scaleX(4), curY+scaleY(1.5), left+scaleX(100), curY+scaleY(5), fDecl, colorMuted, DT_LEFT|DT_NOPREFIX)
-	drawText(custName, left+scaleX(4), curY+scaleY(5.5), left+scaleX(100), curY+scaleY(10), fTitle, colorBlack, DT_LEFT|DT_NOPREFIX)
-	drawText("Mobile: "+custPhone, left+scaleX(4), curY+scaleY(10.5), left+scaleX(100), curY+scaleY(14.5), fSub, colorBlack, DT_LEFT|DT_NOPREFIX)
-	drawText("Address: "+custAddr, left+scaleX(4), curY+scaleY(14.5), left+scaleX(100), curY+scaleY(18.5), fSub, colorDarkGray, DT_LEFT|DT_NOPREFIX)
+	drawText("BILLED TO (CUSTOMER):", left+scaleX(4), curY+scaleY(1.5*vMult), left+scaleX(100), curY+scaleY(5*vMult), fDecl, colorMuted, DT_LEFT|DT_NOPREFIX)
+	drawText(custName, left+scaleX(4), curY+scaleY(5.5*vMult), left+scaleX(100), curY+scaleY(10*vMult), fTitle, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText("Mobile: "+custPhone, left+scaleX(4), curY+scaleY(10.5*vMult), left+scaleX(100), curY+scaleY(14.5*vMult), fSub, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText("Address: "+custAddr, left+scaleX(4), curY+scaleY(14.5*vMult), left+scaleX(100), curY+scaleY(18.5*vMult), fSub, colorDarkGray, DT_LEFT|DT_NOPREFIX)
 
-	drawText(custType, left+scaleX(105), curY+scaleY(5.5), right-scaleX(4), curY+scaleY(10), fSubBold, colorBlack, DT_LEFT|DT_NOPREFIX)
-	drawText("Place of Supply: "+placeOfSupply, left+scaleX(105), curY+scaleY(10.5), right-scaleX(4), curY+scaleY(14.5), fSub, colorBlack, DT_LEFT|DT_NOPREFIX)
-	curY += bH + scaleY(3)
+	drawText(custType, left+scaleX(105), curY+scaleY(5.5*vMult), right-scaleX(4), curY+scaleY(10*vMult), fSubBold, colorBlack, DT_LEFT|DT_NOPREFIX)
+	drawText("Place of Supply: "+placeOfSupply, left+scaleX(105), curY+scaleY(10.5*vMult), right-scaleX(4), curY+scaleY(14.5*vMult), fSub, colorBlack, DT_LEFT|DT_NOPREFIX)
+	curY += bH + scaleY(3*vMult)
 
 	// 3. Items Table
 	w0 := scaleX(10) // #
@@ -1074,7 +1149,7 @@ func drawInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
 	x5 := x4 + w4
 	x6 := right
 
-	hH := scaleY(7)
+	hH := scaleY(7 * vMult)
 	fillRect(left, curY, right, curY+hH, hBrushHeader)
 	drawRect(left, curY, right, curY+hH, hPenBorder, hBrushHeader)
 	drawLine(x1, curY, x1, curY+hH, hPenBorder)
@@ -1092,7 +1167,10 @@ func drawInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
 	curY += hH
 
 	for idx, it := range bill.Items {
-		rH := scaleY(10.5)
+		rH := scaleY(10.5 * vMult)
+		if isHalf {
+			rH = scaleY(7.0 * vMult)
+		}
 		drawRect(left, curY, right, curY+rH, hPenBorder, hBrushWhite)
 		drawLine(x1, curY, x1, curY+rH, hPenBorder)
 		drawLine(x2, curY, x2, curY+rH, hPenBorder)
@@ -1101,17 +1179,49 @@ func drawInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
 		drawLine(x5, curY, x5, curY+rH, hPenBorder)
 
 		drawText(fmt.Sprintf("%d", idx+1), x0, curY, x1, curY+rH, fTableR, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText(it.NameEn, x1+scaleX(2), curY+scaleY(1), x2-scaleX(2), curY+scaleY(5.5), fTableB, colorBlack, DT_LEFT|DT_NOPREFIX)
-		if it.NameTa != "" {
-			drawText(it.NameTa, x1+scaleX(2), curY+scaleY(5.5), x2-scaleX(2), curY+scaleY(9.5), fTableTa, colorDarkGray, DT_LEFT|DT_NOPREFIX)
+		nameEn := it.NameEn
+		if nameEn == "" {
+			nameEn = "Item"
 		}
+		nameTa := it.NameTa
+
+		if !isHalf && nameTa != "" {
+			drawText(nameEn, x1+scaleX(2), curY+scaleY(1*vMult), x2-scaleX(2), curY+scaleY(5.5*vMult), fTableB, colorBlack, DT_LEFT|DT_NOPREFIX)
+			drawText(nameTa, x1+scaleX(2), curY+scaleY(5.5*vMult), x2-scaleX(2), curY+scaleY(9.5*vMult), fTableTa, colorDarkGray, DT_LEFT|DT_NOPREFIX)
+		} else {
+			displayName := nameEn
+			if isHalf && nameTa != "" {
+				displayName = fmt.Sprintf("%s (%s)", nameEn, nameTa)
+			}
+			drawText(displayName, x1+scaleX(2), curY, x2-scaleX(2), curY+rH, fTableB, colorBlack, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		}
+
 		drawText(it.HSN, x2, curY, x3, curY+rH, fTableR, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
 		drawText(fmt.Sprintf("%.2f", it.Qty), x3, curY, x4, curY+rH, fTableR, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
 		drawText(fmt.Sprintf("₹%.2f", it.Price), x4, curY, x5-scaleX(2), curY+rH, fTableR, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
 		drawText(fmt.Sprintf("₹%.2f", it.Amount), x5, curY, x6-scaleX(2), curY+rH, fTableB, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
 		curY += rH
 	}
-	curY += scaleY(3)
+
+	targetEndY := scaleY(startYmm + 135.0)
+	if isHalf {
+		minBottomStartY := targetEndY - scaleY(54.0*vMult)
+		if curY < minBottomStartY {
+			// Extend table borders and vertical column lines to fill available space symmetrically
+			tBottom := minBottomStartY - scaleY(2.0*vMult)
+			drawRect(left, curY, right, tBottom, hPenBorder, hBrushWhite)
+			drawLine(x1, curY, x1, tBottom, hPenBorder)
+			drawLine(x2, curY, x2, tBottom, hPenBorder)
+			drawLine(x3, curY, x3, tBottom, hPenBorder)
+			drawLine(x4, curY, x4, tBottom, hPenBorder)
+			drawLine(x5, curY, x5, tBottom, hPenBorder)
+			curY = minBottomStartY
+		} else {
+			curY += scaleY(3 * vMult)
+		}
+	} else {
+		curY += scaleY(3 * vMult)
+	}
 
 	// 4. Totals and Tax Breakdown Block
 	tY := curY
@@ -1120,9 +1230,9 @@ func drawInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
 		txW := scaleX(102)
 		cW1 := scaleX(27)
 		cWRest := scaleX(15)
-		drawRect(left, tY, left+txW, tY+scaleY(12), hPenBorder, hBrushWhite)
-		fillRect(left, tY, left+txW, tY+scaleY(5.5), hBrushTaxH)
-		drawLine(left, tY+scaleY(5.5), left+txW, tY+scaleY(5.5), hPenBorder)
+		drawRect(left, tY, left+txW, tY+scaleY(12*vMult), hPenBorder, hBrushWhite)
+		fillRect(left, tY, left+txW, tY+scaleY(5.5*vMult), hBrushTaxH)
+		drawLine(left, tY+scaleY(5.5*vMult), left+txW, tY+scaleY(5.5*vMult), hPenBorder)
 
 		tx0 := left
 		tx1 := tx0 + cW1
@@ -1132,75 +1242,88 @@ func drawInvoiceA4GDI(hdc uintptr, bill *db.Bill, s *db.Settings) {
 		tx5 := tx4 + cWRest
 		tx6 := left + txW
 
-		drawLine(tx1, tY, tx1, tY+scaleY(12), hPenBorder)
-		drawLine(tx2, tY, tx2, tY+scaleY(12), hPenBorder)
-		drawLine(tx3, tY, tx3, tY+scaleY(12), hPenBorder)
-		drawLine(tx4, tY, tx4, tY+scaleY(12), hPenBorder)
-		drawLine(tx5, tY, tx5, tY+scaleY(12), hPenBorder)
+		drawLine(tx1, tY, tx1, tY+scaleY(12*vMult), hPenBorder)
+		drawLine(tx2, tY, tx2, tY+scaleY(12*vMult), hPenBorder)
+		drawLine(tx3, tY, tx3, tY+scaleY(12*vMult), hPenBorder)
+		drawLine(tx4, tY, tx4, tY+scaleY(12*vMult), hPenBorder)
+		drawLine(tx5, tY, tx5, tY+scaleY(12*vMult), hPenBorder)
 
-		drawText("HSN/SAC", tx0, tY, tx1, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText("Taxable Val", tx1, tY, tx2, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText("CGST", tx2, tY, tx3, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText("SGST", tx3, tY, tx4, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText("IGST", tx4, tY, tx5, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText("Total Tax", tx5, tY, tx6, tY+scaleY(5.5), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("HSN/SAC", tx0, tY, tx1, tY+scaleY(5.5*vMult), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("Taxable Val", tx1, tY, tx2, tY+scaleY(5.5*vMult), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("CGST", tx2, tY, tx3, tY+scaleY(5.5*vMult), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("SGST", tx3, tY, tx4, tY+scaleY(5.5*vMult), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("IGST", tx4, tY, tx5, tY+scaleY(5.5*vMult), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("Total Tax", tx5, tY, tx6, tY+scaleY(5.5*vMult), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
 
-		drawText("1512 / 1513", tx0, tY+scaleY(5.5), tx1, tY+scaleY(12), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText(fmt.Sprintf("₹%.2f", bill.Taxable), tx1, tY+scaleY(5.5), tx2-scaleX(1), tY+scaleY(12), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText(fmt.Sprintf("₹%.2f", bill.CGST), tx2, tY+scaleY(5.5), tx3-scaleX(1), tY+scaleY(12), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText(fmt.Sprintf("₹%.2f", bill.SGST), tx3, tY+scaleY(5.5), tx4-scaleX(1), tY+scaleY(12), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText(fmt.Sprintf("₹%.2f", bill.IGST), tx4, tY+scaleY(5.5), tx5-scaleX(1), tY+scaleY(12), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
-		drawText(fmt.Sprintf("₹%.2f", bill.GSTAmt), tx5, tY+scaleY(5.5), tx6-scaleX(1), tY+scaleY(12), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText("1512 / 1513", tx0, tY+scaleY(5.5*vMult), tx1, tY+scaleY(12*vMult), fDecl, colorBlack, DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.Taxable), tx1, tY+scaleY(5.5*vMult), tx2-scaleX(1), tY+scaleY(12*vMult), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.CGST), tx2, tY+scaleY(5.5*vMult), tx3-scaleX(1), tY+scaleY(12*vMult), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.SGST), tx3, tY+scaleY(5.5*vMult), tx4-scaleX(1), tY+scaleY(12*vMult), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.IGST), tx4, tY+scaleY(5.5*vMult), tx5-scaleX(1), tY+scaleY(12*vMult), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.GSTAmt), tx5, tY+scaleY(5.5*vMult), tx6-scaleX(1), tY+scaleY(12*vMult), fDecl, colorBlack, DT_RIGHT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
 	}
 
 	rY := curY
-	drawText("Subtotal:", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
-	drawText(fmt.Sprintf("₹%.2f", bill.Subtotal), right-scaleX(32), rY, right, rY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
-	rY += scaleY(4.5)
+	drawText("Subtotal:", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5*vMult), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	drawText(fmt.Sprintf("₹%.2f", bill.Subtotal), right-scaleX(32), rY, right, rY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	rY += scaleY(4.5 * vMult)
 	if bill.Discount > 0 {
-		drawText("Discount:", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
-		drawText(fmt.Sprintf("-₹%.2f", bill.Discount), right-scaleX(32), rY, right, rY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
-		rY += scaleY(4.5)
+		drawText("Discount:", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5*vMult), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		drawText(fmt.Sprintf("-₹%.2f", bill.Discount), right-scaleX(32), rY, right, rY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		rY += scaleY(4.5 * vMult)
 	}
 	if bill.GSTOn && bill.GSTAmt > 0 {
-		drawText("Taxable Value:", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
-		drawText(fmt.Sprintf("₹%.2f", bill.Taxable), right-scaleX(32), rY, right, rY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
-		rY += scaleY(4.5)
-		drawText("Total GST (incl.):", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
-		drawText(fmt.Sprintf("₹%.2f", bill.GSTAmt), right-scaleX(32), rY, right, rY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
-		rY += scaleY(4.5)
+		drawText("Taxable Value:", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5*vMult), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.Taxable), right-scaleX(32), rY, right, rY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		rY += scaleY(4.5 * vMult)
+		drawText("Total GST (incl.):", right-scaleX(75), rY, right-scaleX(32), rY+scaleY(4.5*vMult), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		drawText(fmt.Sprintf("₹%.2f", bill.GSTAmt), right-scaleX(32), rY, right, rY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
+		rY += scaleY(4.5 * vMult)
 	}
 
-	if rY > curY+scaleY(15) {
+	if rY > curY+scaleY(15*vMult) {
 		curY = rY
 	} else {
-		curY += scaleY(17)
+		curY += scaleY(17 * vMult)
 	}
 
 	// 5. Grand Total Row
 	drawLine(left, curY, right, curY, hPenThick)
-	curY += scaleY(1)
-	drawText("GRAND TOTAL:", right-scaleX(85), curY, right-scaleX(36), curY+scaleY(6.5), fTotal, colorBlack, DT_RIGHT|DT_VCENTER|DT_NOPREFIX)
-	drawText(fmt.Sprintf("₹%.2f", bill.GrandTotal), right-scaleX(36), curY, right, curY+scaleY(6.5), fTotal, colorBlack, DT_RIGHT|DT_VCENTER|DT_NOPREFIX)
-	curY += scaleY(6.5)
+	curY += scaleY(1 * vMult)
+	drawText("GRAND TOTAL:", right-scaleX(85), curY, right-scaleX(36), curY+scaleY(6.5*vMult), fTotal, colorBlack, DT_RIGHT|DT_VCENTER|DT_NOPREFIX)
+	drawText(fmt.Sprintf("₹%.2f", bill.GrandTotal), right-scaleX(36), curY, right, curY+scaleY(6.5*vMult), fTotal, colorBlack, DT_RIGHT|DT_VCENTER|DT_NOPREFIX)
+	curY += scaleY(6.5 * vMult)
 	drawLine(left, curY, right, curY, hPenThick)
-	curY += scaleY(2)
+	curY += scaleY(2 * vMult)
 
-	drawText(fmt.Sprintf("Amount Paid: ₹%.2f (%s)", bill.Paid, bill.PayMode), right-scaleX(85), curY, right, curY+scaleY(4.5), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
-	curY += scaleY(4.5)
-	drawText(fmt.Sprintf("Balance Due: ₹%.2f", bill.Balance), right-scaleX(85), curY, right, curY+scaleY(4.5), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
-	curY += scaleY(6)
+	drawText(fmt.Sprintf("Amount Paid: ₹%.2f (%s)", bill.Paid, bill.PayMode), right-scaleX(85), curY, right, curY+scaleY(4.5*vMult), fTableR, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	curY += scaleY(4.5 * vMult)
+	drawText(fmt.Sprintf("Balance Due: ₹%.2f", bill.Balance), right-scaleX(85), curY, right, curY+scaleY(4.5*vMult), fTableB, colorBlack, DT_RIGHT|DT_NOPREFIX)
+	curY += scaleY(6 * vMult)
 
-	// 6. Declaration & Signatures
-	drawText("Declaration: We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.", left, curY, right, curY+scaleY(5), fDecl, colorDarkGray, DT_LEFT|DT_NOPREFIX)
-	curY += scaleY(14)
+	// 6. Signatures & Declaration Block
+	if isHalf {
+		sigY := targetEndY - scaleY(13.5*vMult)
+		drawLine(left+scaleX(5), sigY, left+scaleX(55), sigY, hPenBorder)
+		drawText("Customer Signature", left+scaleX(5), sigY+scaleY(1.2*vMult), left+scaleX(55), sigY+scaleY(5.5*vMult), fSign, colorBlack, DT_CENTER|DT_NOPREFIX)
 
-	drawLine(left+scaleX(5), curY, left+scaleX(55), curY, hPenBorder)
-	drawText("Customer Signature", left+scaleX(5), curY+scaleY(1.5), left+scaleX(55), curY+scaleY(6), fSign, colorBlack, DT_CENTER|DT_NOPREFIX)
+		drawLine(right-scaleX(65), sigY, right-scaleX(5), sigY, hPenBorder)
+		drawText("For "+companyName, right-scaleX(65), sigY+scaleY(1.2*vMult), right-scaleX(5), sigY+scaleY(5.5*vMult), fSign, colorBlack, DT_CENTER|DT_NOPREFIX)
+		drawText("(Authorised Signatory)", right-scaleX(65), sigY+scaleY(5.5*vMult), right-scaleX(5), sigY+scaleY(9.5*vMult), fDecl, colorDarkGray, DT_CENTER|DT_NOPREFIX)
 
-	drawLine(right-scaleX(65), curY, right-scaleX(5), curY, hPenBorder)
-	drawText("For "+companyName, right-scaleX(65), curY+scaleY(1.5), right-scaleX(5), curY+scaleY(6), fSign, colorBlack, DT_CENTER|DT_NOPREFIX)
-	drawText("(Authorised Signatory)", right-scaleX(65), curY+scaleY(6.5), right-scaleX(5), curY+scaleY(11), fDecl, colorDarkGray, DT_CENTER|DT_NOPREFIX)
+		declY := targetEndY - scaleY(4.5*vMult)
+		drawText("Declaration: We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.", left, declY, right, declY+scaleY(4.5*vMult), fDecl, colorDarkGray, DT_LEFT|DT_NOPREFIX)
+	} else {
+		drawLine(left+scaleX(5), curY, left+scaleX(55), curY, hPenBorder)
+		drawText("Customer Signature", left+scaleX(5), curY+scaleY(1.5*vMult), left+scaleX(55), curY+scaleY(6*vMult), fSign, colorBlack, DT_CENTER|DT_NOPREFIX)
+
+		drawLine(right-scaleX(65), curY, right-scaleX(5), curY, hPenBorder)
+		drawText("For "+companyName, right-scaleX(65), curY+scaleY(1.5*vMult), right-scaleX(5), curY+scaleY(6*vMult), fSign, colorBlack, DT_CENTER|DT_NOPREFIX)
+		drawText("(Authorised Signatory)", right-scaleX(65), curY+scaleY(6.5*vMult), right-scaleX(5), curY+scaleY(11*vMult), fDecl, colorDarkGray, DT_CENTER|DT_NOPREFIX)
+
+		curY += scaleY(13 * vMult)
+		drawText("Declaration: We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.", left, curY, right, curY+scaleY(5*vMult), fDecl, colorDarkGray, DT_LEFT|DT_NOPREFIX)
+	}
 }
 
 // drawReceipt80mmGDI renders the exact 80mm thermal receipt template (bill1) using vector GDI

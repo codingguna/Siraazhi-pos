@@ -68,6 +68,10 @@ type Settings struct {
 	SecondaryPaperSize        string `json:"secPaperSize"`              // "80mm", "58mm", "a4", "a5"
 	SecondaryOrientation      string `json:"secOrientation"`            // "portrait" or "landscape"
 	SecondaryColorMode        string `json:"secColorMode"`              // "color" or "monochrome"
+
+	// Windows Boot Auto-Startup
+	AutoStartup     bool   `json:"autoStartup"`     // Automatically start on Windows boot
+	AutoStartupMode string `json:"autoStartupMode"` // "window" (default) or "headless"
 }
 
 // Product represents an individual inventory SKU in the store catalog.
