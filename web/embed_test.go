@@ -69,6 +69,16 @@ func TestHandlerCacheHeaders(t *testing.T) {
 	if !strings.Contains(ccSW, "no-cache") || !strings.Contains(ccSW, "no-store") {
 		t.Errorf("expected Cache-Control no-cache, no-store for /sw.js, got: %q", ccSW)
 	}
+
+	// Test /js/excel.js route
+	reqJS := httptest.NewRequest("GET", "/js/excel.js", nil)
+	rrJS := httptest.NewRecorder()
+	handler.ServeHTTP(rrJS, reqJS)
+
+	ccJS := rrJS.Header().Get("Cache-Control")
+	if !strings.Contains(ccJS, "no-cache") || !strings.Contains(ccJS, "no-store") {
+		t.Errorf("expected Cache-Control no-cache, no-store for /js/excel.js, got: %q", ccJS)
+	}
 }
 
 func TestAppJsDOMIDs(t *testing.T) {

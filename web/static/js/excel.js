@@ -310,3 +310,5 @@ const ExportEngine = {
     window.open('/api/export/csv', '_blank');
   }
 };
+
+window.ExportEngine = ExportEngine;
