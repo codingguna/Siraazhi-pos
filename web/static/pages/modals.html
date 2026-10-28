@@ -19,12 +19,19 @@
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label>Category:</label>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label>Category:</label>
+              <a href="javascript:void(0)" onclick="openAddCategoryModal()" style="font-size:11px; color:#1d4ed8; text-decoration:underline; font-weight:600;">+ New Category</a>
+            </div>
             <select id="mpCategory">
-              <option value="Coconut">Coconut</option>
-              <option value="Groundnut">Groundnut</option>
-              <option value="Sesame">Sesame</option>
-              <option value="Other">Other</option>
+              <option value="Coconut">Coconut / தேங்காய்</option>
+              <option value="Groundnut">Groundnut / கடலை</option>
+              <option value="Sesame">Sesame / எள்</option>
+              <option value="Oil Cakes">Oil Cakes / புண்ணாக்கு</option>
+              <option value="Lamp Oil">Lamp Oil / விளக்கு எண்ணெய்</option>
+              <option value="Seeds">Seeds / விதை</option>
+              <option value="Millets">Millets / தானியங்கள்</option>
+              <option value="Other">Other / மற்றவை</option>
             </select>
           </div>
           <div class="form-group">
@@ -182,6 +189,181 @@
       <div class="modal-footer">
         <span class="muted-text" style="font-size:12px;" id="printQueueFooterStatus">Printer: Ready on Master PC</span>
         <button class="btn btn-secondary" onclick="closePrintQueueModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD CUSTOM CATEGORY -->
+  <div id="addCategoryModal" class="modal-overlay">
+    <div class="modal-card" style="max-width:440px;">
+      <div class="modal-header">
+        <h3>📁 Add Product Category</h3>
+        <button class="modal-close" onclick="closeAddCategoryModal()">✕</button>
+      </div>
+      <div class="modal-body form-grid">
+        <div class="form-group">
+          <label>Category Name (English)*:</label>
+          <input type="text" id="newCatNameEn" placeholder="e.g. Oil Cakes, Millets, Spices" autofocus>
+        </div>
+        <div class="form-group">
+          <label>Category Name (Tamil / தமிழ்):</label>
+          <input type="text" id="newCatNameTa" placeholder="e.g. புண்ணாக்கு, தானியங்கள்">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeAddCategoryModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveNewCategory()">Save Category</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CUSTOMER DIRECTORY & HISTORY -->
+  <div id="customerDirectoryModal" class="modal-overlay">
+    <div class="modal-card" style="max-width:850px; width:92vw;">
+      <div class="modal-header">
+        <h3>👥 Customer Directory & CRM</h3>
+        <button class="modal-close" onclick="closeCustomerDirectoryModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding:16px;">
+        <div style="display:flex; gap:10px; margin-bottom:12px;">
+          <input type="text" id="cdSearchInput" placeholder="🔍 Search customer by name, mobile number, or GSTIN..." oninput="onCustomerDirectorySearch(this.value)" style="flex:1; padding:8px 12px; border:1px solid var(--border-color); border-radius:6px; font-size:13px;">
+          <button class="btn btn-secondary" onclick="loadCustomerDirectory()">🔄 Refresh</button>
+        </div>
+        <div class="table-responsive" style="max-height:420px; overflow-y:auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Customer Name</th>
+                <th>Phone</th>
+                <th>GSTIN / Type</th>
+                <th class="center">Visits</th>
+                <th>Total Spent</th>
+                <th>Last Visit</th>
+                <th class="center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="customerDirectoryTableBody">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeCustomerDirectoryModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CUSTOMER PURCHASE HISTORY CRM -->
+  <div id="customerHistoryModal" class="modal-overlay">
+    <div class="modal-card" style="max-width:920px; width:95vw;">
+      <div class="modal-header">
+        <h3 id="chModalTitle">📊 Customer Purchase History</h3>
+        <button class="modal-close" onclick="closeCustomerHistoryModal()">✕</button>
+      </div>
+      <div class="modal-body" style="padding:16px; max-height:75vh; overflow-y:auto;">
+        
+        <!-- Customer Info Banner -->
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 16px; margin-bottom:16px; gap:12px;">
+          <div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <h2 id="chCustName" style="margin:0; font-size:18px; color:#0f172a;">Customer Name</h2>
+              <span id="chRegBadge" class="badge" style="padding:3px 8px; border-radius:12px; font-size:11px; font-weight:700;">Registered</span>
+            </div>
+            <div style="display:flex; gap:14px; margin-top:4px; font-size:12px; color:#475569; flex-wrap:wrap;">
+              <span>📞 <b id="chCustPhone">—</b></span>
+              <span>🏛 GSTIN: <code id="chCustGstin">—</code></span>
+              <span>📍 <span id="chCustAddress">—</span></span>
+            </div>
+          </div>
+          <div style="text-align:right; font-size:11px; color:#64748b;">
+            <div>First Visit: <b id="chFirstVisit">—</b></div>
+            <div>Latest Visit: <b id="chLastVisit">—</b></div>
+          </div>
+        </div>
+
+        <!-- Period Filter & KPI Cards -->
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <label style="font-size:12px; font-weight:600; color:var(--text-muted);">Period:</label>
+            <select id="chFilterPeriod" onchange="onCustomerHistoryPeriodChange(this.value)" style="padding:5px 10px; border-radius:6px; border:1px solid var(--border-color); font-size:12px; background:var(--bg-card); color:var(--text-main);">
+              <option value="all">Lifetime (All Time)</option>
+              <option value="this_month">This Month</option>
+              <option value="last_month">Last Month</option>
+              <option value="custom">Custom Date Range...</option>
+            </select>
+            <div id="chFilterCustomRow" style="display:none; align-items:center; gap:6px;">
+              <input type="date" id="chFilterFrom" style="font-size:12px; padding:4px 6px;">
+              <span>to</span>
+              <input type="date" id="chFilterTo" style="font-size:12px; padding:4px 6px;">
+              <button class="btn btn-sm btn-secondary" onclick="applyCustomerHistoryCustomDate()">Apply</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- KPI Metric Badges -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px;">
+          <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #3b82f6;">
+            <div class="kpi-title" style="font-size:11px;">Total Purchases / Visits</div>
+            <div class="kpi-value" id="chKpiOrders" style="font-size:20px; font-weight:700; color:#1e3a8a;">0</div>
+          </div>
+          <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #10b981;">
+            <div class="kpi-title" style="font-size:11px;">Total Amount Spent</div>
+            <div class="kpi-value" id="chKpiSpend" style="font-size:20px; font-weight:700; color:#065f46;">₹0.00</div>
+          </div>
+          <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #8b5cf6;">
+            <div class="kpi-title" style="font-size:11px;">Average Bill Value</div>
+            <div class="kpi-value" id="chKpiAvg" style="font-size:20px; font-weight:700; color:#5b21b6;">₹0.00</div>
+          </div>
+        </div>
+
+        <!-- Products Purchased Summary (What they bought) -->
+        <h4 style="margin:16px 0 8px; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
+          <span>🛍️</span> Products Purchased Summary / வாங்கிய பொருட்கள் விவரம்
+        </h4>
+        <div class="table-responsive" style="margin-bottom:16px; border:1px solid var(--border-color); border-radius:6px;">
+          <table class="data-table" style="font-size:12px;">
+            <thead>
+              <tr style="background:#f8fafc;">
+                <th>Product Name</th>
+                <th>Category</th>
+                <th>Total Qty</th>
+                <th>Total Spent (₹)</th>
+                <th class="center">Times Bought</th>
+                <th>Last Purchased</th>
+              </tr>
+            </thead>
+            <tbody id="chProductsTableBody">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Invoices & Bills Log -->
+        <h4 style="margin:16px 0 8px; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
+          <span>🧾</span> Customer Bills & Invoices History
+        </h4>
+        <div class="table-responsive" style="border:1px solid var(--border-color); border-radius:6px;">
+          <table class="data-table" style="font-size:12px;">
+            <thead>
+              <tr style="background:#f8fafc;">
+                <th>Bill No</th>
+                <th>Date</th>
+                <th>Payment Mode</th>
+                <th>Items Count</th>
+                <th>Total Value (₹)</th>
+                <th class="center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="chBillsTableBody">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeCustomerHistoryModal()">Close</button>
       </div>
     </div>
   </div>

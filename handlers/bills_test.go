@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"siraazhi-pos/db"
+	"strings"
 	"testing"
 )
 
@@ -411,3 +412,137 @@ func TestSplitPaymentBill(t *testing.T) {
 			fetched.PayMode, fetched.CashPaid, fetched.UPIPaid)
 	}
 }
+
+func TestCategoriesAndCustomerCRM(t *testing.T) {
+	tmpDir := setupTestDBForHandlers(t)
+	defer os.RemoveAll(tmpDir)
+
+	// 1. Categories: GET & POST
+	reqGetCat := httptest.NewRequest("GET", "/api/categories", nil)
+	recGetCat := httptest.NewRecorder()
+	HandleCategories(recGetCat, reqGetCat)
+	if recGetCat.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for GET categories, got %d", recGetCat.Code)
+	}
+
+	// Add custom category
+	catPayload := `{"name":"Millets","nameTa":"தானியங்கள்"}`
+	reqPostCat := httptest.NewRequest("POST", "/api/categories", strings.NewReader(catPayload))
+	recPostCat := httptest.NewRecorder()
+	HandleCategories(recPostCat, reqPostCat)
+	if recPostCat.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for POST category, got %d", recPostCat.Code)
+	}
+
+	// 2. Customer Lookup: First-time phone should be Unregistered
+	reqLookup1 := httptest.NewRequest("GET", "/api/customers/lookup?phone=9876543210", nil)
+	recLookup1 := httptest.NewRecorder()
+	HandleCustomerLookup(recLookup1, reqLookup1)
+	if recLookup1.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for customer lookup, got %d", recLookup1.Code)
+	}
+	var res1 db.CustomerLookupResult
+	_ = json.NewDecoder(recLookup1.Body).Decode(&res1)
+	if res1.IsRegistered {
+		t.Errorf("Expected first-time customer to be IsRegistered=false, got true")
+	}
+
+	// 3. Create a bill for this customer
+	billPayload := `{
+		"date": "2026-10-28",
+		"customer": {
+			"name": "Karthik Raja",
+			"phone": "9876543210",
+			"address": "Villupuram",
+			"state": "Tamil Nadu"
+		},
+		"items": [
+			{
+				"productId": "gnut1000",
+				"nameEn": "Groundnut Oil 1L",
+				"nameTa": "நிலக்கடலை எண்ணெய் 1லி",
+				"hsn": "1512",
+				"qty": 3,
+				"price": 210,
+				"gstPct": 5
+			}
+		],
+		"payMode": "Cash",
+		"paid": 630,
+		"gstOn": false
+	}`
+	reqBill := httptest.NewRequest("POST", "/api/bills", strings.NewReader(billPayload))
+	recBill := httptest.NewRecorder()
+	HandleBills(recBill, reqBill)
+	if recBill.Code != http.StatusOK && recBill.Code != http.StatusCreated {
+		t.Fatalf("Expected 200/201 for bill creation, got %d: %s", recBill.Code, recBill.Body.String())
+	}
+
+	// 4. Customer Lookup again: Should now be Registered!
+	reqLookup2 := httptest.NewRequest("GET", "/api/customers/lookup?phone=9876543210", nil)
+	recLookup2 := httptest.NewRecorder()
+	HandleCustomerLookup(recLookup2, reqLookup2)
+	var res2 db.CustomerLookupResult
+	_ = json.NewDecoder(recLookup2.Body).Decode(&res2)
+	if !res2.IsRegistered {
+		t.Errorf("Expected returning customer to be IsRegistered=true after bill, got false")
+	}
+	if res2.TotalBillsCount != 1 || res2.TotalSpent != 630.0 {
+		t.Errorf("Expected 1 bill and ₹630 spend, got %d bills, ₹%.2f", res2.TotalBillsCount, res2.TotalSpent)
+	}
+
+	// 5. Customer History
+	reqHist := httptest.NewRequest("GET", "/api/customers/history?q=9876543210", nil)
+	recHist := httptest.NewRecorder()
+	HandleCustomerHistory(recHist, reqHist)
+	if recHist.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for customer history, got %d", recHist.Code)
+	}
+	var hist db.CustomerHistory
+	_ = json.NewDecoder(recHist.Body).Decode(&hist)
+	if len(hist.ProductSummary) == 0 || hist.ProductSummary[0].NameEn != "Groundnut Oil 1L" || hist.ProductSummary[0].TotalQty != 3 {
+		t.Errorf("Customer product purchase history mismatch: %v", hist.ProductSummary)
+	}
+
+	// 6. Customer Directory
+	reqDir := httptest.NewRequest("GET", "/api/customers/directory?q=Karthik", nil)
+	recDir := httptest.NewRecorder()
+	HandleCustomerDirectory(recDir, reqDir)
+	if recDir.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for customer directory, got %d", recDir.Code)
+	}
+	var dir []db.CustomerDirectoryItem
+	_ = json.NewDecoder(recDir.Body).Decode(&dir)
+	if len(dir) == 0 || dir[0].Name != "Karthik Raja" {
+		t.Errorf("Expected Karthik Raja in directory, got %v", dir)
+	}
+
+	// 7. Verify GSTR-1 inclusion of Non-GST bill
+	reqGSTR := httptest.NewRequest("GET", "/api/reports/gstr1?from=2026-10-01&to=2026-10-31", nil)
+	recGSTR := httptest.NewRecorder()
+	HandleGSTR1Report(recGSTR, reqGSTR)
+	if recGSTR.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for GSTR-1 report, got %d", recGSTR.Code)
+	}
+
+	var gstr struct {
+		GrandTotal   float64 `json:"grandTotal"`
+		TotalTaxable float64 `json:"totalTaxable"`
+		TotalTax     float64 `json:"totalTax"`
+		HSNSummary   []struct {
+			HSN string `json:"hsn"`
+		} `json:"hsnSummary"`
+	}
+	_ = json.NewDecoder(recGSTR.Body).Decode(&gstr)
+
+	if gstr.GrandTotal != 630.0 {
+		t.Errorf("Expected Non-GST bill included in GSTR-1 GrandTotal 630.0, got %.2f", gstr.GrandTotal)
+	}
+	if gstr.TotalTaxable <= 0 || gstr.TotalTax <= 0 {
+		t.Errorf("Expected statutory tax computed for Non-GST bill, got taxable=%.2f, tax=%.2f", gstr.TotalTaxable, gstr.TotalTax)
+	}
+	if len(gstr.HSNSummary) == 0 {
+		t.Errorf("Expected HSN summary populated for Non-GST bill, got empty")
+	}
+}
+

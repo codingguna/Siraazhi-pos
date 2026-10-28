@@ -1,9 +1,16 @@
     <!-- 3. INVENTORY & CATALOG SECTION -->
     <section id="tab-inventory" class="tab-pane">
       <div class="panel-box">
-        <div class="panel-toolbar">
+        <div class="panel-toolbar" style="flex-wrap:wrap; gap:10px;">
           <h2>Product Inventory & Price Catalog</h2>
-          <div class="toolbar-actions">
+          <div class="toolbar-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <label for="invCategoryFilter" style="font-size:12px; font-weight:600; color:var(--text-muted);">Category:</label>
+              <select id="invCategoryFilter" onchange="filterInventoryByCategory()" style="padding:6px 10px; border-radius:6px; border:1px solid var(--border-color); font-size:13px; background:var(--bg-card); color:var(--text-main);">
+                <option value="all">All Categories</option>
+              </select>
+            </div>
+            <button class="btn btn-outline" onclick="openAddCategoryModal()">📁 + Add Category</button>
             <button class="btn btn-primary" onclick="openProductModal()">+ Add New Product</button>
             <button class="btn btn-outline" onclick="openAdjustModal()">⚖ Quick Stock Adjust</button>
           </div>

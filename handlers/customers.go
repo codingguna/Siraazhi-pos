@@ -66,3 +66,63 @@ func HandleCustomers(w http.ResponseWriter, r *http.Request) {
 		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
+
+// HandleCustomerLookup provides real-time customer status (New vs Registered) and spend metrics by phone.
+func HandleCustomerLookup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	phone := r.URL.Query().Get("phone")
+	res, err := db.LookupCustomer(phone)
+	if err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, "Lookup failed: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, res)
+}
+
+// HandleCustomerHistory provides comprehensive CRM purchase history, product breakdown, and invoice logs.
+func HandleCustomerHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	q := r.URL.Query().Get("q")
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+
+	hist, err := db.GetCustomerHistory(q, from, to)
+	if err != nil {
+		ErrorJSON(w, http.StatusNotFound, "Customer history not found: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, hist)
+}
+
+// HandleCustomerDirectory lists all customers with spending metrics, visit counts, and search filter.
+func HandleCustomerDirectory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	q := r.URL.Query().Get("q")
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	dir, err := db.GetCustomerDirectory(q, limit)
+	if err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, "Failed to load customer directory: "+err.Error())
+		return
+	}
+	if dir == nil {
+		dir = []db.CustomerDirectoryItem{}
+	}
+	JSON(w, http.StatusOK, dir)
+}
+

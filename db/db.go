@@ -41,7 +41,9 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,6 +53,26 @@ import (
 
 	_ "modernc.org/sqlite"
 )
+
+func roundMoney(val float64) float64 {
+	return math.Round(val*100) / 100
+}
+
+func getBillItemsLocked(billID string) []BillItem {
+	rows, err := DB.Query("SELECT product_id, name_en, name_ta, hsn, barcode, qty, price, gst_pct, amount, gst_portion FROM bill_items WHERE bill_id = ?", billID)
+	if err != nil {
+		return []BillItem{}
+	}
+	defer rows.Close()
+	var items []BillItem
+	for rows.Next() {
+		var it BillItem
+		if err := rows.Scan(&it.ProductID, &it.NameEn, &it.NameTa, &it.HSN, &it.Barcode, &it.Qty, &it.Price, &it.GSTPct, &it.Amount, &it.GSTPortion); err == nil {
+			items = append(items, it)
+		}
+	}
+	return items
+}
 
 var (
 	// DB is the singleton SQLite database connection handle
@@ -234,12 +256,21 @@ func createTables() error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS categories (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL UNIQUE,
+		name_ta TEXT DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_bills_date ON bills(date);
 	CREATE INDEX IF NOT EXISTS idx_stock_moves_pid ON stock_moves(product_id);
 	CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(date);
 	CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
 	CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 	CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
+	CREATE INDEX IF NOT EXISTS idx_bills_customer_phone ON bills(customer_phone);
+	CREATE INDEX IF NOT EXISTS idx_bill_items_pid ON bill_items(product_id);
 	`
 	_, err := DB.Exec(schema)
 	if err != nil {
@@ -323,6 +354,26 @@ func seedDefaults() error {
 			if err != nil {
 				return err
 			}
+		}
+	}
+
+	// Seed default product categories if empty
+	var catCount int
+	if err := DB.QueryRow("SELECT COUNT(*) FROM categories").Scan(&catCount); err == nil && catCount == 0 {
+		defaultCats := []struct {
+			id, name, nameTa string
+		}{
+			{"cat_groundnut", "Groundnut", "நிலக்கடலை"},
+			{"cat_sesame", "Sesame", "எள்"},
+			{"cat_coconut", "Coconut", "தேங்காய்"},
+			{"cat_cakes", "Oil Cakes", "புண்ணாக்கு"},
+			{"cat_lamp", "Lamp Oil", "விளக்கு எண்ணெய்"},
+			{"cat_seeds", "Seeds", "விதை"},
+			{"cat_millets", "Millets", "தானியங்கள்"},
+			{"cat_other", "Other", "மற்றவை"},
+		}
+		for _, c := range defaultCats {
+			_, _ = DB.Exec("INSERT OR IGNORE INTO categories (id, name, name_ta) VALUES (?, ?, ?)", c.id, c.name, c.nameTa)
 		}
 	}
 	return nil
@@ -461,6 +512,9 @@ func SaveProduct(p Product) error {
 			unit = excluded.unit`,
 		p.ID, p.Category, p.CategoryTa, p.Variant, p.VariantMl, p.NameEn, p.NameTa, p.HSN, p.Barcode, p.GSTPct, p.Price, p.MRP, p.Stock, p.LowAlert, p.Unit,
 	)
+	if err == nil && strings.TrimSpace(p.Category) != "" {
+		_ = SaveCategory(Category{Name: strings.TrimSpace(p.Category), NameTa: strings.TrimSpace(p.CategoryTa)})
+	}
 	return err
 }
 
@@ -1188,6 +1242,357 @@ func SearchCustomers(query string, limit int) ([]Customer, error) {
 		var c Customer
 		if err := rows.Scan(&c.ID, &c.Name, &c.Phone, &c.Address, &c.Gstin, &c.State); err == nil {
 			list = append(list, c)
+		}
+	}
+	return list, nil
+}
+
+// GetCategories returns all available product categories (both predefined and custom created).
+func GetCategories() ([]Category, error) {
+	rows, err := DB.Query(`
+		SELECT id, name, COALESCE(name_ta, '') 
+		FROM categories 
+		ORDER BY CASE 
+			WHEN name = 'Groundnut' THEN 1
+			WHEN name = 'Sesame' THEN 2
+			WHEN name = 'Coconut' THEN 3
+			WHEN name = 'Oil Cakes' THEN 4
+			WHEN name = 'Lamp Oil' THEN 5
+			WHEN name = 'Seeds' THEN 6
+			WHEN name = 'Millets' THEN 7
+			WHEN name = 'Other' THEN 99
+			ELSE 10 
+		END, name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []Category
+	for rows.Next() {
+		var c Category
+		if err := rows.Scan(&c.ID, &c.Name, &c.NameTa); err == nil {
+			list = append(list, c)
+		}
+	}
+
+	// Also include any distinct category in products table not yet in categories
+	pRows, err := DB.Query("SELECT DISTINCT category FROM products WHERE category != ''")
+	if err == nil {
+		defer pRows.Close()
+		existing := make(map[string]bool)
+		for _, c := range list {
+			existing[strings.ToLower(c.Name)] = true
+		}
+		for pRows.Next() {
+			var pCat string
+			if err := pRows.Scan(&pCat); err == nil && !existing[strings.ToLower(pCat)] {
+				list = append(list, Category{
+					ID:   GenID("cat"),
+					Name: pCat,
+				})
+				existing[strings.ToLower(pCat)] = true
+			}
+		}
+	}
+
+	return list, nil
+}
+
+// SaveCategory creates or updates a custom category.
+func SaveCategory(c Category) error {
+	name := strings.TrimSpace(c.Name)
+	if name == "" {
+		return errors.New("category name is required")
+	}
+	if c.ID == "" {
+		c.ID = GenID("cat")
+	}
+	_, err := DB.Exec(`INSERT INTO categories (id, name, name_ta) VALUES (?, ?, ?)
+		ON CONFLICT(name) DO UPDATE SET name_ta = CASE WHEN excluded.name_ta != '' THEN excluded.name_ta ELSE categories.name_ta END`,
+		c.ID, name, strings.TrimSpace(c.NameTa),
+	)
+	return err
+}
+
+// DeleteCategory deletes a category by ID or Name.
+func DeleteCategory(idOrName string) error {
+	_, err := DB.Exec("DELETE FROM categories WHERE id = ? OR name = ?", idOrName, idOrName)
+	return err
+}
+
+// LookupCustomer checks a phone number to distinguish First-Time vs Registered returning customers during billing.
+func LookupCustomer(phone string) (*CustomerLookupResult, error) {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return &CustomerLookupResult{Found: false, IsRegistered: false}, nil
+	}
+
+	res := &CustomerLookupResult{
+		Found:        false,
+		IsRegistered: false,
+	}
+
+	// 1. Check customers table
+	var c Customer
+	err := DB.QueryRow(`SELECT id, name, COALESCE(phone, ''), COALESCE(address, ''),
+		COALESCE(gstin, ''), COALESCE(state, 'Tamil Nadu') 
+		FROM customers WHERE phone = ?`, phone).
+		Scan(&c.ID, &c.Name, &c.Phone, &c.Address, &c.Gstin, &c.State)
+
+	if err == nil {
+		res.Found = true
+		res.Customer = c
+	} else {
+		// Also check recent bill for this phone if customer table was missing it
+		var bCustName, bCustGstin, bCustAddr, bCustState sql.NullString
+		bErr := DB.QueryRow(`SELECT customer_name, customer_gstin, customer_address, customer_state 
+			FROM bills WHERE customer_phone = ? ORDER BY date DESC, id DESC LIMIT 1`, phone).
+			Scan(&bCustName, &bCustGstin, &bCustAddr, &bCustState)
+		if bErr == nil && bCustName.Valid && bCustName.String != "" {
+			res.Found = true
+			res.Customer = Customer{
+				ID:      GenID("cust"),
+				Name:    bCustName.String,
+				Phone:   phone,
+				Address: bCustAddr.String,
+				Gstin:   bCustGstin.String,
+				State:   bCustState.String,
+			}
+		}
+	}
+
+	// 2. Count prior bills and total spend
+	var billsCount int
+	var totalSpend sql.NullFloat64
+	var lastDate sql.NullString
+	_ = DB.QueryRow(`SELECT COUNT(*), SUM(grand_total), MAX(date) FROM bills WHERE customer_phone = ?`, phone).
+		Scan(&billsCount, &totalSpend, &lastDate)
+
+	res.TotalBillsCount = billsCount
+	if totalSpend.Valid {
+		res.TotalSpent = roundMoney(totalSpend.Float64)
+	}
+	if lastDate.Valid {
+		res.LastVisitDate = lastDate.String
+	}
+
+	// Registration Rule:
+	// A customer who has at least one previous bill is "Registered".
+	// A first-time user who has never billed before is "Unregistered / New Customer".
+	res.IsRegistered = billsCount > 0
+
+	// 3. Find top 3 frequently purchased items
+	topRows, topErr := DB.Query(`
+		SELECT bi.name_en 
+		FROM bill_items bi 
+		JOIN bills b ON bi.bill_id = b.id 
+		WHERE b.customer_phone = ? 
+		GROUP BY bi.name_en 
+		ORDER BY SUM(bi.qty) DESC 
+		LIMIT 3`, phone)
+	if topErr == nil {
+		defer topRows.Close()
+		for topRows.Next() {
+			var pName string
+			if err := topRows.Scan(&pName); err == nil && pName != "" {
+				res.TopProducts = append(res.TopProducts, pName)
+			}
+		}
+	}
+
+	return res, nil
+}
+
+// GetCustomerHistory fetches full customer purchase CRM details and item-wise purchase history.
+func GetCustomerHistory(query string, from string, to string) (*CustomerHistory, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, errors.New("customer phone or name is required")
+	}
+
+	// 1. Resolve Customer Profile
+	var c Customer
+	err := DB.QueryRow(`
+		SELECT id, name, COALESCE(phone, ''), COALESCE(address, ''), COALESCE(gstin, ''), COALESCE(state, 'Tamil Nadu')
+		FROM customers 
+		WHERE phone = ? OR name = ? OR id = ?
+		LIMIT 1`, query, query, query).
+		Scan(&c.ID, &c.Name, &c.Phone, &c.Address, &c.Gstin, &c.State)
+
+	if err != nil {
+		// Fallback to bills
+		var bName, bPhone, bGstin, bAddr, bState sql.NullString
+		bErr := DB.QueryRow(`
+			SELECT customer_name, customer_phone, customer_gstin, customer_address, customer_state
+			FROM bills 
+			WHERE customer_phone = ? OR customer_name = ?
+			ORDER BY date DESC LIMIT 1`, query, query).
+			Scan(&bName, &bPhone, &bGstin, &bAddr, &bState)
+		if bErr != nil {
+			return nil, errors.New("customer not found")
+		}
+		c = Customer{
+			ID:      GenID("cust"),
+			Name:    bName.String,
+			Phone:   bPhone.String,
+			Address: bAddr.String,
+			Gstin:   bGstin.String,
+			State:   bState.String,
+		}
+	}
+
+	hist := &CustomerHistory{
+		Customer:       c,
+		Bills:          []Bill{},
+		ProductSummary: []CustomerProductSummary{},
+	}
+
+	phone := c.Phone
+
+	// Lifetime stats
+	var lifetimeBills int
+	var lifetimeSpent sql.NullFloat64
+	var minDate, maxDate sql.NullString
+	_ = DB.QueryRow(`SELECT COUNT(*), SUM(grand_total), MIN(date), MAX(date) FROM bills WHERE (customer_phone = ? AND customer_phone != '') OR customer_name = ?`, phone, c.Name).
+		Scan(&lifetimeBills, &lifetimeSpent, &minDate, &maxDate)
+
+	hist.IsRegistered = lifetimeBills > 0
+	if minDate.Valid {
+		hist.FirstVisitDate = minDate.String
+	}
+	if maxDate.Valid {
+		hist.LastVisitDate = maxDate.String
+	}
+
+	// 2. Filtered Bills Query
+	bQuery := `SELECT id, bill_no, date, customer_name, customer_phone, customer_address, customer_gstin, customer_state,
+			subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, note,
+			COALESCE(cash_paid, 0), COALESCE(upi_paid, 0)
+		FROM bills 
+		WHERE ((customer_phone = ? AND customer_phone != '') OR customer_name = ?)`
+	var args []interface{}
+	args = append(args, phone, c.Name)
+
+	if from != "" {
+		bQuery += " AND date >= ?"
+		args = append(args, from)
+	}
+	if to != "" {
+		bQuery += " AND date <= ?"
+		args = append(args, to)
+	}
+	bQuery += " ORDER BY date DESC, bill_no DESC"
+
+	bRows, err := DB.Query(bQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer bRows.Close()
+
+	var totalPeriodSpent float64
+	for bRows.Next() {
+		var b Bill
+		var gstOnInt int
+		err := bRows.Scan(
+			&b.ID, &b.BillNo, &b.Date, &b.Customer.Name, &b.Customer.Phone, &b.Customer.Address, &b.Customer.Gstin, &b.Customer.State,
+			&b.Subtotal, &b.Discount, &b.Taxable, &gstOnInt, &b.GSTAmt, &b.CGST, &b.SGST, &b.IGST, &b.GrandTotal, &b.PayMode, &b.Paid, &b.Balance, &b.Note,
+			&b.CashPaid, &b.UPIPaid,
+		)
+		if err == nil {
+			b.GSTOn = gstOnInt == 1
+			b.Items = getBillItemsLocked(b.ID)
+			hist.Bills = append(hist.Bills, b)
+			totalPeriodSpent += b.GrandTotal
+		}
+	}
+
+	hist.TotalBillsCount = len(hist.Bills)
+	hist.TotalSpent = roundMoney(totalPeriodSpent)
+	if hist.TotalBillsCount > 0 {
+		hist.AvgBillValue = roundMoney(hist.TotalSpent / float64(hist.TotalBillsCount))
+	}
+
+	// 3. Product-Wise Purchase Summary (What products they purchased & spend)
+	pQuery := `
+		SELECT bi.product_id, bi.name_en, bi.name_ta, COALESCE(p.category, 'Other'),
+			SUM(bi.qty) as total_qty, SUM(bi.amount) as total_spent,
+			COUNT(DISTINCT b.id) as orders_count, MAX(b.date) as last_date
+		FROM bill_items bi
+		JOIN bills b ON bi.bill_id = b.id
+		LEFT JOIN products p ON bi.product_id = p.id
+		WHERE ((b.customer_phone = ? AND b.customer_phone != '') OR b.customer_name = ?)`
+	var pArgs []interface{}
+	pArgs = append(pArgs, phone, c.Name)
+
+	if from != "" {
+		pQuery += " AND b.date >= ?"
+		pArgs = append(pArgs, from)
+	}
+	if to != "" {
+		pQuery += " AND b.date <= ?"
+		pArgs = append(pArgs, to)
+	}
+	pQuery += " GROUP BY bi.name_en ORDER BY total_spent DESC"
+
+	pRows, pErr := DB.Query(pQuery, pArgs...)
+	if pErr == nil {
+		defer pRows.Close()
+		for pRows.Next() {
+			var ps CustomerProductSummary
+			if err := pRows.Scan(&ps.ProductID, &ps.NameEn, &ps.NameTa, &ps.Category, &ps.TotalQty, &ps.TotalSpent, &ps.OrdersCount, &ps.LastPurchasedDate); err == nil {
+				ps.TotalSpent = roundMoney(ps.TotalSpent)
+				hist.ProductSummary = append(hist.ProductSummary, ps)
+			}
+		}
+	}
+
+	return hist, nil
+}
+
+// GetCustomerDirectory retrieves directory of all customers with order counts and spend.
+func GetCustomerDirectory(query string, limit int) ([]CustomerDirectoryItem, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	query = strings.TrimSpace(query)
+
+	qStr := `
+		SELECT 
+			c.id, c.name, COALESCE(c.phone, ''), COALESCE(c.address, ''), COALESCE(c.gstin, ''), COALESCE(c.state, 'Tamil Nadu'),
+			COUNT(b.id) as bills_count,
+			COALESCE(SUM(b.grand_total), 0) as total_spent,
+			COALESCE(MIN(b.date), '') as first_visit,
+			COALESCE(MAX(b.date), '') as last_visit
+		FROM customers c
+		LEFT JOIN bills b ON c.phone = b.customer_phone AND c.phone != ''`
+
+	var args []interface{}
+	if query != "" {
+		pattern := "%" + query + "%"
+		qStr += " WHERE c.name LIKE ? OR c.phone LIKE ? OR c.gstin LIKE ?"
+		args = append(args, pattern, pattern, pattern)
+	}
+
+	qStr += ` GROUP BY c.id ORDER BY total_spent DESC, bills_count DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := DB.Query(qStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []CustomerDirectoryItem
+	for rows.Next() {
+		var item CustomerDirectoryItem
+		if err := rows.Scan(
+			&item.ID, &item.Name, &item.Phone, &item.Address, &item.Gstin, &item.State,
+			&item.BillsCount, &item.TotalSpent, &item.FirstVisit, &item.LastVisit,
+		); err == nil {
+			item.TotalSpent = roundMoney(item.TotalSpent)
+			item.IsRegistered = item.BillsCount > 0
+			list = append(list, item)
 		}
 	}
 	return list, nil

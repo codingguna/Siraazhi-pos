@@ -95,6 +95,13 @@ type Product struct {
 	Unit       string  `json:"unit"` // Bottle, Can, Kg, Litre, Pcs, Bag
 }
 
+// Category represents a product classification (e.g. Groundnut Oil, Sesame Oil, Coconut Oil, Oil Cakes, Millets, Spices).
+type Category struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	NameTa string `json:"nameTa"`
+}
+
 // Customer represents customer details captured on an invoice.
 // WHAT IT IS: Retail consumer or registered B2B wholesale buyer.
 // HOW IT WORKS: If GSTIN is provided, the bill is classified as B2B in GSTR-1 reports.
@@ -105,6 +112,57 @@ type Customer struct {
 	Address string `json:"address"`
 	Gstin   string `json:"gstin"`
 	State   string `json:"state"`
+}
+
+// CustomerLookupResult provides quick status and metrics during POS billing.
+type CustomerLookupResult struct {
+	Found           bool     `json:"found"`
+	IsRegistered    bool     `json:"isRegistered"`
+	Customer        Customer `json:"customer"`
+	TotalBillsCount int      `json:"totalBillsCount"`
+	TotalSpent      float64  `json:"totalSpent"`
+	LastVisitDate   string   `json:"lastVisitDate"`
+	TopProducts     []string `json:"topProducts,omitempty"`
+}
+
+// CustomerProductSummary details total quantity and spend for an individual SKU purchased by a customer.
+type CustomerProductSummary struct {
+	ProductID         string  `json:"productId"`
+	NameEn            string  `json:"nameEn"`
+	NameTa            string  `json:"nameTa"`
+	Category          string  `json:"category"`
+	TotalQty          float64 `json:"totalQty"`
+	TotalSpent        float64 `json:"totalSpent"`
+	OrdersCount       int     `json:"ordersCount"`
+	LastPurchasedDate string  `json:"lastPurchasedDate"`
+}
+
+// CustomerHistory provides full lifetime and period CRM analytics and purchase logs for a customer.
+type CustomerHistory struct {
+	Customer        Customer                 `json:"customer"`
+	IsRegistered    bool                     `json:"isRegistered"`
+	FirstVisitDate  string                   `json:"firstVisitDate"`
+	LastVisitDate   string                   `json:"lastVisitDate"`
+	TotalBillsCount int                      `json:"totalBillsCount"`
+	TotalSpent      float64                  `json:"totalSpent"`
+	AvgBillValue    float64                  `json:"avgBillValue"`
+	ProductSummary  []CustomerProductSummary `json:"productSummary"`
+	Bills           []Bill                   `json:"bills"`
+}
+
+// CustomerDirectoryItem represents an entry in the master customer directory with spending metrics.
+type CustomerDirectoryItem struct {
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Phone        string  `json:"phone"`
+	Address      string  `json:"address"`
+	Gstin        string  `json:"gstin"`
+	State        string  `json:"state"`
+	BillsCount   int     `json:"billsCount"`
+	TotalSpent   float64 `json:"totalSpent"`
+	FirstVisit   string  `json:"firstVisit"`
+	LastVisit    string  `json:"lastVisit"`
+	IsRegistered bool    `json:"isRegistered"`
 }
 
 // BillItem represents a single line item within an invoice.

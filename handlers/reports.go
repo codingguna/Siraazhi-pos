@@ -114,21 +114,52 @@ func HandleGSTR1Report(w http.ResponseWriter, r *http.Request) {
 	})
 
 	for _, b := range bills {
-		if !b.GSTOn {
-			continue
-		}
-		report.TotalTaxable += b.Taxable
-		report.TotalTax += b.GSTAmt
-		report.GrandTotal += b.GrandTotal
-
 		discRatio := 1.0
 		if b.Subtotal > 0 {
 			discRatio = b.GrandTotal / b.Subtotal
 		}
 
 		hasGSTIN := strings.TrimSpace(b.Customer.Gstin) != ""
+		report.GrandTotal += b.GrandTotal
+
+		// Derive bill taxable & tax for both GST (B2B/B2C) and Non-GST retail bills
+		var bTaxable, bGSTAmt, bCGST, bSGST, bIGST float64
+		if b.GSTOn {
+			bTaxable = b.Taxable
+			bGSTAmt = b.GSTAmt
+			bCGST = b.CGST
+			bSGST = b.SGST
+			bIGST = b.IGST
+		} else {
+			// Normal retail consumer cash bills: derive statutory tax breakdown from item rates
+			for _, it := range b.Items {
+				itemNetAmt := roundMoney(it.Amount * discRatio)
+				rate := it.GSTPct
+				var itemNetTax, itemNetTaxable float64
+				if rate > 0 {
+					itemNetTax = roundMoney(itemNetAmt * rate / (100.0 + rate))
+					itemNetTaxable = roundMoney(itemNetAmt - itemNetTax)
+				} else {
+					itemNetTax = 0
+					itemNetTaxable = itemNetAmt
+				}
+				bTaxable += itemNetTaxable
+				bGSTAmt += itemNetTax
+				if b.Customer.State != "" && b.Customer.State != "Tamil Nadu" {
+					bIGST += itemNetTax
+				} else {
+					cgst := roundMoney(itemNetTax / 2)
+					bCGST += cgst
+					bSGST += roundMoney(itemNetTax - cgst)
+				}
+			}
+		}
+
+		report.TotalTaxable += bTaxable
+		report.TotalTax += bGSTAmt
+
 		if hasGSTIN {
-			// B2B entry
+			// B2B entry (Wholesale Registered Dealers)
 			report.B2B = append(report.B2B, struct {
 				CustomerGSTIN string  `json:"customerGstin"`
 				CustomerName  string  `json:"customerName"`
@@ -144,11 +175,11 @@ func HandleGSTR1Report(w http.ResponseWriter, r *http.Request) {
 				CustomerName:  b.Customer.Name,
 				InvoiceNo:     b.BillNo,
 				Date:          b.Date,
-				InvoiceValue:  b.GrandTotal,
-				TaxableValue:  b.Taxable,
-				CGST:          b.CGST,
-				SGST:          b.SGST,
-				IGST:          b.IGST,
+				InvoiceValue:  roundMoney(b.GrandTotal),
+				TaxableValue:  roundMoney(bTaxable),
+				CGST:          roundMoney(bCGST),
+				SGST:          roundMoney(bSGST),
+				IGST:          roundMoney(bIGST),
 			})
 		} else {
 			// B2C Consumer aggregation per item tax rate (prorated by discount)
@@ -164,12 +195,23 @@ func HandleGSTR1Report(w http.ResponseWriter, r *http.Request) {
 					}{}
 				}
 				itemNetAmt := roundMoney(it.Amount * discRatio)
-				itemNetTax := roundMoney(it.GSTPortion * discRatio)
-				itemNetTaxable := roundMoney(itemNetAmt - itemNetTax)
+				var itemNetTax, itemNetTaxable float64
+				if b.GSTOn {
+					itemNetTax = roundMoney(it.GSTPortion * discRatio)
+					itemNetTaxable = roundMoney(itemNetAmt - itemNetTax)
+				} else {
+					if rate > 0 {
+						itemNetTax = roundMoney(itemNetAmt * rate / (100.0 + rate))
+						itemNetTaxable = roundMoney(itemNetAmt - itemNetTax)
+					} else {
+						itemNetTax = 0
+						itemNetTaxable = itemNetAmt
+					}
+				}
 
 				b2cByRate[rate].Taxable += itemNetTaxable
 				b2cByRate[rate].Total += itemNetAmt
-				if b.IGST > 0 {
+				if (b.GSTOn && b.IGST > 0) || (!b.GSTOn && b.Customer.State != "" && b.Customer.State != "Tamil Nadu") {
 					b2cByRate[rate].IGST += itemNetTax
 				} else {
 					cgst := roundMoney(itemNetTax / 2)
@@ -179,7 +221,7 @@ func HandleGSTR1Report(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// HSN breakdown (prorated by discount and tracking IGST)
+		// HSN breakdown (prorated by discount)
 		for _, it := range b.Items {
 			hsn := it.HSN
 			if hsn == "" {
@@ -199,13 +241,25 @@ func HandleGSTR1Report(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			itemNetAmt := roundMoney(it.Amount * discRatio)
-			itemNetTax := roundMoney(it.GSTPortion * discRatio)
-			itemNetTaxable := roundMoney(itemNetAmt - itemNetTax)
+			var itemNetTax, itemNetTaxable float64
+			if b.GSTOn {
+				itemNetTax = roundMoney(it.GSTPortion * discRatio)
+				itemNetTaxable = roundMoney(itemNetAmt - itemNetTax)
+			} else {
+				rate := it.GSTPct
+				if rate > 0 {
+					itemNetTax = roundMoney(itemNetAmt * rate / (100.0 + rate))
+					itemNetTaxable = roundMoney(itemNetAmt - itemNetTax)
+				} else {
+					itemNetTax = 0
+					itemNetTaxable = itemNetAmt
+				}
+			}
 
 			hsnMap[hsn].Qty += it.Qty
 			hsnMap[hsn].Total += itemNetAmt
 			hsnMap[hsn].Taxable += itemNetTaxable
-			if b.IGST > 0 {
+			if (b.GSTOn && b.IGST > 0) || (!b.GSTOn && b.Customer.State != "" && b.Customer.State != "Tamil Nadu") {
 				hsnMap[hsn].IGST += itemNetTax
 			} else {
 				cgst := roundMoney(itemNetTax / 2)

@@ -81,6 +81,22 @@ function onGstinInput(val) {
       $('custState').value = 'Other';
     }
   }
+
+  const gstBadge = $('custGstTypeBadge');
+  if (gstBadge) {
+    const hasGst = Boolean((val || '').trim());
+    if (hasGst) {
+      gstBadge.innerHTML = '🏛 Wholesaler / B2B Dealer';
+      gstBadge.style.background = '#eff6ff';
+      gstBadge.style.color = '#1d4ed8';
+      gstBadge.style.borderColor = '#93c5fd';
+    } else {
+      gstBadge.innerHTML = '🛍 Retail Consumer';
+      gstBadge.style.background = '#f1f5f9';
+      gstBadge.style.color = '#475569';
+      gstBadge.style.borderColor = '#cbd5e1';
+    }
+  }
 }
 
 function onStateSelectChange() {
@@ -205,6 +221,7 @@ async function initApp() {
   try {
     SETTINGS = await api('GET', '/api/settings');
     PRODUCTS = await api('GET', '/api/products');
+    await loadCategories();
     
     // Determine Master vs Staff mode with up-to-date settings & PIN
     determineRoleMode();
@@ -504,15 +521,18 @@ function renderProductsGrid() {
   }).join('');
 }
 
-// Category filter pills
-document.querySelectorAll('#categoryPills .pill-btn').forEach(btn => {
-  btn.onclick = () => {
-    document.querySelectorAll('#categoryPills .pill-btn').forEach(b => b.classList.remove('active'));
+// Category filter pills delegation
+const categoryPillsContainer = $('categoryPills');
+if (categoryPillsContainer) {
+  categoryPillsContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pill-btn');
+    if (!btn) return;
+    categoryPillsContainer.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    ACTIVE_CATEGORY = btn.dataset.cat;
+    ACTIVE_CATEGORY = btn.getAttribute('data-cat') || 'all';
     renderProductsGrid();
-  };
-});
+  });
+}
 
 // Barcode scanner & search input
 $('barcodeScanInput').addEventListener('input', () => {
@@ -646,6 +666,10 @@ function clearCart() {
   if ($('billPayMode')) $('billPayMode').value = 'Cash';
   if ($('billSplitCash')) $('billSplitCash').value = '';
   if ($('billSplitUPI')) $('billSplitUPI').value = '';
+  if ($('customerStatusBar')) $('customerStatusBar').style.display = 'none';
+  if ($('btnViewCustHistory')) $('btnViewCustHistory').style.display = 'none';
+  currentCustomerLookup = null;
+  onGstinInput('');
   onPayModeChange();
   if ($('gstToggle')) {
     $('gstToggle').checked = isGstDefault;
@@ -777,16 +801,34 @@ function loadActiveBillTabForm() {
     $('gstToggle').checked = tabGst;
     toggleGSTMode();
   }
+  const curPhone = (b.customer && b.customer.phone) || '';
+  if (curPhone.length >= 5) {
+    lookupCustomerLive(curPhone);
+  } else {
+    if ($('customerStatusBar')) $('customerStatusBar').style.display = 'none';
+    if ($('btnViewCustHistory')) $('btnViewCustHistory').style.display = 'none';
+  }
+  onGstinInput($('custGstin') ? $('custGstin').value : '');
 }
 
 /**
  * Instant Customer Database Search & Autocomplete
  */
 let customerSearchTimeout = null;
+let customerLookupDebounce = null;
+let currentCustomerLookup = null;
 let CUSTOMER_SUGGESTIONS = [];
 
 function onCustomerSearchInput(field) {
   const query = (field === 'phone' ? $('custPhone').value : $('custName').value).trim();
+  
+  if (field === 'phone') {
+    clearTimeout(customerLookupDebounce);
+    customerLookupDebounce = setTimeout(() => {
+      lookupCustomerLive(query);
+    }, 250);
+  }
+
   if (query.length < 1) {
     closeCustomerDropdown();
     return;
@@ -861,6 +903,91 @@ function selectCustomerByIndex(index) {
   saveCurrentBillTabForm();
   renderBillTabs();
   closeCustomerDropdown();
+  lookupCustomerLive(c.phone || '');
+}
+
+async function lookupCustomerLive(phone) {
+  const cleanPhone = (phone || ($('custPhone') ? $('custPhone').value : '') || '').trim();
+  const statusBar = $('customerStatusBar');
+  const regBadge = $('custRegStatusBadge');
+  const gstBadge = $('custGstTypeBadge');
+  const viewHistoryBtn = $('btnViewCustHistory');
+
+  if (!cleanPhone || cleanPhone.length < 5) {
+    if (statusBar) statusBar.style.display = 'none';
+    if (viewHistoryBtn) viewHistoryBtn.style.display = 'none';
+    currentCustomerLookup = null;
+    return;
+  }
+
+  try {
+    const res = await api('GET', `/api/customers/lookup?phone=${encodeURIComponent(cleanPhone)}`);
+    currentCustomerLookup = res;
+
+    if (statusBar) statusBar.style.display = 'flex';
+
+    if (res && res.isRegistered) {
+      if (regBadge) {
+        regBadge.innerHTML = `
+          <span style="color:#059669; display:inline-flex; align-items:center; gap:5px;">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span>
+            <b>🟢 Registered Customer / பதிவுசெய்தவர்</b> (${res.totalBillsCount} visits • ${formatINR(res.totalSpent)})
+          </span>
+        `;
+      }
+      if (viewHistoryBtn) {
+        viewHistoryBtn.style.display = 'inline-block';
+      }
+
+      // If customer fields are empty, auto-fill from lookup
+      if (res.customer) {
+        if ($('custName') && !$('custName').value && res.customer.name) {
+          $('custName').value = res.customer.name;
+        }
+        if (res.customer.gstin && $('custGstin') && !$('custGstin').value) {
+          $('custGstin').value = res.customer.gstin;
+          if ($('gstDetailsRow')) $('gstDetailsRow').style.display = 'flex';
+          onGstinInput(res.customer.gstin);
+        }
+        if (res.customer.address && $('custAddress') && !$('custAddress').value) {
+          $('custAddress').value = res.customer.address;
+          if ($('gstDetailsRow')) $('gstDetailsRow').style.display = 'flex';
+        }
+        if (res.customer.state && $('custState')) {
+          $('custState').value = res.customer.state;
+        }
+      }
+    } else {
+      // First-time unregistered user
+      if (regBadge) {
+        regBadge.innerHTML = `
+          <span style="color:#b45309; display:inline-flex; align-items:center; gap:5px;">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f59e0b;"></span>
+            <b>✨ New Customer / புதிய வாடிக்கையாளர்</b> (First Visit)
+          </span>
+        `;
+      }
+      if (viewHistoryBtn) {
+        viewHistoryBtn.style.display = 'none';
+      }
+    }
+
+    // Refresh GST/Type Badge
+    onGstinInput($('custGstin') ? $('custGstin').value : '');
+
+  } catch (err) {
+    console.error('Customer live lookup failed:', err);
+  }
+}
+
+function viewCurrentCustomerHistory() {
+  const phone = $('custPhone') ? $('custPhone').value.trim() : '';
+  const name = $('custName') ? $('custName').value.trim() : '';
+  if (!phone && !name) {
+    showToast('Enter customer phone number first', 'error');
+    return;
+  }
+  openCustomerHistory(phone || name);
 }
 
 function closeCustomerDropdown() {
@@ -1360,26 +1487,130 @@ async function loadDashboard() {
 }
 
 // --------------------------------------------------------------------------
-// 6. Inventory & Catalog Management
+// 6. Inventory, Categories & Catalog Management
 // --------------------------------------------------------------------------
+let CATEGORIES = [];
+
+async function loadCategories() {
+  try {
+    const cats = await api('GET', '/api/categories');
+    if (Array.isArray(cats)) {
+      CATEGORIES = cats;
+      renderCategoryUI();
+    }
+  } catch (err) {
+    console.warn('Failed to load categories:', err);
+  }
+}
+
+function renderCategoryUI() {
+  // 1. Populate POS category pills
+  const pillsContainer = $('categoryPills');
+  if (pillsContainer && CATEGORIES.length > 0) {
+    const activePill = pillsContainer.querySelector('.pill-btn.active');
+    const currentActiveCat = activePill ? (activePill.getAttribute('data-cat') || 'all') : (ACTIVE_CATEGORY || 'all');
+
+    let html = `<button class="pill-btn ${currentActiveCat.toLowerCase() === 'all' ? 'active' : ''}" data-cat="all">All Oils & Items</button>`;
+    CATEGORIES.forEach(c => {
+      const isAct = currentActiveCat.toLowerCase() === c.name.toLowerCase();
+      const label = c.nameTa ? `${escapeHtml(c.name)} / ${escapeHtml(c.nameTa)}` : escapeHtml(c.name);
+      html += `<button class="pill-btn ${isAct ? 'active' : ''}" data-cat="${escapeHtml(c.name)}">${label}</button>`;
+    });
+    pillsContainer.innerHTML = html;
+  }
+
+  // 2. Populate Product Modal Category Dropdown
+  const mpSelect = $('mpCategory');
+  if (mpSelect && CATEGORIES.length > 0) {
+    const currentVal = mpSelect.value;
+    mpSelect.innerHTML = CATEGORIES.map(c => {
+      const label = c.nameTa ? `${escapeHtml(c.name)} / ${escapeHtml(c.nameTa)}` : escapeHtml(c.name);
+      return `<option value="${escapeHtml(c.name)}">${label}</option>`;
+    }).join('');
+    if (currentVal) mpSelect.value = currentVal;
+  }
+
+  // 3. Populate Inventory Table Filter Dropdown
+  const invSelect = $('invCategoryFilter');
+  if (invSelect && CATEGORIES.length > 0) {
+    const currentVal = invSelect.value || 'all';
+    let invHtml = '<option value="all">All Categories</option>';
+    CATEGORIES.forEach(c => {
+      invHtml += `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`;
+    });
+    invSelect.innerHTML = invHtml;
+    invSelect.value = currentVal;
+  }
+}
+
+function filterInventoryByCategory() {
+  loadInventoryTable();
+}
+
+function openAddCategoryModal() {
+  const modal = $('addCategoryModal');
+  if (!modal) return;
+  $('newCatNameEn').value = '';
+  $('newCatNameTa').value = '';
+  modal.classList.add('active');
+  setTimeout(() => $('newCatNameEn').focus(), 100);
+}
+
+function closeAddCategoryModal() {
+  const modal = $('addCategoryModal');
+  if (modal) modal.classList.remove('active');
+}
+
+async function saveNewCategory() {
+  const nameEn = $('newCatNameEn').value.trim();
+  const nameTa = $('newCatNameTa').value.trim();
+  if (!nameEn) {
+    showToast('Please enter category name in English', 'error');
+    return;
+  }
+
+  try {
+    await api('POST', '/api/categories', { name: nameEn, nameTa: nameTa });
+    showToast(`Category "${nameEn}" created successfully!`, 'success');
+    closeAddCategoryModal();
+    await loadCategories();
+    if ($('mpCategory')) {
+      $('mpCategory').value = nameEn;
+    }
+  } catch (err) {
+    showToast('Failed to save category: ' + err.message, 'error');
+  }
+}
+
 async function loadInventoryTable() {
   if (!IS_MASTER_MODE) return;
   try {
     PRODUCTS = await api('GET', '/api/products');
     const tbody = $('inventoryTableBody');
-    tbody.innerHTML = PRODUCTS.map(p => `
+    const catFilter = ($('invCategoryFilter') ? $('invCategoryFilter').value : 'all') || 'all';
+
+    const filtered = (catFilter === 'all') 
+      ? PRODUCTS 
+      : PRODUCTS.filter(p => (p.category || '').toLowerCase() === catFilter.toLowerCase());
+
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="10" class="center muted-text" style="padding:24px;">No products found in this category</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(p => `
       <tr>
         <td>
-          <b>${p.nameEn}</b>
-          <div style="font-size:11px; color:#64748b;">${p.nameTa || ''} • ${p.variant}</div>
+          <b>${escapeHtml(p.nameEn)}</b>
+          <div style="font-size:11px; color:#64748b;">${escapeHtml(p.nameTa || '')} • ${escapeHtml(p.variant || '')}</div>
         </td>
-        <td>${p.category}</td>
-        <td>${p.hsn || '-'}</td>
-        <td><code>${p.barcode || '-'}</code></td>
+        <td><span class="chip-btn" style="background:#f1f5f9; font-size:11px;">${escapeHtml(p.category || '-')}</span></td>
+        <td>${escapeHtml(p.hsn || '-')}</td>
+        <td><code>${escapeHtml(p.barcode || '-')}</code></td>
         <td>${p.gstPct}%</td>
         <td>${formatINR(p.mrp)}</td>
         <td><b>${formatINR(p.price)}</b></td>
-        <td><b style="color:${p.stock <= p.lowAlert ? '#ef4444' : '#1b5e20'}">${p.stock}</b> ${p.unit}</td>
+        <td><b style="color:${p.stock <= p.lowAlert ? '#ef4444' : '#1b5e20'}">${p.stock}</b> ${escapeHtml(p.unit || 'Bottle')}</td>
         <td>${formatINR(p.stock * p.price)}</td>
         <td>
           <button class="chip-btn" onclick="openProductModal('${p.id}')">Edit</button>
@@ -1455,6 +1686,7 @@ async function saveProductModal() {
   try {
     await api('POST', '/api/products', p);
     closeProductModal();
+    await loadCategories();
     loadInventoryTable();
     PRODUCTS = await api('GET', '/api/products');
     renderProductsGrid();
@@ -1467,11 +1699,209 @@ async function deleteProduct(id) {
   if (!confirm('Are you sure you want to delete this product?')) return;
   try {
     await api('DELETE', `/api/products/${id}`);
+    await loadCategories();
     loadInventoryTable();
     PRODUCTS = await api('GET', '/api/products');
     renderProductsGrid();
   } catch (err) {
     alert('Delete failed: ' + err.message);
+  }
+}
+
+// --------------------------------------------------------------------------
+// Customer CRM & Comprehensive Purchase History Modals
+// --------------------------------------------------------------------------
+let CURRENT_HISTORY_QUERY = '';
+
+async function openCustomerHistory(query, from, to) {
+  if (!query) return;
+  CURRENT_HISTORY_QUERY = query;
+
+  const modal = $('customerHistoryModal');
+  if (!modal) return;
+  modal.classList.add('active');
+
+  $('chCustName').textContent = 'Loading...';
+  $('chCustPhone').textContent = '—';
+  $('chCustGstin').textContent = '—';
+  $('chCustAddress').textContent = '—';
+  $('chRegBadge').textContent = 'Loading...';
+  $('chRegBadge').style.background = '#94a3b8';
+  $('chRegBadge').style.color = '#ffffff';
+  $('chFirstVisit').textContent = '—';
+  $('chLastVisit').textContent = '—';
+  $('chKpiOrders').textContent = '0';
+  $('chKpiSpend').textContent = '₹0.00';
+  $('chKpiAvg').textContent = '₹0.00';
+  $('chProductsTableBody').innerHTML = '<tr><td colspan="6" class="center muted-text" style="padding:20px;">Loading customer purchase history...</td></tr>';
+  $('chBillsTableBody').innerHTML = '<tr><td colspan="6" class="center muted-text" style="padding:20px;">Loading invoices...</td></tr>';
+
+  let url = `/api/customers/history?q=${encodeURIComponent(query)}`;
+  if (from) url += `&from=${encodeURIComponent(from)}`;
+  if (to) url += `&to=${encodeURIComponent(to)}`;
+
+  try {
+    const data = await api('GET', url);
+    const c = data.customer || {};
+    $('chCustName').textContent = c.name || 'Walk-in Customer';
+    $('chCustPhone').textContent = c.phone || '—';
+    $('chCustGstin').textContent = c.gstin || 'None (Consumer)';
+    $('chCustAddress').textContent = (c.address || '') + (c.state ? `, ${c.state}` : '') || '—';
+
+    if (data.isRegistered) {
+      $('chRegBadge').textContent = '🟢 Registered Customer';
+      $('chRegBadge').style.background = '#dcfce7';
+      $('chRegBadge').style.color = '#15803d';
+    } else {
+      $('chRegBadge').textContent = '✨ New Customer';
+      $('chRegBadge').style.background = '#fef3c7';
+      $('chRegBadge').style.color = '#b45309';
+    }
+
+    $('chFirstVisit').textContent = data.firstVisitDate || 'Today';
+    $('chLastVisit').textContent = data.lastVisitDate || 'Today';
+
+    $('chKpiOrders').textContent = data.totalBillsCount || 0;
+    $('chKpiSpend').textContent = formatINR(data.totalSpent || 0);
+    $('chKpiAvg').textContent = formatINR(data.avgBillValue || 0);
+
+    // Render Product-wise purchase breakdown
+    const products = data.productSummary || [];
+    if (products.length > 0) {
+      $('chProductsTableBody').innerHTML = products.map(p => `
+        <tr>
+          <td><b>${escapeHtml(p.nameEn)}</b> ${p.nameTa ? `<small style="color:#64748b;">(${escapeHtml(p.nameTa)})</small>` : ''}</td>
+          <td><span class="chip-btn" style="background:#f1f5f9; font-size:11px;">${escapeHtml(p.category || 'General')}</span></td>
+          <td><b>${p.totalQty}</b></td>
+          <td style="font-weight:700; color:#0f766e;">${formatINR(p.totalSpent)}</td>
+          <td class="center">${p.ordersCount} orders</td>
+          <td style="color:#64748b; font-size:11px;">${p.lastPurchasedDate || '—'}</td>
+        </tr>
+      `).join('');
+    } else {
+      $('chProductsTableBody').innerHTML = `<tr><td colspan="6" class="center muted-text" style="padding:18px;">No product purchases recorded in this period</td></tr>`;
+    }
+
+    // Render Invoices list
+    const bills = data.bills || [];
+    if (bills.length > 0) {
+      $('chBillsTableBody').innerHTML = bills.map(b => `
+        <tr>
+          <td><b>${escapeHtml(b.billNo)}</b></td>
+          <td>${b.date}</td>
+          <td><span class="pay-mode-badge">${escapeHtml(b.payMode || 'Cash')}</span></td>
+          <td>${(b.items || []).length} items</td>
+          <td><b style="color:#1e3a8a;">${formatINR(b.grandTotal)}</b></td>
+          <td class="center">
+            <button class="btn btn-sm btn-outline" onclick="closeCustomerHistoryModal(); reprintBill('${b.id}', '80mm')">🧻 Print</button>
+            <button class="btn btn-sm btn-outline" onclick="closeCustomerHistoryModal(); downloadBillPDF('${b.id}', '80mm')">📥 PDF</button>
+          </td>
+        </tr>
+      `).join('');
+    } else {
+      $('chBillsTableBody').innerHTML = `<tr><td colspan="6" class="center muted-text" style="padding:18px;">No bills recorded in this period</td></tr>`;
+    }
+
+  } catch (err) {
+    showToast('Failed to load customer history: ' + err.message, 'error');
+    $('chProductsTableBody').innerHTML = `<tr><td colspan="6" class="center text-danger">Failed to load history</td></tr>`;
+  }
+}
+
+function closeCustomerHistoryModal() {
+  const modal = $('customerHistoryModal');
+  if (modal) modal.classList.remove('active');
+}
+
+function onCustomerHistoryPeriodChange(val) {
+  const customRow = $('chFilterCustomRow');
+  if (val === 'custom') {
+    if (customRow) customRow.style.display = 'inline-flex';
+    return;
+  }
+  if (customRow) customRow.style.display = 'none';
+
+  const today = new Date();
+  if (val === 'all') {
+    openCustomerHistory(CURRENT_HISTORY_QUERY);
+  } else if (val === 'this_month') {
+    const ym = today.toISOString().slice(0, 7);
+    const from = `${ym}-01`;
+    const to = today.toISOString().slice(0, 10);
+    openCustomerHistory(CURRENT_HISTORY_QUERY, from, to);
+  } else if (val === 'last_month') {
+    const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const ym = prev.toISOString().slice(0, 7);
+    const lastDay = new Date(prev.getFullYear(), prev.getMonth() + 1, 0).getDate();
+    const from = `${ym}-01`;
+    const to = `${ym}-${lastDay < 10 ? '0' + lastDay : lastDay}`;
+    openCustomerHistory(CURRENT_HISTORY_QUERY, from, to);
+  }
+}
+
+function applyCustomerHistoryCustomDate() {
+  const from = $('chFilterFrom').value;
+  const to = $('chFilterTo').value;
+  if (!from || !to) {
+    showToast('Please select both from and to dates', 'error');
+    return;
+  }
+  openCustomerHistory(CURRENT_HISTORY_QUERY, from, to);
+}
+
+let customerDirectorySearchTimeout = null;
+
+async function openCustomerDirectoryModal() {
+  const modal = $('customerDirectoryModal');
+  if (!modal) return;
+  modal.classList.add('active');
+  if ($('cdSearchInput')) $('cdSearchInput').value = '';
+  loadCustomerDirectory();
+}
+
+function closeCustomerDirectoryModal() {
+  const modal = $('customerDirectoryModal');
+  if (modal) modal.classList.remove('active');
+}
+
+function onCustomerDirectorySearch(query) {
+  clearTimeout(customerDirectorySearchTimeout);
+  customerDirectorySearchTimeout = setTimeout(() => {
+    loadCustomerDirectory(query);
+  }, 200);
+}
+
+async function loadCustomerDirectory(query = '') {
+  const tbody = $('customerDirectoryTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="7" class="center muted-text" style="padding:20px;">Loading customer directory...</td></tr>';
+
+  try {
+    const list = await api('GET', `/api/customers/directory?q=${encodeURIComponent(query)}&limit=60`);
+    if (!list || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="center muted-text" style="padding:24px;">No customers found matching search</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = list.map(c => `
+      <tr>
+        <td><b>${escapeHtml(c.name)}</b></td>
+        <td>📞 ${escapeHtml(c.phone || '—')}</td>
+        <td>
+          ${c.gstin ? `<span class="badge" style="background:#eff6ff; color:#1d4ed8; font-size:11px;">B2B: ${escapeHtml(c.gstin)}</span>` : '<span class="badge" style="background:#f1f5f9; color:#64748b; font-size:11px;">Retail Consumer</span>'}
+        </td>
+        <td class="center"><b>${c.billsCount}</b></td>
+        <td style="font-weight:700; color:#15803d;">${formatINR(c.totalSpent)}</td>
+        <td style="font-size:11px; color:#64748b;">${c.lastVisit || '—'}</td>
+        <td class="center">
+          <button class="btn btn-sm btn-primary" onclick="closeCustomerDirectoryModal(); openCustomerHistory('${c.phone || c.name}')">
+            📊 Purchase History
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="center text-danger">Failed to load directory: ${err.message}</td></tr>`;
   }
 }
 
@@ -1758,7 +2188,12 @@ async function loadBills() {
       <tr>
         <td><b>${b.billNo}</b></td>
         <td>${b.date}</td>
-        <td>${escapeHtml(b.customer.name || '')}</td>
+        <td>
+          <a href="javascript:void(0)" onclick="openCustomerHistory('${escapeHtml(b.customer.phone || b.customer.name || '')}')" style="font-weight:600; color:#0284c7; text-decoration:underline;" title="Click to view full purchase history">
+            ${escapeHtml(b.customer.name || 'Walk-in Customer')}
+          </a>
+          ${b.customer.phone ? `<div style="font-size:11px; color:#64748b;">📞 ${escapeHtml(b.customer.phone)}</div>` : ''}
+        </td>
         <td>${b.gstOn ? '<span class="chip-btn" style="color:#1b5e20;">GST</span>' : '<span class="chip-btn">Cash</span>'}</td>
         <td>${formatINR(b.subtotal)}</td>
         <td>${formatINR(b.gstAmt)}</td>

@@ -1,12 +1,13 @@
     <!-- 7. SALES & INVOICES REGISTER -->
     <section id="tab-bills" class="tab-pane">
       <div class="panel-box">
-        <div class="panel-toolbar">
+        <div class="panel-toolbar" style="flex-wrap:wrap; gap:10px;">
           <h2>Sales & Invoices Register</h2>
-          <div class="filter-group">
+          <div class="filter-group" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <label>From: <input type="date" id="filterFrom"></label>
             <label>To: <input type="date" id="filterTo"></label>
             <button class="btn btn-secondary" onclick="loadBills()">Filter</button>
+            <button class="btn btn-primary" onclick="openCustomerDirectoryModal()" style="margin-left:8px;">👥 Customer Directory & CRM History</button>
           </div>
         </div>
 
