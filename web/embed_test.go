@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -69,3 +70,58 @@ func TestHandlerCacheHeaders(t *testing.T) {
 		t.Errorf("expected Cache-Control no-cache, no-store for /sw.js, got: %q", ccSW)
 	}
 }
+
+func TestAppJsDOMIDs(t *testing.T) {
+	htmlBytes, err := AssembleIndexHTML()
+	if err != nil {
+		t.Fatalf("AssembleIndexHTML failed: %v", err)
+	}
+	html := string(htmlBytes)
+
+	appJsBytes, err := readAsset("js/app.js")
+	if err != nil {
+		t.Fatalf("Failed to read js/app.js: %v", err)
+	}
+	appJs := string(appJsBytes)
+
+	dollarRegex := regexp.MustCompile(`\$\('([^']+)'\)`)
+	matches := dollarRegex.FindAllStringSubmatch(appJs, -1)
+
+	var missing []string
+	checked := make(map[string]bool)
+
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		id := m[1]
+		if checked[id] {
+			continue
+		}
+		checked[id] = true
+
+		// Skip dynamic or programmatic IDs generated in runtime
+		if strings.HasPrefix(id, "cartItem-") ||
+			strings.HasPrefix(id, "billTab-") ||
+			strings.HasPrefix(id, "b-") ||
+			strings.HasPrefix(id, "btn-") ||
+			strings.HasPrefix(id, "del-") ||
+			strings.HasPrefix(id, "tab-") ||
+			strings.HasPrefix(id, "edit-") ||
+			strings.HasPrefix(id, "prod-") ||
+			strings.HasPrefix(id, "rev-") ||
+			id == "unlockMasterBtn" { // dynamically created in DOM
+			continue
+		}
+
+		target := `id="` + id + `"`
+		if !strings.Contains(html, target) {
+			missing = append(missing, id)
+		}
+	}
+
+	if len(missing) > 0 {
+		t.Errorf("The following DOM IDs referenced via $('...') in app.js are missing in assembled HTML: %v", missing)
+	}
+}
+

@@ -40,6 +40,7 @@ let ACTIVE_CATEGORY = 'all';
 let IS_MASTER_MODE = true; // Determined dynamically below
 const DEFAULT_MASTER_PIN = '1234';
 let LAST_BILL = null;
+let CURRENT_MOBILE_POS_VIEW = 'catalog'; // 'catalog' or 'cart'
 
 // Multi-Bill State Management (Hold & Resume Active Carts)
 const GST_STATE_CODES = {
@@ -2359,8 +2360,6 @@ function showToast(message, type = 'success', duration = 3500) {
 // --------------------------------------------------------------------------
 // Mobile POS View Switcher & Floating Cart Bar
 // --------------------------------------------------------------------------
-let CURRENT_MOBILE_POS_VIEW = 'catalog'; // 'catalog' or 'cart'
-
 function switchMobilePosView(view) {
   CURRENT_MOBILE_POS_VIEW = view;
   const catPanel = $('posCatalogPanel');
@@ -2396,14 +2395,12 @@ function switchMobilePosView(view) {
 function updateMobileFloatingCart() {
   const floatingBar = $('mobileFloatingCartBar');
   const badge = $('mobileCartItemCount');
-  const cartBadge = $('mobileCartBadge');
   if (!floatingBar) return;
 
   const count = CART.reduce((sum, it) => sum + (it.qty || 1), 0);
   const total = CART.reduce((sum, it) => sum + (it.qty * it.price), 0);
 
   if (badge) badge.textContent = count;
-  if (cartBadge) cartBadge.textContent = count;
 
   if (window.innerWidth <= 850 && CURRENT_MOBILE_POS_VIEW === 'catalog' && count > 0) {
     $('mfcbCount').textContent = `${count} item${count > 1 ? 's' : ''} in bill`;
