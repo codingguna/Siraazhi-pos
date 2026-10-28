@@ -41,7 +41,11 @@ const ExportEngine = {
       return;
     }
 
-    // Sheet 1: Sales Summary (Bill by Bill)
+    // Sheet 1: Item-Wise Sales Summary (Detailed per-product aggregation)
+    const totalSales = (bills || []).reduce((sum, b) => sum + (Number(b.grandTotal) || 0), 0);
+    const wsItemSummary = XLSX.utils.json_to_sheet(this.buildItemWiseSalesRows(bills, totalSales));
+
+    // Sheet 2: Sales Summary (Bill by Bill)
     const salesData = bills.map(b => ({
       'Bill No': b.billNo,
       'Date': b.date,
@@ -64,7 +68,7 @@ const ExportEngine = {
       'Notes': b.note || ''
     }));
 
-    // Sheet 2: Item-wise Line Sales
+    // Sheet 3: Item-wise Line Sales
     const itemData = [];
     bills.forEach(b => {
       b.items.forEach(it => {
@@ -73,6 +77,7 @@ const ExportEngine = {
           'Date': b.date,
           'Product Name': it.nameEn,
           'Product (Tamil)': it.nameTa || '',
+          'Category': this.getItemCategory(it),
           'HSN Code': it.hsn || '',
           'Quantity Sold': it.qty,
           'Unit Price (₹)': Number(it.price.toFixed(2)),
@@ -89,8 +94,9 @@ const ExportEngine = {
     const wsSales = XLSX.utils.json_to_sheet(salesData);
     const wsItems = XLSX.utils.json_to_sheet(itemData);
 
+    XLSX.utils.book_append_sheet(wb, wsItemSummary, 'Item-Wise Summary');
     XLSX.utils.book_append_sheet(wb, wsSales, 'Sales Register');
-    XLSX.utils.book_append_sheet(wb, wsItems, 'Item-Wise Sales');
+    XLSX.utils.book_append_sheet(wb, wsItems, 'Item-Wise Lines');
 
     const fileName = `Siraazhi_Sales_Register_${new Date().toISOString().slice(0, 10)}.xlsx`;
     XLSX.writeFile(wb, fileName);
@@ -158,25 +164,91 @@ const ExportEngine = {
   },
 
   /**
-   * exportMonthlyPnLToExcel creates an executive Monthly Income & Expense Excel workbook
-   * matching the exact multi-section format of the VFPCL Purchase & Sales register.
+   * getItemCategory identifies the primary product family for any line item SKU.
    */
-  exportMonthlyPnLToExcel(monthStr, bills, purchases, expenses, settings) {
-    if (typeof XLSX === 'undefined') {
-      alert('Excel library not loaded.');
-      return;
+  getItemCategory(item) {
+    const nameEn = (item.nameEn || '').toLowerCase();
+    const nameTa = (item.nameTa || '').toLowerCase();
+    const cat = (item.category || '').toLowerCase();
+    const combined = `${nameEn} ${nameTa} ${cat}`;
+
+    if (
+      combined.includes('cake') ||
+      combined.includes('pinac') ||
+      combined.includes('punnac') ||
+      combined.includes('புண்ணாக்கு') ||
+      combined.includes('பிண்ணாக்கு')
+    ) {
+      return 'Oil Cakes (Cattle Feed)';
     }
+    if (
+      (combined.includes('seed') || combined.includes('விதை') || combined.includes('பருப்பு') || combined.includes('pod') || combined.includes('kernel')) &&
+      !combined.includes('oil') && !combined.includes('எண்ணெய்')
+    ) {
+      return 'Seeds & Raw Materials';
+    }
+    if (
+      combined.includes('groundnut') ||
+      combined.includes('kadalai') ||
+      combined.includes('kadala') ||
+      combined.includes('நிலக்கடலை') ||
+      combined.includes('கடலை') ||
+      combined.includes('peanut')
+    ) {
+      return 'Groundnut Oil';
+    }
+    if (
+      combined.includes('sesame') ||
+      combined.includes('gingelly') ||
+      combined.includes('nalla') ||
+      combined.includes('நல்லெண்ணெய்') ||
+      combined.includes('எள்') ||
+      combined.includes('ellu') ||
+      combined.includes('til')
+    ) {
+      return 'Sesame Oil';
+    }
+    if (
+      combined.includes('coconut') ||
+      combined.includes('thengai') ||
+      combined.includes('தேங்காய்') ||
+      combined.includes('copra')
+    ) {
+      return 'Coconut Oil';
+    }
+    if (
+      combined.includes('lamp') ||
+      combined.includes('deepam') ||
+      combined.includes('vilaku') ||
+      combined.includes('vilakku') ||
+      combined.includes('விளக்கு') ||
+      combined.includes('பூஜை') ||
+      combined.includes('pooja')
+    ) {
+      return 'Lamp Oil (Deepam)';
+    }
+    return 'Other Items';
+  },
 
-    const s = settings || {};
-    let totalSalesCash = 0;
-    let totalSalesBank = 0;
-    let totalPurchasesCash = 0;
-    let totalPurchasesBank = 0;
-    let totalExpensesCash = 0;
-    let totalExpensesBank = 0;
+  /**
+   * computeCategorySummary calculates aggregated sales by major product category.
+   */
+  computeCategorySummary(bills) {
+    const catMap = {
+      'Groundnut Oil': { name: 'Groundnut Oil (கடலை எண்ணெய்)', icon: '🥜', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0 },
+      'Sesame Oil': { name: 'Sesame Oil (நல்லெண்ணெய்)', icon: '🫘', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0 },
+      'Coconut Oil': { name: 'Coconut Oil (தேங்காய் எண்ணெய்)', icon: '🥥', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0 },
+      'Oil Cakes (Cattle Feed)': { name: 'Oil Cakes (புண்ணாக்கு / By-Products)', icon: '🌾', unit: 'kg', qty: 0, cash: 0, bank: 0, total: 0 },
+      'Lamp Oil (Deepam)': { name: 'Lamp Oil (விளக்கு எண்ணெய்)', icon: '🪔', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0 },
+      'Seeds & Raw Materials': { name: 'Seeds & Raw Materials', icon: '🌱', unit: 'kg', qty: 0, cash: 0, bank: 0, total: 0 },
+      'Other Items': { name: 'Other Items & Sundry Sales', icon: '📦', unit: 'units', qty: 0, cash: 0, bank: 0, total: 0 }
+    };
 
-    // 1. Process Sales Line Items
-    const salesRows = [];
+    let grandCash = 0;
+    let grandBank = 0;
+    let grandTotal = 0;
+    let grandQty = 0;
+
     (bills || []).forEach(b => {
       let bCash = 0;
       let bBank = 0;
@@ -188,41 +260,425 @@ const ExportEngine = {
       } else {
         bCash = Number(b.paid) || Number(b.grandTotal) || 0;
       }
-      totalSalesCash += bCash;
-      totalSalesBank += bBank;
+      grandCash += bCash;
+      grandBank += bBank;
+      grandTotal += (bCash + bBank);
 
-      if (b.items && b.items.length > 0) {
+      if (b.items && b.items.length) {
         b.items.forEach(it => {
           const ratio = b.grandTotal > 0 ? (it.amount / b.grandTotal) : (1 / b.items.length);
           const itCash = Math.round(bCash * ratio * 100) / 100;
           const itBank = Math.round(bBank * ratio * 100) / 100;
-
-          salesRows.push({
-            'DATE': b.date,
-            'INVOICE NO': b.billNo,
-            'DESCRIPTIVE OF GOODS': it.nameEn + (it.nameTa ? ` (${it.nameTa})` : ''),
-            'QUANTITY': it.qty,
-            'UNIT RATE (₹)': Number(it.price.toFixed(2)),
-            'CASH (₹)': itCash > 0 ? itCash : '',
-            'BANK (₹)': itBank > 0 ? itBank : '',
-            'TOTAL (₹)': Number(it.amount.toFixed(2)),
-            'CUSTOMER': b.customer ? (b.customer.name || 'Consumer') : 'Consumer'
-          });
+          const cat = this.getItemCategory(it);
+          if (!catMap[cat]) {
+            catMap[cat] = { name: cat, icon: '📦', unit: 'units', qty: 0, cash: 0, bank: 0, total: 0 };
+          }
+          catMap[cat].qty += Number(it.qty) || 0;
+          catMap[cat].cash += itCash;
+          catMap[cat].bank += itBank;
+          catMap[cat].total += Number(it.amount) || 0;
+          grandQty += Number(it.qty) || 0;
         });
       } else {
-        salesRows.push({
-          'DATE': b.date,
-          'INVOICE NO': b.billNo,
-          'DESCRIPTIVE OF GOODS': 'General Counter Sales',
-          'QUANTITY': 1,
-          'UNIT RATE (₹)': Number(b.grandTotal.toFixed(2)),
-          'CASH (₹)': bCash > 0 ? bCash : '',
-          'BANK (₹)': bBank > 0 ? bBank : '',
-          'TOTAL (₹)': Number(b.grandTotal.toFixed(2)),
-          'CUSTOMER': b.customer ? (b.customer.name || 'Consumer') : 'Consumer'
+        const cat = 'Other Items';
+        catMap[cat].qty += 1;
+        catMap[cat].cash += bCash;
+        catMap[cat].bank += bBank;
+        catMap[cat].total += Number(b.grandTotal) || 0;
+        grandQty += 1;
+      }
+    });
+
+    const categories = [];
+    const order = ['Groundnut Oil', 'Sesame Oil', 'Coconut Oil', 'Oil Cakes (Cattle Feed)', 'Lamp Oil (Deepam)', 'Seeds & Raw Materials', 'Other Items'];
+
+    order.forEach(catKey => {
+      const d = catMap[catKey];
+      if (d && (d.total > 0 || d.qty > 0)) {
+        const pct = grandTotal > 0 ? ((d.total / grandTotal) * 100).toFixed(2) : '0.00';
+        categories.push({
+          key: catKey,
+          name: d.name,
+          icon: d.icon,
+          unit: d.unit,
+          qty: d.qty,
+          cash: d.cash,
+          bank: d.bank,
+          total: d.total,
+          pct: pct,
+          isTotal: false
         });
       }
     });
+
+    for (const [k, d] of Object.entries(catMap)) {
+      if (!order.includes(k) && (d.total > 0 || d.qty > 0)) {
+        const pct = grandTotal > 0 ? ((d.total / grandTotal) * 100).toFixed(2) : '0.00';
+        categories.push({
+          key: k,
+          name: d.name,
+          icon: d.icon,
+          unit: d.unit,
+          qty: d.qty,
+          cash: d.cash,
+          bank: d.bank,
+          total: d.total,
+          pct: pct,
+          isTotal: false
+        });
+      }
+    }
+
+    categories.push({
+      key: 'TOTAL',
+      name: 'TOTAL GROSS SALES',
+      icon: '📊',
+      unit: '',
+      qty: grandQty,
+      cash: grandCash,
+      bank: grandBank,
+      total: grandTotal,
+      pct: '100.00',
+      isTotal: true
+    });
+
+    return {
+      categories,
+      grandCash,
+      grandBank,
+      grandTotal,
+      grandQty
+    };
+  },
+
+  /**
+   * buildItemWiseSalesRows formats detailed item rows with category subtotals.
+   */
+  buildItemWiseSalesRows(bills, grandTotalSales) {
+    const itemMap = {};
+    const catTotals = {};
+
+    (bills || []).forEach(b => {
+      let bCash = 0;
+      let bBank = 0;
+      if (b.payMode === 'Split' || (b.cashPaid > 0 && b.upiPaid > 0)) {
+        bCash = Number(b.cashPaid) || 0;
+        bBank = Number(b.upiPaid) || 0;
+      } else if (b.payMode === 'UPI' || b.payMode === 'Card') {
+        bBank = Number(b.paid) || Number(b.grandTotal) || 0;
+      } else {
+        bCash = Number(b.paid) || Number(b.grandTotal) || 0;
+      }
+
+      if (b.items && b.items.length) {
+        b.items.forEach(it => {
+          const ratio = b.grandTotal > 0 ? (it.amount / b.grandTotal) : (1 / b.items.length);
+          const itCash = Math.round(bCash * ratio * 100) / 100;
+          const itBank = Math.round(bBank * ratio * 100) / 100;
+          const cat = this.getItemCategory(it);
+          const key = it.nameEn || 'General Item';
+
+          if (!itemMap[cat]) itemMap[cat] = {};
+          if (!itemMap[cat][key]) {
+            itemMap[cat][key] = {
+              nameEn: it.nameEn,
+              nameTa: it.nameTa || '',
+              hsn: it.hsn || '',
+              qty: 0,
+              cash: 0,
+              bank: 0,
+              total: 0
+            };
+          }
+          itemMap[cat][key].qty += Number(it.qty) || 0;
+          itemMap[cat][key].cash += itCash;
+          itemMap[cat][key].bank += itBank;
+          itemMap[cat][key].total += Number(it.amount) || 0;
+
+          if (!catTotals[cat]) catTotals[cat] = { qty: 0, cash: 0, bank: 0, total: 0 };
+          catTotals[cat].qty += Number(it.qty) || 0;
+          catTotals[cat].cash += itCash;
+          catTotals[cat].bank += itBank;
+          catTotals[cat].total += Number(it.amount) || 0;
+        });
+      } else {
+        const cat = 'Other Items';
+        const key = 'General Counter Sales';
+        if (!itemMap[cat]) itemMap[cat] = {};
+        if (!itemMap[cat][key]) {
+          itemMap[cat][key] = {
+            nameEn: key,
+            nameTa: '',
+            hsn: '',
+            qty: 0,
+            cash: 0,
+            bank: 0,
+            total: 0
+          };
+        }
+        itemMap[cat][key].qty += 1;
+        itemMap[cat][key].cash += bCash;
+        itemMap[cat][key].bank += bBank;
+        itemMap[cat][key].total += Number(b.grandTotal) || 0;
+
+        if (!catTotals[cat]) catTotals[cat] = { qty: 0, cash: 0, bank: 0, total: 0 };
+        catTotals[cat].qty += 1;
+        catTotals[cat].cash += bCash;
+        catTotals[cat].bank += bBank;
+        catTotals[cat].total += Number(b.grandTotal) || 0;
+      }
+    });
+
+    const rows = [];
+    const order = ['Groundnut Oil', 'Sesame Oil', 'Coconut Oil', 'Oil Cakes (Cattle Feed)', 'Lamp Oil (Deepam)', 'Seeds & Raw Materials', 'Other Items'];
+
+    let overallQty = 0;
+    let overallCash = 0;
+    let overallBank = 0;
+    let overallTotal = 0;
+
+    const allCats = Object.keys(itemMap);
+    const sortedCats = [
+      ...order.filter(c => allCats.includes(c)),
+      ...allCats.filter(c => !order.includes(c))
+    ];
+
+    sortedCats.forEach(cat => {
+      const items = itemMap[cat];
+      const cTot = catTotals[cat] || { qty: 0, cash: 0, bank: 0, total: 0 };
+      overallQty += cTot.qty;
+      overallCash += cTot.cash;
+      overallBank += cTot.bank;
+      overallTotal += cTot.total;
+
+      // Header row for category
+      rows.push({
+        'PRODUCT CATEGORY': `>>> ${cat.toUpperCase()} <<<`,
+        'ITEM NAME (ENGLISH)': '',
+        'ITEM NAME (TAMIL)': '',
+        'HSN CODE': '',
+        'TOTAL QUANTITY SOLD': '',
+        'AVERAGE RATE (₹)': '',
+        'CASH SALES (₹)': '',
+        'BANK / UPI SALES (₹)': '',
+        'TOTAL SALES VALUE (₹)': '',
+        '% SHARE OF TOTAL SALES': ''
+      });
+
+      // Item rows sorted descending by total revenue
+      const sortedItems = Object.values(items).sort((a, b) => b.total - a.total);
+      sortedItems.forEach(it => {
+        const avg = it.qty > 0 ? (it.total / it.qty) : 0;
+        const pct = grandTotalSales > 0 ? ((it.total / grandTotalSales) * 100).toFixed(2) : '0.00';
+        rows.push({
+          'PRODUCT CATEGORY': cat,
+          'ITEM NAME (ENGLISH)': it.nameEn,
+          'ITEM NAME (TAMIL)': it.nameTa,
+          'HSN CODE': it.hsn,
+          'TOTAL QUANTITY SOLD': Number(it.qty.toFixed(2)),
+          'AVERAGE RATE (₹)': Number(avg.toFixed(2)),
+          'CASH SALES (₹)': Number(it.cash.toFixed(2)),
+          'BANK / UPI SALES (₹)': Number(it.bank.toFixed(2)),
+          'TOTAL SALES VALUE (₹)': Number(it.total.toFixed(2)),
+          '% SHARE OF TOTAL SALES': `${pct}%`
+        });
+      });
+
+      // Subtotal row for category
+      const catPct = grandTotalSales > 0 ? ((cTot.total / grandTotalSales) * 100).toFixed(2) : '0.00';
+      const catAvg = cTot.qty > 0 ? (cTot.total / cTot.qty) : 0;
+      rows.push({
+        'PRODUCT CATEGORY': `SUBTOTAL — ${cat.toUpperCase()}`,
+        'ITEM NAME (ENGLISH)': `${sortedItems.length} Products`,
+        'ITEM NAME (TAMIL)': '',
+        'HSN CODE': '---',
+        'TOTAL QUANTITY SOLD': Number(cTot.qty.toFixed(2)),
+        'AVERAGE RATE (₹)': Number(catAvg.toFixed(2)),
+        'CASH SALES (₹)': Number(cTot.cash.toFixed(2)),
+        'BANK / UPI SALES (₹)': Number(cTot.bank.toFixed(2)),
+        'TOTAL SALES VALUE (₹)': Number(cTot.total.toFixed(2)),
+        '% SHARE OF TOTAL SALES': `${catPct}%`
+      });
+
+      rows.push({});
+    });
+
+    rows.push({
+      'PRODUCT CATEGORY': 'GRAND TOTAL MONTHLY SALES',
+      'ITEM NAME (ENGLISH)': 'ALL PRODUCT CATEGORIES',
+      'ITEM NAME (TAMIL)': 'அனைத்து பொருட்கள்',
+      'HSN CODE': '---',
+      'TOTAL QUANTITY SOLD': Number(overallQty.toFixed(2)),
+      'AVERAGE RATE (₹)': overallQty > 0 ? Number((overallTotal / overallQty).toFixed(2)) : '---',
+      'CASH SALES (₹)': Number(overallCash.toFixed(2)),
+      'BANK / UPI SALES (₹)': Number(overallBank.toFixed(2)),
+      'TOTAL SALES VALUE (₹)': Number(overallTotal.toFixed(2)),
+      '% SHARE OF TOTAL SALES': '100.00%'
+    });
+
+    return rows;
+  },
+
+  /**
+   * buildGroupedSalesRegisterRows groups sales lines into category sections with subtotals.
+   */
+  buildGroupedSalesRegisterRows(bills) {
+    const catSales = {};
+    const order = ['Groundnut Oil', 'Sesame Oil', 'Coconut Oil', 'Oil Cakes (Cattle Feed)', 'Lamp Oil (Deepam)', 'Seeds & Raw Materials', 'Other Items'];
+
+    (bills || []).forEach(b => {
+      let bCash = 0;
+      let bBank = 0;
+      if (b.payMode === 'Split' || (b.cashPaid > 0 && b.upiPaid > 0)) {
+        bCash = Number(b.cashPaid) || 0;
+        bBank = Number(b.upiPaid) || 0;
+      } else if (b.payMode === 'UPI' || b.payMode === 'Card') {
+        bBank = Number(b.paid) || Number(b.grandTotal) || 0;
+      } else {
+        bCash = Number(b.paid) || Number(b.grandTotal) || 0;
+      }
+
+      if (b.items && b.items.length) {
+        b.items.forEach(it => {
+          const ratio = b.grandTotal > 0 ? (it.amount / b.grandTotal) : (1 / b.items.length);
+          const itCash = Math.round(bCash * ratio * 100) / 100;
+          const itBank = Math.round(bBank * ratio * 100) / 100;
+          const cat = this.getItemCategory(it);
+          if (!catSales[cat]) catSales[cat] = [];
+          catSales[cat].push({
+            date: b.date,
+            billNo: b.billNo,
+            desc: it.nameEn + (it.nameTa ? ` (${it.nameTa})` : ''),
+            qty: it.qty,
+            rate: it.price,
+            cash: itCash,
+            bank: itBank,
+            total: it.amount,
+            customer: b.customer ? (b.customer.name || 'Walk-in') : 'Walk-in'
+          });
+        });
+      } else {
+        const cat = 'Other Items';
+        if (!catSales[cat]) catSales[cat] = [];
+        catSales[cat].push({
+          date: b.date,
+          billNo: b.billNo,
+          desc: 'General Counter Sales',
+          qty: 1,
+          rate: b.grandTotal,
+          cash: bCash,
+          bank: bBank,
+          total: b.grandTotal,
+          customer: b.customer ? (b.customer.name || 'Walk-in') : 'Walk-in'
+        });
+      }
+    });
+
+    const rows = [];
+    let grandQty = 0;
+    let grandCash = 0;
+    let grandBank = 0;
+    let grandTotal = 0;
+
+    const allCats = Object.keys(catSales);
+    const sortedCats = [
+      ...order.filter(c => allCats.includes(c)),
+      ...allCats.filter(c => !order.includes(c))
+    ];
+
+    sortedCats.forEach(cat => {
+      const list = catSales[cat] || [];
+      if (!list.length) return;
+
+      let cQty = 0, cCash = 0, cBank = 0, cTotal = 0;
+      rows.push({
+        'DATE': `=== ${cat.toUpperCase()} SALES ===`,
+        'INVOICE NO': '',
+        'DESCRIPTIVE OF GOODS': '',
+        'QUANTITY': '',
+        'UNIT RATE (₹)': '',
+        'CASH (₹)': '',
+        'BANK (₹)': '',
+        'TOTAL (₹)': '',
+        'CUSTOMER': ''
+      });
+
+      list.forEach(r => {
+        cQty += r.qty;
+        cCash += r.cash;
+        cBank += r.bank;
+        cTotal += r.total;
+
+        rows.push({
+          'DATE': r.date,
+          'INVOICE NO': r.billNo,
+          'DESCRIPTIVE OF GOODS': r.desc,
+          'QUANTITY': r.qty,
+          'UNIT RATE (₹)': Number(r.rate.toFixed(2)),
+          'CASH (₹)': r.cash > 0 ? Number(r.cash.toFixed(2)) : '',
+          'BANK (₹)': r.bank > 0 ? Number(r.bank.toFixed(2)) : '',
+          'TOTAL (₹)': Number(r.total.toFixed(2)),
+          'CUSTOMER': r.customer
+        });
+      });
+
+      grandQty += cQty;
+      grandCash += cCash;
+      grandBank += cBank;
+      grandTotal += cTotal;
+
+      rows.push({
+        'DATE': `SUBTOTAL — ${cat.toUpperCase()}`,
+        'INVOICE NO': `${list.length} Invoices`,
+        'DESCRIPTIVE OF GOODS': '',
+        'QUANTITY': Number(cQty.toFixed(2)),
+        'UNIT RATE (₹)': '',
+        'CASH (₹)': Number(cCash.toFixed(2)),
+        'BANK (₹)': Number(cBank.toFixed(2)),
+        'TOTAL (₹)': Number(cTotal.toFixed(2)),
+        'CUSTOMER': ''
+      });
+
+      rows.push({});
+    });
+
+    rows.push({
+      'DATE': 'GRAND TOTAL MONTHLY SALES',
+      'INVOICE NO': 'ALL INVOICES',
+      'DESCRIPTIVE OF GOODS': '',
+      'QUANTITY': Number(grandQty.toFixed(2)),
+      'UNIT RATE (₹)': '',
+      'CASH (₹)': Number(grandCash.toFixed(2)),
+      'BANK (₹)': Number(grandBank.toFixed(2)),
+      'TOTAL (₹)': Number(grandTotal.toFixed(2)),
+      'CUSTOMER': ''
+    });
+
+    return rows;
+  },
+
+  /**
+   * exportMonthlyPnLToExcel creates an executive Monthly Income & Expense Excel workbook
+   * with prominent product category sales breakdown, detailed item-wise summary,
+   * section-grouped sales register, raw material purchases, and operational overhead expenses.
+   */
+  exportMonthlyPnLToExcel(monthStr, bills, purchases, expenses, settings) {
+    if (typeof XLSX === 'undefined') {
+      alert('Excel library not loaded.');
+      return;
+    }
+
+    const s = settings || {};
+    let totalPurchasesCash = 0;
+    let totalPurchasesBank = 0;
+    let totalExpensesCash = 0;
+    let totalExpensesBank = 0;
+
+    // 1. Process Product Category Summary
+    const catSummary = this.computeCategorySummary(bills);
+    const totalSalesCash = catSummary.grandCash;
+    const totalSalesBank = catSummary.grandBank;
+    const totalSales = catSummary.grandTotal;
 
     // 2. Process Purchases
     const purchaseRows = (purchases || []).map(p => {
@@ -265,8 +721,7 @@ const ExportEngine = {
       };
     });
 
-    // 4. Executive Reconciliation Summary (Exact VFPCL Format)
-    const totalSales = totalSalesCash + totalSalesBank;
+    // 4. Executive Summary Rows
     const totalPurchases = totalPurchasesCash + totalPurchasesBank;
     const totalExpenses = totalExpensesCash + totalExpensesBank;
     const totalOutflowCash = totalPurchasesCash + totalExpensesCash;
@@ -277,24 +732,54 @@ const ExportEngine = {
     const netSurplusTotal = totalSales - totalOutflow;
 
     const summaryRows = [
-      { 'FINANCIAL ACCOUNTING HEAD': '1. GROSS SALES REVENUE (INCOME)', 'CASH (₹)': totalSalesCash, 'BANK (₹)': totalSalesBank, 'TOTAL (₹)': totalSales },
-      { 'FINANCIAL ACCOUNTING HEAD': '2. RAW MATERIAL PURCHASES (COGS)', 'CASH (₹)': totalPurchasesCash, 'BANK (₹)': totalPurchasesBank, 'TOTAL (₹)': totalPurchases },
-      { 'FINANCIAL ACCOUNTING HEAD': '3. OPERATIONAL & CAPITAL EXPENSES', 'CASH (₹)': totalExpensesCash, 'BANK (₹)': totalExpensesBank, 'TOTAL (₹)': totalExpenses },
-      { 'FINANCIAL ACCOUNTING HEAD': '---------------------------------------', 'CASH (₹)': '------------', 'BANK (₹)': '------------', 'TOTAL (₹)': '------------' },
-      { 'FINANCIAL ACCOUNTING HEAD': 'TOTAL GROSS OUTFLOW (2 + 3)', 'CASH (₹)': totalOutflowCash, 'BANK (₹)': totalOutflowBank, 'TOTAL (₹)': totalOutflow },
-      { 'FINANCIAL ACCOUNTING HEAD': 'NET OPERATIONAL CASH FLOW (SURPLUS)', 'CASH (₹)': netSurplusCash, 'BANK (₹)': netSurplusBank, 'TOTAL (₹)': netSurplusTotal }
+      { 'FINANCIAL ACCOUNTING HEAD': '=== 1. PRODUCT CATEGORY SALES SUMMARY (TURNOVER) ===', 'QUANTITY / VOLUME': '', 'CASH (₹)': '', 'BANK (₹)': '', 'TOTAL (₹)': '', 'SHARE (%)': '' }
     ];
 
+    catSummary.categories.forEach(c => {
+      summaryRows.push({
+        'FINANCIAL ACCOUNTING HEAD': c.name,
+        'QUANTITY / VOLUME': c.qty > 0 ? `${c.qty.toFixed(2)} ${c.unit}` : '---',
+        'CASH (₹)': c.cash,
+        'BANK (₹)': c.bank,
+        'TOTAL (₹)': c.total,
+        'SHARE (%)': `${c.pct}%`
+      });
+    });
+
+    summaryRows.push({});
+    summaryRows.push({ 'FINANCIAL ACCOUNTING HEAD': '=== 2. FINANCIAL RECONCILIATION & NET OPERATING SURPLUS ===', 'QUANTITY / VOLUME': '', 'CASH (₹)': '', 'BANK (₹)': '', 'TOTAL (₹)': '', 'SHARE (%)': '' });
+    summaryRows.push({ 'FINANCIAL ACCOUNTING HEAD': '1. GROSS SALES REVENUE (INCOME)', 'QUANTITY / VOLUME': '---', 'CASH (₹)': totalSalesCash, 'BANK (₹)': totalSalesBank, 'TOTAL (₹)': totalSales, 'SHARE (%)': '100.00%' });
+    summaryRows.push({ 'FINANCIAL ACCOUNTING HEAD': '2. RAW MATERIAL PURCHASES (COGS)', 'QUANTITY / VOLUME': '---', 'CASH (₹)': totalPurchasesCash, 'BANK (₹)': totalPurchasesBank, 'TOTAL (₹)': totalPurchases, 'SHARE (%)': totalSales > 0 ? `${((totalPurchases / totalSales) * 100).toFixed(2)}%` : '---' });
+    summaryRows.push({ 'FINANCIAL ACCOUNTING HEAD': '3. OPERATIONAL & CAPITAL EXPENSES', 'QUANTITY / VOLUME': '---', 'CASH (₹)': totalExpensesCash, 'BANK (₹)': totalExpensesBank, 'TOTAL (₹)': totalExpenses, 'SHARE (%)': totalSales > 0 ? `${((totalExpenses / totalSales) * 100).toFixed(2)}%` : '---' });
+    summaryRows.push({ 'FINANCIAL ACCOUNTING HEAD': '---------------------------------------------------', 'QUANTITY / VOLUME': '---', 'CASH (₹)': '------------', 'BANK (₹)': '------------', 'TOTAL (₹)': '------------', 'SHARE (%)': '---' });
+    summaryRows.push({ 'FINANCIAL ACCOUNTING HEAD': 'TOTAL GROSS OUTFLOW (2 + 3)', 'QUANTITY / VOLUME': '---', 'CASH (₹)': totalOutflowCash, 'BANK (₹)': totalOutflowBank, 'TOTAL (₹)': totalOutflow, 'SHARE (%)': totalSales > 0 ? `${((totalOutflow / totalSales) * 100).toFixed(2)}%` : '---' });
+    summaryRows.push({ 'FINANCIAL ACCOUNTING HEAD': 'NET OPERATIONAL CASH FLOW (SURPLUS)', 'QUANTITY / VOLUME': '---', 'CASH (₹)': netSurplusCash, 'BANK (₹)': netSurplusBank, 'TOTAL (₹)': netSurplusTotal, 'SHARE (%)': totalSales > 0 ? `${((netSurplusTotal / totalSales) * 100).toFixed(2)}%` : '---' });
+
+    // 5. Build Item-Wise Sales Summary Rows
+    const itemSummaryRows = this.buildItemWiseSalesRows(bills, totalSales);
+
+    // 6. Build Grouped Sales Register Rows (VFPCL Format)
+    const groupedSalesRows = this.buildGroupedSalesRegisterRows(bills);
+
     const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Executive Summary
     const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Executive Summary');
 
-    const wsSales = XLSX.utils.json_to_sheet(salesRows);
+    // Sheet 2: Item-Wise Sales Summary (The requested per-item breakdown)
+    const wsItemSummary = XLSX.utils.json_to_sheet(itemSummaryRows);
+    XLSX.utils.book_append_sheet(wb, wsItemSummary, 'Item-Wise Sales Summary');
+
+    // Sheet 3: Sales Register (Grouped by Category)
+    const wsSales = XLSX.utils.json_to_sheet(groupedSalesRows);
     XLSX.utils.book_append_sheet(wb, wsSales, 'Sales Register');
 
+    // Sheet 4: Purchases
     const wsPurchases = XLSX.utils.json_to_sheet(purchaseRows);
     XLSX.utils.book_append_sheet(wb, wsPurchases, 'Purchases');
 
+    // Sheet 5: Expenses
     const wsExpenses = XLSX.utils.json_to_sheet(expenseRows);
     XLSX.utils.book_append_sheet(wb, wsExpenses, 'Expenses');
 
@@ -311,4 +796,6 @@ const ExportEngine = {
   }
 };
 
-window.ExportEngine = ExportEngine;
+if (typeof window !== 'undefined') {
+  window.ExportEngine = ExportEngine;
+}

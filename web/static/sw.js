@@ -13,7 +13,7 @@
      3. fetch: Network-First for navigation & UI assets, falling back to cache if offline.
    ========================================================================== */
 
-const CACHE_NAME = 'siraazhi-pos-v9';
+const CACHE_NAME = 'siraazhi-pos-v10';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

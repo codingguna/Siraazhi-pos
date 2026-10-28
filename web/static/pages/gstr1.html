@@ -6,7 +6,7 @@
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <div style="display:flex; align-items:center; gap:6px; background:#f8fafc; padding:4px 8px; border-radius:6px; border:1px solid #cbd5e1;">
               <label for="reportMonthPicker" style="font-size:12px; font-weight:700; color:#475569;">Month:</label>
-              <input type="month" id="reportMonthPicker" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px; font-weight:700; font-size:12px;">
+              <input type="month" id="reportMonthPicker" onchange="loadGSTR1Report()" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px; font-weight:700; font-size:12px;">
             </div>
             <button class="btn btn-export btn-excel" onclick="exportMonthlyPnLExcel()" style="background:#15803d; color:#fff;" title="Export Monthly Income & Expense Report in VFPCL Format">📊 Monthly Income & Expense (Excel)</button>
             <button class="btn btn-export btn-excel" onclick="exportGSTR1Excel()">📗 Export GSTR-1 Excel File</button>
@@ -15,6 +15,28 @@
 
         <div class="gstr1-summary-cards" id="gstr1Cards">
           <!-- Dynamically populated -->
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+          <h3 style="margin:0;">📦 Product Category & Item Sales Summary</h3>
+          <span style="font-size:12px; color:#64748b; font-weight:600;">Monthly product revenue contribution (Groundnut, Sesame, Coconut & Other items)</span>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Product Category</th>
+                <th>Units / Volume Sold</th>
+                <th>Cash Sales (₹)</th>
+                <th>Bank / UPI Sales (₹)</th>
+                <th>Total Sales (₹)</th>
+                <th>Revenue Share (%)</th>
+              </tr>
+            </thead>
+            <tbody id="itemCategorySummaryBody">
+              <!-- Dynamically populated in loadGSTR1Report -->
+            </tbody>
+          </table>
         </div>
 
         <h3 style="margin-top:20px;">B2B Tax Invoices (Registered Dealers)</h3>

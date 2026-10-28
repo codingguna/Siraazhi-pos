@@ -1909,13 +1909,29 @@ let GSTR1_DATA = null;
 async function loadGSTR1Report() {
   if (!IS_MASTER_MODE) return;
   try {
-    const from = $('filterFrom').value;
-    const to = $('filterTo').value;
+    let from = $('filterFrom') ? $('filterFrom').value : '';
+    let to = $('filterTo') ? $('filterTo').value : '';
+
+    const monthPicker = $('reportMonthPicker');
+    if (monthPicker && monthPicker.value) {
+      const ym = monthPicker.value;
+      from = `${ym}-01`;
+      const parts = ym.split('-');
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const lastDay = new Date(y, m, 0).getDate();
+      to = `${ym}-${lastDay < 10 ? '0' + lastDay : lastDay}`;
+    }
+
     const q = [];
     if (from) q.push(`from=${from}`);
     if (to) q.push(`to=${to}`);
 
-    GSTR1_DATA = await api('GET', '/api/reports/gstr1' + (q.length ? '?' + q.join('&') : ''));
+    const [gstrData, billsList] = await Promise.all([
+      api('GET', '/api/reports/gstr1' + (q.length ? '?' + q.join('&') : '')),
+      api('GET', '/api/bills' + (q.length ? '?' + q.join('&') : ''))
+    ]);
+    GSTR1_DATA = gstrData;
     
     // Cards
     $('gstr1Cards').innerHTML = `
@@ -1938,6 +1954,25 @@ async function loadGSTR1Report() {
         </div>
       </div>
     `;
+
+    // Item Category Summary Table
+    if ($('itemCategorySummaryBody')) {
+      const summary = ExportEngine.computeCategorySummary(billsList);
+      if (summary.categories && summary.categories.length > 1) {
+        $('itemCategorySummaryBody').innerHTML = summary.categories.map(c => `
+          <tr style="${c.isTotal ? 'font-weight:700; background:#f8fafc; border-top:2px solid #cbd5e1;' : ''}">
+            <td><b>${c.icon} ${c.name}</b></td>
+            <td>${c.qty > 0 ? c.qty.toFixed(2) + ' ' + c.unit : (c.isTotal ? '—' : '0')}</td>
+            <td style="color:#15803d; font-weight:600;">${formatINR(c.cash)}</td>
+            <td style="color:#0284c7; font-weight:600;">${formatINR(c.bank)}</td>
+            <td><b style="font-size:14px;">${formatINR(c.total)}</b></td>
+            <td><span class="chip-btn" style="background:${c.isTotal ? '#e2e8f0' : '#f0fdf4'}; color:#0f172a; font-weight:700;">${c.pct}%</span></td>
+          </tr>
+        `).join('');
+      } else {
+        $('itemCategorySummaryBody').innerHTML = `<tr><td colspan="6" class="center muted-text" style="padding:24px;">No item sales recorded for this period</td></tr>`;
+      }
+    }
 
     // B2B Table
     $('gstr1B2BBody').innerHTML = (GSTR1_DATA.b2b || []).length ? GSTR1_DATA.b2b.map(r => `
