@@ -243,13 +243,13 @@ const ExportEngine = {
    */
   computeCategorySummary(bills) {
     const catMap = {
-      'Groundnut Oil': { name: 'Groundnut Oil (கடலை எண்ணெய்)', icon: '🥜', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
-      'Sesame Oil': { name: 'Sesame Oil (நல்லெண்ணெய்)', icon: '🫘', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
-      'Coconut Oil': { name: 'Coconut Oil (தேங்காய் எண்ணெய்)', icon: '🥥', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
-      'Oil Cakes (Cattle Feed)': { name: 'Oil Cakes (புண்ணாக்கு / By-Products)', icon: '🌾', unit: 'kg', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
-      'Lamp Oil (Deepam)': { name: 'Lamp Oil (விளக்கு எண்ணெய்)', icon: '🪔', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
-      'Seeds & Raw Materials': { name: 'Seeds & Raw Materials', icon: '🌱', unit: 'kg', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
-      'Other Items': { name: 'Other Items & Sundry Sales', icon: '📦', unit: 'units', qty: 0, cash: 0, bank: 0, total: 0, items: {} }
+      'Groundnut Oil': { name: 'Groundnut Oil (கடலை எண்ணெய்)', icon: '🥜', unit: '', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Sesame Oil': { name: 'Sesame Oil (நல்லெண்ணெய்)', icon: '🫘', unit: '', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Coconut Oil': { name: 'Coconut Oil (தேங்காய் எண்ணெய்)', icon: '🥥', unit: '', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Oil Cakes (Cattle Feed)': { name: 'Oil Cakes (புண்ணாக்கு / By-Products)', icon: '🌾', unit: '', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Lamp Oil (Deepam)': { name: 'Lamp Oil (விளக்கு எண்ணெய்)', icon: '🪔', unit: '', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Seeds & Raw Materials': { name: 'Seeds & Raw Materials', icon: '🌱', unit: '', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Other Items': { name: 'Other Items & Sundry Sales', icon: '📦', unit: '', qty: 0, cash: 0, bank: 0, total: 0, items: {} }
     };
 
     let grandCash = 0;
@@ -279,7 +279,7 @@ const ExportEngine = {
           const itBank = Math.round(bBank * ratio * 100) / 100;
           const cat = this.getItemCategory(it);
           if (!catMap[cat]) {
-            catMap[cat] = { name: cat, icon: '📦', unit: 'units', qty: 0, cash: 0, bank: 0, total: 0, items: {} };
+            catMap[cat] = { name: cat, icon: '📦', unit: '', qty: 0, cash: 0, bank: 0, total: 0, items: {} };
           }
           if (!catMap[cat].items) {
             catMap[cat].items = {};
@@ -789,7 +789,7 @@ const ExportEngine = {
     catSummary.categories.forEach(c => {
       summaryRows.push({
         'FINANCIAL ACCOUNTING HEAD': c.isTotal ? `=== ${c.name} ===` : c.name,
-        'QUANTITY / VOLUME': c.qty > 0 ? `${c.qty.toFixed(2)} ${c.unit}` : '---',
+        'QUANTITY / VOLUME': c.qty > 0 ? c.qty.toFixed(2) : '---',
         'CASH (₹)': c.cash,
         'BANK (₹)': c.bank,
         'TOTAL (₹)': c.total,
@@ -866,7 +866,7 @@ const ExportEngine = {
     catSummary.categories.forEach(c => {
       summaryRows.push({
         'CATEGORY / HEAD': c.isTotal ? `=== ${c.name} ===` : c.name,
-        'VOLUME / UNITS SOLD': c.qty > 0 ? `${c.qty.toFixed(2)} ${c.unit}` : '---',
+        'VOLUME / UNITS SOLD': c.qty > 0 ? c.qty.toFixed(2) : '---',
         'CASH SALES (₹)': c.cash,
         'BANK / UPI SALES (₹)': c.bank,
         'TOTAL SALES (₹)': c.total,

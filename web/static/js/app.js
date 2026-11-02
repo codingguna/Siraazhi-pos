@@ -1596,7 +1596,7 @@ function renderCategoryAndItemRows(summary, periodLabel) {
               <span style="font-size:11px; background:#e2e8f0; color:#475569; padding:1px 7px; border-radius:10px; font-weight:600;">${itemCount} ${itemCount === 1 ? 'item' : 'items'}</span>
             </div>
           </td>
-          <td><b>${c.qty > 0 ? c.qty.toFixed(2) + ' ' + (c.unit || '') : '0'}</b></td>
+          <td><b>${c.qty > 0 ? c.qty.toFixed(2) : '0'}</b></td>
           <td style="color:#15803d; font-weight:600;">${formatINR(c.cash)}</td>
           <td style="color:#0284c7; font-weight:600;">${formatINR(c.bank)}</td>
           <td><b style="font-size:14px; color:#0f172a;">${formatINR(c.total)}</b></td>
