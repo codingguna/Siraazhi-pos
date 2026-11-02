@@ -852,6 +852,55 @@ const ExportEngine = {
   },
 
   /**
+   * exportCategorySummaryToExcel exports the filtered Category & Exact Item Sales Summary to Excel.
+   */
+  exportCategorySummaryToExcel(bills, periodLabel) {
+    const totalSales = (bills || []).reduce((acc, b) => acc + (Number(b.grandTotal) || 0), 0);
+    const catSummary = this.computeCategorySummary(bills);
+    const itemRows = this.buildItemWiseSalesRows(bills, totalSales);
+
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Category & Exact Items Summary
+    const summaryRows = [];
+    catSummary.categories.forEach(c => {
+      summaryRows.push({
+        'CATEGORY / HEAD': c.isTotal ? `=== ${c.name} ===` : c.name,
+        'VOLUME / UNITS SOLD': c.qty > 0 ? `${c.qty.toFixed(2)} ${c.unit}` : '---',
+        'CASH SALES (₹)': c.cash,
+        'BANK / UPI SALES (₹)': c.bank,
+        'TOTAL SALES (₹)': c.total,
+        'REVENUE SHARE (%)': `${c.pct}%`
+      });
+      if (c.items && c.items.length) {
+        c.items.forEach(it => {
+          summaryRows.push({
+            'CATEGORY / HEAD': `   ↳ ${it.nameEn}${it.nameTa ? ` (${it.nameTa})` : ''}`,
+            'VOLUME / UNITS SOLD': it.qty > 0 ? it.qty.toFixed(2) : '---',
+            'CASH SALES (₹)': it.cash,
+            'BANK / UPI SALES (₹)': it.bank,
+            'TOTAL SALES (₹)': it.total,
+            'REVENUE SHARE (%)': `${it.pct}%`
+          });
+        });
+      }
+    });
+
+    const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Category Sales Summary');
+
+    // Sheet 2: Item-Wise Sales Breakdown
+    if (itemRows && itemRows.length) {
+      const wsItems = XLSX.utils.json_to_sheet(itemRows);
+      XLSX.utils.book_append_sheet(wb, wsItems, 'Item-Wise Details');
+    }
+
+    const cleanLabel = (periodLabel || 'Summary').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `Siraazhi_Product_Sales_${cleanLabel}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  },
+
+  /**
    * exportCustomerLedgerToExcel exports the complete Customer Statement of Account
    * matching standard commercial accounting ledgers (as per user spec).
    */

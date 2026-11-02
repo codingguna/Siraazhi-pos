@@ -41,10 +41,39 @@
       <!-- Product Category & Item Sales Summary -->
       <div class="panel-box" style="margin-top:16px;">
         <div class="panel-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-          <span>📦 Product Category & Item Sales Summary / உற்பத்தி பொருள் விற்பனை சுருக்கம்</span>
-          <div style="display:flex; gap:8px; align-items:center;">
-            <button class="btn btn-export btn-excel" onclick="exportMonthlyPnLExcel()" style="background:#15803d; color:#fff; font-size:12px; padding:4px 10px;" title="Download complete Excel report">📊 Download Excel Report</button>
-            <button class="btn-link" onclick="switchTab('gstr1')" style="font-size:12px;">Full CA & GST Reports →</button>
+          <span>📦 Product Category &amp; Item Sales Summary / உற்பத்தி பொருள் விற்பனை சுருக்கம்</span>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-export btn-excel" onclick="exportCategorySummaryExcel()" style="background:#15803d; color:#fff; font-size:12px; padding:4px 10px;" title="Download filtered Category Sales Excel report">📊 Download Excel Report</button>
+            <button class="btn-link" onclick="switchTab('gstr1')" style="font-size:12px;">Full CA &amp; GST Reports →</button>
+          </div>
+        </div>
+
+        <!-- TIMELINE FILTER BAR -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin:8px 0 14px 0; padding:10px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <label for="dashCatFilterPeriod" style="font-size:12px; font-weight:700; color:#475569;">📅 Timeline / காலவரிசை:</label>
+            <select id="dashCatFilterPeriod" onchange="onDashCategoryPeriodChange(this.value)" style="padding:5px 10px; border-radius:6px; border:1px solid #cbd5e1; font-size:12.5px; font-weight:600; background:#fff; color:#0f172a; cursor:pointer;">
+              <option value="this_month">This Month / நடப்பு மாதம்</option>
+              <option value="last_month">Last Month / கடந்த மாதம்</option>
+              <option value="last_3_months">Last 3 Months / கடந்த 3 மாதங்கள்</option>
+              <option value="today">Today / இன்று</option>
+              <option value="this_week">This Week / இந்த வாரம்</option>
+              <option value="fy">Current FY 2026-27 / நிதியாண்டு</option>
+              <option value="all">All Time / அனைத்து பழைய தரவுகள்</option>
+              <option value="custom">Custom Date Range / தனிப்பயன் தேதி...</option>
+            </select>
+
+            <div id="dashCatCustomDateRow" style="display:none; align-items:center; gap:6px;">
+              <input type="date" id="dashCatDateFrom" style="font-size:12px; padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px;" onchange="applyDashCategoryFilter()">
+              <span style="font-size:12px; color:#64748b; font-weight:600;">to</span>
+              <input type="date" id="dashCatDateTo" style="font-size:12px; padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px;" onchange="applyDashCategoryFilter()">
+              <button class="btn btn-sm btn-secondary" onclick="applyDashCategoryFilter()" style="font-size:11px; padding:4px 8px;">Apply</button>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span id="dashCatFilterSummary" style="font-size:12px; font-weight:700; color:#15803d; background:#dcfce7; border:1px solid #86efac; padding:3px 10px; border-radius:12px;">This Month</span>
+            <span id="dashCatBillsCount" style="font-size:11.5px; color:#64748b; font-weight:600;"></span>
           </div>
         </div>
         <div class="table-responsive">

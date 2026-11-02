@@ -1464,11 +1464,96 @@ async function loadDashboard() {
     `).join('') : '<div style="color:#64748b; padding:10px 0;">No sales recorded yet.</div>';
 
 // --------------------------------------------------------------------------
-// Category & Item Sales Summary Renderer (Dashboard & Reports)
+// Category & Item Sales Summary Timeline Filtering & Renderer (Dashboard & Reports)
 // --------------------------------------------------------------------------
-function renderCategoryAndItemRows(summary) {
+let DASH_CATEGORY_BILLS = [];
+
+/**
+ * filterBillsByTimeline filters an array of bills based on a selected period or custom date range.
+ */
+function filterBillsByTimeline(bills, period, customFrom, customTo) {
+  if (!Array.isArray(bills) || bills.length === 0) return [];
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonthNum = now.getMonth();
+
+  const toDateStr = d => d.toISOString().slice(0, 10);
+  const toMonthStr = d => d.toISOString().slice(0, 7);
+
+  const todayStr = toDateStr(now);
+  const currentMonthStr = toMonthStr(now);
+
+  const lastMonthDate = new Date(currentYear, currentMonthNum - 1, 1);
+  const lastMonthStr = toMonthStr(lastMonthDate);
+
+  const threeMonthsAgoDate = new Date(currentYear, currentMonthNum - 2, 1);
+  const threeMonthsAgoMonthStr = toMonthStr(threeMonthsAgoDate);
+
+  const dayOfWeek = now.getDay();
+  const diffToMon = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMon);
+  const mondayStr = toDateStr(monday);
+
+  const fyStartYear = currentMonthNum >= 3 ? currentYear : currentYear - 1;
+  const fyStartStr = `${fyStartYear}-04-01`;
+  const fyEndStr = `${fyStartYear + 1}-03-31`;
+
+  switch (period) {
+    case 'today':
+      return bills.filter(b => b.date === todayStr);
+
+    case 'this_week':
+      return bills.filter(b => b.date && b.date >= mondayStr && b.date <= todayStr);
+
+    case 'this_month':
+      return bills.filter(b => b.date && b.date.startsWith(currentMonthStr));
+
+    case 'last_month':
+      return bills.filter(b => b.date && b.date.startsWith(lastMonthStr));
+
+    case 'last_3_months':
+      return bills.filter(b => b.date && b.date.slice(0, 7) >= threeMonthsAgoMonthStr && b.date.slice(0, 7) <= currentMonthStr);
+
+    case 'fy':
+      return bills.filter(b => b.date && b.date >= fyStartStr && b.date <= fyEndStr);
+
+    case 'all':
+      return bills;
+
+    case 'custom':
+      return bills.filter(b => {
+        if (!b.date) return false;
+        if (customFrom && b.date < customFrom) return false;
+        if (customTo && b.date > customTo) return false;
+        return true;
+      });
+
+    default:
+      if (typeof period === 'string' && period.length === 7 && period.includes('-')) {
+        return bills.filter(b => b.date && b.date.startsWith(period));
+      }
+      return bills;
+  }
+}
+
+/**
+ * renderCategoryAndItemRows formats category summary rows with exact product items sold listed under each category.
+ */
+function renderCategoryAndItemRows(summary, periodLabel) {
   if (!summary || !summary.categories || summary.categories.length <= 1) {
-    return '<tr><td colspan="6" class="center muted-text" style="padding:20px;">No sales recorded for this period yet</td></tr>';
+    const label = periodLabel || 'this period';
+    return `
+      <tr>
+        <td colspan="6" class="center muted-text" style="padding:24px 16px;">
+          <div style="font-size:13.5px; font-weight:600; color:#64748b;">No product sales recorded for ${escapeHtml(label)}</div>
+          <div style="margin-top:10px; display:flex; justify-content:center; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-sm btn-outline" onclick="selectDashCategoryPeriod('last_month')" style="font-size:11.5px;">📅 View Last Month</button>
+            <button class="btn btn-sm btn-outline" onclick="selectDashCategoryPeriod('all')" style="font-size:11.5px;">📚 View All Time Data</button>
+          </div>
+        </td>
+      </tr>
+    `;
   }
 
   let html = '';
@@ -1529,12 +1614,72 @@ function renderCategoryAndItemRows(summary) {
   return html;
 }
 
-    // Product Category & Item Sales Summary for current month
+function onDashCategoryPeriodChange(val) {
+  const customRow = $('dashCatCustomDateRow');
+  if (customRow) {
+    customRow.style.display = (val === 'custom') ? 'inline-flex' : 'none';
+  }
+  applyDashCategoryFilter();
+}
+
+function selectDashCategoryPeriod(val) {
+  if ($('dashCatFilterPeriod')) {
+    $('dashCatFilterPeriod').value = val;
+    onDashCategoryPeriodChange(val);
+  }
+}
+
+function applyDashCategoryFilter() {
+  if (!$('dashCategorySummaryBody')) return;
+
+  const periodSelect = $('dashCatFilterPeriod');
+  const period = periodSelect ? periodSelect.value : 'this_month';
+  const from = $('dashCatDateFrom') ? $('dashCatDateFrom').value : '';
+  const to = $('dashCatDateTo') ? $('dashCatDateTo').value : '';
+
+  const filteredBills = filterBillsByTimeline(DASH_CATEGORY_BILLS, period, from, to);
+  const summary = ExportEngine.computeCategorySummary(filteredBills);
+
+  const periodLabelMap = {
+    'this_month': 'This Month',
+    'last_month': 'Last Month',
+    'last_3_months': 'Last 3 Months',
+    'today': 'Today',
+    'this_week': 'This Week',
+    'fy': 'FY 2026-27',
+    'all': 'All Time',
+    'custom': (from && to) ? `${from} to ${to}` : 'Custom Range'
+  };
+  const labelText = periodLabelMap[period] || period;
+
+  if ($('dashCatFilterSummary')) {
+    $('dashCatFilterSummary').textContent = labelText;
+  }
+  if ($('dashCatBillsCount')) {
+    $('dashCatBillsCount').textContent = `(${filteredBills.length} ${filteredBills.length === 1 ? 'bill' : 'bills'})`;
+  }
+
+  $('dashCategorySummaryBody').innerHTML = renderCategoryAndItemRows(summary, labelText);
+}
+
+function exportCategorySummaryExcel() {
+  const period = $('dashCatFilterPeriod') ? $('dashCatFilterPeriod').value : 'this_month';
+  const from = $('dashCatDateFrom') ? $('dashCatDateFrom').value : '';
+  const to = $('dashCatDateTo') ? $('dashCatDateTo').value : '';
+  const filteredBills = filterBillsByTimeline(DASH_CATEGORY_BILLS, period, from, to);
+
+  const label = $('dashCatFilterSummary') ? $('dashCatFilterSummary').textContent : period;
+  if (!filteredBills || filteredBills.length === 0) {
+    alert(`No sales data found to export for period: ${label}`);
+    return;
+  }
+  ExportEngine.exportCategorySummaryToExcel(filteredBills, label);
+}
+
+    // Populate Product Category & Item Sales Summary with timeline filtering
     if ($('dashCategorySummaryBody')) {
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const monthBills = (bills || []).filter(b => b.date && b.date.startsWith(currentMonth));
-      const summary = ExportEngine.computeCategorySummary(monthBills);
-      $('dashCategorySummaryBody').innerHTML = renderCategoryAndItemRows(summary);
+      DASH_CATEGORY_BILLS = bills || [];
+      applyDashCategoryFilter();
     }
 
   } catch (err) {
@@ -3010,10 +3155,35 @@ async function loadGSTR1Report() {
       </div>
     `;
 
+let GSTR1_CURRENT_BILLS = [];
+let GSTR1_LIFETIME_BILLS_CACHE = null;
+
+async function onGstrCategoryPeriodChange(val) {
+  await applyGstrCategoryFilter(val);
+}
+
+async function applyGstrCategoryFilter(period) {
+  if (!$('itemCategorySummaryBody')) return;
+  const p = period || ($('gstrCatFilterPeriod') ? $('gstrCatFilterPeriod').value : 'selected_month');
+
+  let billsToUse = GSTR1_CURRENT_BILLS;
+  if (p === 'all' || p === 'last_month' || p === 'last_3_months' || p === 'fy') {
+    if (!GSTR1_LIFETIME_BILLS_CACHE) {
+      GSTR1_LIFETIME_BILLS_CACHE = (await api('GET', '/api/bills')) || [];
+    }
+    billsToUse = filterBillsByTimeline(GSTR1_LIFETIME_BILLS_CACHE, p);
+  }
+
+  const summary = ExportEngine.computeCategorySummary(billsToUse);
+  $('itemCategorySummaryBody').innerHTML = renderCategoryAndItemRows(summary, p === 'selected_month' ? 'Selected Month' : p);
+}
+
     // Item Category Summary Table
     if ($('itemCategorySummaryBody')) {
-      const summary = ExportEngine.computeCategorySummary(billsList);
-      $('itemCategorySummaryBody').innerHTML = renderCategoryAndItemRows(summary);
+      GSTR1_CURRENT_BILLS = billsList || [];
+      const periodSelect = $('gstrCatFilterPeriod');
+      const period = periodSelect ? periodSelect.value : 'selected_month';
+      applyGstrCategoryFilter(period);
     }
 
     // B2B Table

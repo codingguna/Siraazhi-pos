@@ -18,8 +18,17 @@
         </div>
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
-          <h3 style="margin:0;">📦 Product Category & Item Sales Summary</h3>
-          <span style="font-size:12px; color:#64748b; font-weight:600;">Monthly product revenue contribution (Groundnut, Sesame, Coconut & Other items)</span>
+          <h3 style="margin:0;">📦 Product Category &amp; Item Sales Summary</h3>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <label for="gstrCatFilterPeriod" style="font-size:12px; font-weight:700; color:#475569;">📅 Timeline / காலவரிசை:</label>
+            <select id="gstrCatFilterPeriod" onchange="onGstrCategoryPeriodChange(this.value)" style="padding:4px 8px; border-radius:4px; border:1px solid #cbd5e1; font-size:12px; font-weight:600; background:#fff; cursor:pointer;">
+              <option value="selected_month">Selected Month (தேர்ந்தெடுத்த மாதம்)</option>
+              <option value="last_month">Last Month / கடந்த மாதம்</option>
+              <option value="last_3_months">Last 3 Months / கடந்த 3 மாதங்கள்</option>
+              <option value="fy">Financial Year (2026-27)</option>
+              <option value="all">All Time / அனைத்து பழைய தரவுகள்</option>
+            </select>
+          </div>
         </div>
         <div class="table-responsive">
           <table class="data-table">
