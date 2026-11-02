@@ -789,6 +789,121 @@ const ExportEngine = {
   },
 
   /**
+   * exportCustomerLedgerToExcel exports the complete Customer Statement of Account
+   * matching standard commercial accounting ledgers (as per user spec).
+   */
+  exportCustomerLedgerToExcel(ledger, settings) {
+    if (!ledger) {
+      alert('No ledger data available to export.');
+      return;
+    }
+    if (typeof XLSX === 'undefined') {
+      alert('Excel export library is loading... Please retry.');
+      return;
+    }
+
+    const s = settings || {};
+    const cust = ledger.customer || {};
+    const company = s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED';
+    const compAddr = (s.address || '') + (s.gstin ? ` • GSTIN: ${s.gstin}` : '');
+    const periodStr = (ledger.fromDate || 'Start') + ' to ' + (ledger.toDate || 'Present');
+
+    const rows = [];
+
+    // Header Metadata rows
+    rows.push({ 'Date': company, 'Vch No': '', 'Particulars': '', 'Debit (₹)': '', 'Credit (₹)': '', 'Balance (₹)': '' });
+    rows.push({ 'Date': compAddr, 'Vch No': '', 'Particulars': '', 'Debit (₹)': '', 'Credit (₹)': '', 'Balance (₹)': '' });
+    rows.push({ 'Date': 'CUSTOMER LEDGER / STATEMENT OF ACCOUNT', 'Vch No': '', 'Particulars': `Period: (${periodStr})`, 'Debit (₹)': '', 'Credit (₹)': '', 'Balance (₹)': '' });
+    rows.push({ 'Date': `Account: ${cust.name || 'Walk-in'}`, 'Vch No': '', 'Particulars': `Phone: ${cust.phone || '-'} | GSTIN: ${cust.gstin || 'Unregistered'}`, 'Debit (₹)': '', 'Credit (₹)': '', 'Balance (₹)': '' });
+    if (cust.address) {
+      rows.push({ 'Date': `Address: ${cust.address}`, 'Vch No': '', 'Particulars': '', 'Debit (₹)': '', 'Credit (₹)': '', 'Balance (₹)': '' });
+    }
+    rows.push({ 'Date': '---------------------------', 'Vch No': '--------------', 'Particulars': '---------------------------------------------------', 'Debit (₹)': '------------', 'Credit (₹)': '------------', 'Balance (₹)': '------------' });
+
+    // Opening Balance (if specified or non-zero)
+    if (ledger.openingBalance) {
+      rows.push({
+        'Date': ledger.fromDate || '',
+        'Vch No': '---',
+        'Particulars': 'Opening Balance (கையிருப்பு இருப்பு)',
+        'Debit (₹)': ledger.openingBalance > 0 ? Number(ledger.openingBalance.toFixed(2)) : '',
+        'Credit (₹)': ledger.openingBalance < 0 ? Number(Math.abs(ledger.openingBalance).toFixed(2)) : '',
+        'Balance (₹)': Number(ledger.openingBalance.toFixed(2))
+      });
+    }
+
+    // Ledger Transaction Entries
+    (ledger.entries || []).forEach(e => {
+      rows.push({
+        'Date': e.date,
+        'Vch No': e.vchNo || '-',
+        'Particulars': e.particulars || '-',
+        'Debit (₹)': e.debit > 0 ? Number(e.debit.toFixed(2)) : '',
+        'Credit (₹)': e.credit > 0 ? Number(e.credit.toFixed(2)) : '',
+        'Balance (₹)': Number(e.balance.toFixed(2))
+      });
+    });
+
+    // Separator
+    rows.push({ 'Date': '---------------------------', 'Vch No': '--------------', 'Particulars': '---------------------------------------------------', 'Debit (₹)': '------------', 'Credit (₹)': '------------', 'Balance (₹)': '------------' });
+
+    // Total Row
+    rows.push({
+      'Date': '',
+      'Vch No': '',
+      'Particulars': 'Total (மொத்தம்)',
+      'Debit (₹)': Number((ledger.totalDebit || 0).toFixed(2)),
+      'Credit (₹)': Number((ledger.totalCredit || 0).toFixed(2)),
+      'Balance (₹)': ''
+    });
+
+    // Closing (Opening + Total) Row
+    const closingDebit = (ledger.totalDebit || 0) + (ledger.openingBalance > 0 ? ledger.openingBalance : 0);
+    const closingCredit = (ledger.totalCredit || 0) + (ledger.openingBalance < 0 ? Math.abs(ledger.openingBalance) : 0);
+    rows.push({
+      'Date': '',
+      'Vch No': '',
+      'Particulars': 'Closing (Opening + Total)',
+      'Debit (₹)': Number(closingDebit.toFixed(2)),
+      'Credit (₹)': Number(closingCredit.toFixed(2)),
+      'Balance (₹)': ''
+    });
+
+    // Final Net Balance Indicator
+    const balType = ledger.balanceType || (ledger.closingBalance >= 0 ? 'Debit Balance' : 'Credit Balance');
+    const netFormatted = Math.abs(ledger.closingBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    rows.push({
+      'Date': '',
+      'Vch No': '',
+      'Particulars': `*** ${balType}: ₹ ${netFormatted} ***`,
+      'Debit (₹)': '',
+      'Credit (₹)': '',
+      'Balance (₹)': Number((ledger.closingBalance || 0).toFixed(2))
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    // Set column widths for readability
+    ws['!cols'] = [
+      { wch: 14 }, // Date
+      { wch: 22 }, // Vch No
+      { wch: 48 }, // Particulars
+      { wch: 16 }, // Debit
+      { wch: 16 }, // Credit
+      { wch: 16 }  // Balance
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Customer Ledger');
+
+    const cleanCust = (cust.name || 'Customer').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const cleanFrom = (ledger.fromDate || '').replace(/-/g, '');
+    const cleanTo = (ledger.toDate || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+    const fileName = `Customer_Ledger_${cleanCust}_${cleanFrom}_${cleanTo}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  },
+
+  /**
    * downloadCSV opens the server CSV endpoint for immediate streaming download.
    */
   downloadCSV(bills) {

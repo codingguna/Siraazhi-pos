@@ -544,5 +544,230 @@ func TestCategoriesAndCustomerCRM(t *testing.T) {
 	if len(gstr.HSNSummary) == 0 {
 		t.Errorf("Expected HSN summary populated for Non-GST bill, got empty")
 	}
+
+	// 8. Test Category Edit & Rename with Product cascade
+	cats, _ := db.GetCategories()
+	var spicesCat db.Category
+	for _, c := range cats {
+		if c.Name == "Spices / மசாலா" {
+			spicesCat = c
+			break
+		}
+	}
+	if spicesCat.ID != "" {
+		spicesCat.Name = "Organic Spices"
+		spicesCat.NameTa = "இயற்கை மசாலா"
+		updatePayload, _ := json.Marshal(spicesCat)
+		reqUpCat := httptest.NewRequest("POST", "/api/categories", bytes.NewReader(updatePayload))
+		recUpCat := httptest.NewRecorder()
+		HandleCategories(recUpCat, reqUpCat)
+		if recUpCat.Code != http.StatusOK {
+			t.Fatalf("Expected 200 for Category update, got %d", recUpCat.Code)
+		}
+	}
+
+	// 9. Test Customer Delete via HandleCustomerByID
+	reqDelCust := httptest.NewRequest("DELETE", "/api/customers/9876543210", nil)
+	recDelCust := httptest.NewRecorder()
+	HandleCustomerByID(recDelCust, reqDelCust)
+	if recDelCust.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for customer delete, got %d", recDelCust.Code)
+	}
 }
+
+func TestZeroGSTExemptSeeds(t *testing.T) {
+	// Raw agricultural seeds and millets are 0% GST (Exempt)
+	items := []db.BillItem{
+		{
+			ProductID: "seeds1",
+			NameEn:    "Sesame Seeds 1kg",
+			Qty:       2,
+			Price:     150.0, // Line amount = 300
+			GSTPct:    0.0,   // 0% GST Exempt
+		},
+	}
+
+	subtotal, taxable, gstAmt, cgst, sgst, igst, grandTotal, processed := ComputeBill(items, 0, true, "Tamil Nadu", "Tamil Nadu")
+
+	if grandTotal != 300.0 {
+		t.Errorf("Expected GrandTotal 300.0 for 0%% GST seeds, got %.2f", grandTotal)
+	}
+	if subtotal != 300.0 {
+		t.Errorf("Expected Subtotal 300.0, got %.2f", subtotal)
+	}
+	if gstAmt != 0.0 {
+		t.Errorf("Expected 0 GST for exempt seeds, got %.2f", gstAmt)
+	}
+	if cgst != 0.0 || sgst != 0.0 || igst != 0.0 {
+		t.Errorf("Expected 0 CGST/SGST/IGST, got CGST=%.2f, SGST=%.2f, IGST=%.2f", cgst, sgst, igst)
+	}
+	if taxable != 300.0 {
+		t.Errorf("Expected Taxable value 300.0, got %.2f", taxable)
+	}
+	if len(processed) > 0 && processed[0].GSTPortion != 0.0 {
+		t.Errorf("Expected 0 GST portion on seed item, got %.2f", processed[0].GSTPortion)
+	}
+}
+
+func TestCustomerLedgerAndPayments(t *testing.T) {
+	tmpDir := setupTestDBForHandlers(t)
+	defer os.RemoveAll(tmpDir)
+
+	prods, err := db.GetProducts()
+	if err != nil || len(prods) == 0 {
+		t.Fatalf("Expected seeded products, got: %v", err)
+	}
+	p := prods[0]
+	// Give ample stock
+	p.Stock = 500
+	_ = db.SaveProduct(p)
+
+	phone := "9842112233"
+	custName := "Vanur Farmer Producer Co"
+
+	// 1. Create a credit sale bill for 21,000 (Paid = 0)
+	bill1 := db.Bill{
+		BillNo: "VAM-2026-001",
+		Date:   "2026-10-05",
+		Customer: db.Customer{
+			Name:  custName,
+			Phone: phone,
+		},
+		Items: []db.BillItem{
+			{ProductID: p.ID, NameEn: p.NameEn, Qty: 100, Price: 210.0, Amount: 21000.0},
+		},
+		Subtotal:   21000.0,
+		GrandTotal: 21000.0,
+		PayMode:    "Credit",
+		Paid:       0,
+		Balance:    21000.0,
+	}
+	_, err = db.CreateBill(bill1)
+	if err != nil {
+		t.Fatalf("Failed to create bill1: %v", err)
+	}
+
+	// 2. Create another bill for 8,400 (Paid = 0) on 2026-10-10
+	bill2 := db.Bill{
+		BillNo: "VAM-2026-002",
+		Date:   "2026-10-10",
+		Customer: db.Customer{
+			Name:  custName,
+			Phone: phone,
+		},
+		Items: []db.BillItem{
+			{ProductID: p.ID, NameEn: p.NameEn, Qty: 40, Price: 210.0, Amount: 8400.0},
+		},
+		Subtotal:   8400.0,
+		GrandTotal: 8400.0,
+		PayMode:    "Credit",
+		Paid:       0,
+		Balance:    8400.0,
+	}
+	_, err = db.CreateBill(bill2)
+	if err != nil {
+		t.Fatalf("Failed to create bill2: %v", err)
+	}
+
+	// 3. Post a bank payment receipt via HandleCustomerPayments
+	paymentPayload := db.CustomerPayment{
+		Date:          "2026-10-15",
+		CustomerName:  custName,
+		CustomerPhone: phone,
+		Amount:        20000.0,
+		PayMode:       "Bank Transfer",
+		BankName:      "The Karur Vysya Bank",
+		RefNo:         "UTR99281726",
+		Note:          "October Advance RTGS",
+	}
+	body, _ := json.Marshal(paymentPayload)
+	reqPay := httptest.NewRequest("POST", "/api/customers/payments", bytes.NewReader(body))
+	recPay := httptest.NewRecorder()
+	HandleCustomerPayments(recPay, reqPay)
+	if recPay.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for payment record, got %d: %s", recPay.Code, recPay.Body.String())
+	}
+
+	var savedPayment db.CustomerPayment
+	_ = json.NewDecoder(recPay.Body).Decode(&savedPayment)
+	if savedPayment.ID == "" || savedPayment.Amount != 20000.0 {
+		t.Fatalf("Saved payment mismatch: %v", savedPayment)
+	}
+
+	// 4. Test Customer Ledger API: /api/customers/ledger?q=9842112233
+	reqLedger := httptest.NewRequest("GET", "/api/customers/ledger?q="+phone, nil)
+	recLedger := httptest.NewRecorder()
+	HandleCustomerLedger(recLedger, reqLedger)
+	if recLedger.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for customer ledger, got %d: %s", recLedger.Code, recLedger.Body.String())
+	}
+
+	var ledger db.CustomerLedger
+	_ = json.NewDecoder(recLedger.Body).Decode(&ledger)
+
+	// Verify entries and calculations:
+	// Bill 1: Debit 21000, Credit 0 -> Balance 21000
+	// Bill 2: Debit 8400, Credit 0 -> Balance 29400
+	// Receipt: Debit 0, Credit 20000 -> Balance 9400
+	if len(ledger.Entries) != 3 {
+		t.Fatalf("Expected 3 ledger entries, got %d", len(ledger.Entries))
+	}
+	if ledger.TotalDebit != 29400.0 {
+		t.Errorf("Expected TotalDebit 29400, got %.2f", ledger.TotalDebit)
+	}
+	if ledger.TotalCredit != 20000.0 {
+		t.Errorf("Expected TotalCredit 20000, got %.2f", ledger.TotalCredit)
+	}
+	if ledger.ClosingBalance != 9400.0 {
+		t.Errorf("Expected ClosingBalance 9400, got %.2f", ledger.ClosingBalance)
+	}
+	if ledger.BalanceType != "Debit Balance" {
+		t.Errorf("Expected 'Debit Balance', got '%s'", ledger.BalanceType)
+	}
+
+	// Verify running balance of 3rd entry is 9400
+	if ledger.Entries[2].Balance != 9400.0 {
+		t.Errorf("Expected running balance 9400, got %.2f", ledger.Entries[2].Balance)
+	}
+
+	// 5. Test Date Filter & Opening Balance
+	// From: 2026-10-12 to 2026-10-31
+	// Prior events: Bill 1 (21000) and Bill 2 (8400) -> Prior Debits = 29400
+	// Opening Balance should be 29400
+	// In-period: Payment (Credit 20000)
+	// Closing balance should be 29400 - 20000 = 9400
+	reqPeriod := httptest.NewRequest("GET", "/api/customers/ledger?q="+phone+"&from=2026-10-12&to=2026-10-31", nil)
+	recPeriod := httptest.NewRecorder()
+	HandleCustomerLedger(recPeriod, reqPeriod)
+	var periodLedger db.CustomerLedger
+	_ = json.NewDecoder(recPeriod.Body).Decode(&periodLedger)
+
+	if periodLedger.OpeningBalance != 29400.0 {
+		t.Errorf("Expected OpeningBalance 29400, got %.2f", periodLedger.OpeningBalance)
+	}
+	if len(periodLedger.Entries) != 1 {
+		t.Errorf("Expected 1 entry in filtered period, got %d", len(periodLedger.Entries))
+	}
+	if periodLedger.ClosingBalance != 9400.0 {
+		t.Errorf("Expected ClosingBalance 9400, got %.2f", periodLedger.ClosingBalance)
+	}
+
+	// 6. Delete Payment Receipt
+	reqDel := httptest.NewRequest("DELETE", "/api/customers/payments/"+savedPayment.ID, nil)
+	recDel := httptest.NewRecorder()
+	HandleCustomerPaymentDelete(recDel, reqDel)
+	if recDel.Code != http.StatusOK {
+		t.Fatalf("Expected 200 for payment delete, got %d", recDel.Code)
+	}
+
+	// Check ledger again: TotalCredit should be 0, ClosingBalance should be 29400
+	recLedger2 := httptest.NewRecorder()
+	HandleCustomerLedger(recLedger2, reqLedger)
+	var ledger2 db.CustomerLedger
+	_ = json.NewDecoder(recLedger2.Body).Decode(&ledger2)
+	if ledger2.TotalCredit != 0.0 || ledger2.ClosingBalance != 29400.0 {
+		t.Errorf("Expected 0 credit after delete, got TotalCredit=%.2f, ClosingBalance=%.2f", ledger2.TotalCredit, ledger2.ClosingBalance)
+	}
+}
+
 

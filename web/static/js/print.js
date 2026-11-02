@@ -584,5 +584,151 @@ const PrintEngine = {
       // Secondary fallback cleanup in case afterprint doesn't fire
       setTimeout(restoreToasts, 2000);
     }, 150);
+  },
+
+  /**
+   * printCustomerLedger prints an A4 Statement of Account identical to standard commercial party ledgers.
+   */
+  printCustomerLedger(ledger, settings) {
+    if (!ledger) {
+      alert('No ledger statement data to print.');
+      return;
+    }
+
+    const container = document.getElementById('printContainer');
+    if (!container) return;
+
+    const s = settings || {};
+    const cust = ledger.customer || {};
+    const company = s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED';
+    const compAddr = (s.address || 'Villupuram, Tamil Nadu') + (s.gstin ? ` • GSTIN: <b>${s.gstin}</b>` : '') + (s.phone ? ` • Ph: <b>${s.phone}</b>` : '');
+    const periodStr = (ledger.fromDate || 'Start') + ' to ' + (ledger.toDate || 'Present');
+
+    // Page styling for clean A4 print
+    let pageStyle = document.getElementById('dynamicPrintPageStyle');
+    if (!pageStyle) {
+      pageStyle = document.createElement('style');
+      pageStyle.id = 'dynamicPrintPageStyle';
+      document.head.appendChild(pageStyle);
+    }
+    pageStyle.innerHTML = `@page { size: A4 portrait; margin: 8mm 10mm; }`;
+
+    let rowsHtml = '';
+
+    // Opening Balance Row
+    if (ledger.openingBalance) {
+      rowsHtml += `
+        <tr style="background:#f8fafc; font-style:italic;">
+          <td style="padding:4px 6px;">${ledger.fromDate || ''}</td>
+          <td style="padding:4px 6px;">—</td>
+          <td style="padding:4px 6px;"><b>Opening Balance (கையிருப்பு இருப்பு)</b></td>
+          <td style="text-align:right; padding:4px 6px;">${ledger.openingBalance > 0 ? this.formatINR(ledger.openingBalance) : ''}</td>
+          <td style="text-align:right; padding:4px 6px;">${ledger.openingBalance < 0 ? this.formatINR(Math.abs(ledger.openingBalance)) : ''}</td>
+          <td style="text-align:right; padding:4px 6px; font-weight:bold;">${this.formatINR(ledger.openingBalance)}</td>
+        </tr>
+      `;
+    }
+
+    // Ledger Transaction Entries
+    (ledger.entries || []).forEach(e => {
+      rowsHtml += `
+        <tr style="border-bottom:1px solid #e2e8f0;">
+          <td style="padding:4px 6px; white-space:nowrap;">${e.date}</td>
+          <td style="padding:4px 6px; font-weight:600;">${e.vchNo || '—'}</td>
+          <td style="padding:4px 6px;">${e.particulars || '—'}</td>
+          <td style="text-align:right; padding:4px 6px; font-weight:${e.debit > 0 ? '600' : 'normal'};">${e.debit > 0 ? this.formatINR(e.debit) : ''}</td>
+          <td style="text-align:right; padding:4px 6px; font-weight:${e.credit > 0 ? '600' : 'normal'};">${e.credit > 0 ? this.formatINR(e.credit) : ''}</td>
+          <td style="text-align:right; padding:4px 6px; font-weight:bold;">${this.formatINR(e.balance)}</td>
+        </tr>
+      `;
+    });
+
+    const closingDebit = (ledger.totalDebit || 0) + (ledger.openingBalance > 0 ? ledger.openingBalance : 0);
+    const closingCredit = (ledger.totalCredit || 0) + (ledger.openingBalance < 0 ? Math.abs(ledger.openingBalance) : 0);
+    const balType = ledger.balanceType || (ledger.closingBalance >= 0 ? 'Debit Balance' : 'Credit Balance');
+
+    const html = `
+      <div style="font-family:'Segoe UI', Arial, sans-serif; color:#0f172a; max-width:100%; padding:4px 8px; box-sizing:border-box;">
+        
+        <!-- Header -->
+        <div style="text-align:center; margin-bottom:12px; border-bottom:1px solid #000; padding-bottom:8px;">
+          <h1 style="margin:0; font-size:17px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">${company}</h1>
+          <div style="font-size:11px; color:#334155; margin-top:2px;">${compAddr}</div>
+          <div style="font-size:14px; font-weight:800; letter-spacing:1px; margin-top:8px; text-decoration:underline; text-transform:uppercase;">CUSTOMER LEDGER</div>
+          <div style="font-size:11px; font-weight:600; color:#475569; margin-top:2px;">(From ${periodStr})</div>
+        </div>
+
+        <!-- Account Info -->
+        <div style="margin-bottom:10px; font-size:11.5px; border-bottom:1px solid #000; padding-bottom:6px; line-height:1.5;">
+          <div><b>Account:</b> <span style="font-weight:700; font-size:12.5px; text-transform:uppercase;">${cust.name || 'Walk-in'}</span></div>
+          <div>${cust.address || ''}${cust.state ? ', ' + cust.state : ''}${cust.gstin ? ' • <b>GSTIN:</b> ' + cust.gstin : ''}${cust.phone ? ' • <b>Mobile:</b> ' + cust.phone : ''}</div>
+        </div>
+
+        <!-- Ledger Table -->
+        <table style="width:100%; border-collapse:collapse; font-size:11px;">
+          <thead>
+            <tr style="border-top:1.5px solid #000; border-bottom:1.5px solid #000; background:#f1f5f9;">
+              <th style="text-align:left; padding:5px 6px; width:85px;">Date</th>
+              <th style="text-align:left; padding:5px 6px; width:130px;">Vch No</th>
+              <th style="text-align:left; padding:5px 6px;">Particulars</th>
+              <th style="text-align:right; padding:5px 6px; width:100px;">Debit</th>
+              <th style="text-align:right; padding:5px 6px; width:100px;">Credit</th>
+              <th style="text-align:right; padding:5px 6px; width:100px;">Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml || '<tr><td colspan="6" style="text-align:center; padding:16px;">No transactions found in this period.</td></tr>'}
+          </tbody>
+          <tfoot>
+            <tr style="border-top:1.5px solid #000; border-bottom:1.5px solid #000; font-weight:bold;">
+              <td colspan="3" style="text-align:left; padding:6px 6px;">Total</td>
+              <td style="text-align:right; padding:6px 6px;">${this.formatINR(ledger.totalDebit)}</td>
+              <td style="text-align:right; padding:6px 6px;">${this.formatINR(ledger.totalCredit)}</td>
+              <td></td>
+            </tr>
+            <tr style="font-weight:bold;">
+              <td colspan="3" style="text-align:left; padding:5px 6px;">Closing (Opening + Total)</td>
+              <td style="text-align:right; padding:5px 6px;">${this.formatINR(closingDebit)}</td>
+              <td style="text-align:right; padding:5px 6px;">${this.formatINR(closingCredit)}</td>
+              <td></td>
+            </tr>
+            <tr style="border-bottom:1.5px solid #000; font-weight:800; font-size:12px; background:#f8fafc;">
+              <td colspan="3" style="text-align:left; padding:6px 6px;">${balType}</td>
+              <td colspan="3" style="text-align:right; padding:6px 6px; font-size:13px; color:#0f172a;">${this.formatINR(Math.abs(ledger.closingBalance))}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <!-- Signatory Footer -->
+        <div style="display:flex; justify-content:space-between; margin-top:35px; font-size:11px;">
+          <div style="padding-top:20px;">Prepared & Checked By: ___________________</div>
+          <div style="text-align:right;">
+            <div><b>For ${company}</b></div>
+            <div style="margin-top:35px;">Authorized Signatory</div>
+          </div>
+        </div>
+
+      </div>
+    `;
+
+    // Suppress toasts before printing
+    const toastBox = document.getElementById('toastNotificationContainer');
+    if (toastBox) {
+      toastBox.innerHTML = '';
+      toastBox.style.setProperty('display', 'none', 'important');
+    }
+
+    container.innerHTML = html;
+
+    const restoreToasts = () => {
+      if (toastBox) toastBox.style.removeProperty('display');
+      window.removeEventListener('afterprint', restoreToasts);
+    };
+    window.addEventListener('afterprint', restoreToasts);
+
+    setTimeout(() => {
+      window.print();
+      setTimeout(restoreToasts, 2000);
+    }, 150);
   }
 };

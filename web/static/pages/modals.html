@@ -49,8 +49,14 @@
             <input type="text" id="mpBarcode" placeholder="e.g. 8901513010001">
           </div>
           <div class="form-group">
-            <label>GST Rate %:</label>
-            <input type="number" id="mpGstPct" value="5">
+            <label>GST Rate %: <small style="color:#0284c7; font-weight:600;">(0% for Seeds / தானியங்கள்)</small></label>
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+              <input type="number" id="mpGstPct" value="5" min="0" max="28" step="0.5" style="width:70px;">
+              <button type="button" class="btn btn-xs" style="padding:4px 6px; font-size:11px; background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;" onclick="$('mpGstPct').value=0">0% (Seeds)</button>
+              <button type="button" class="btn btn-xs" style="padding:4px 6px; font-size:11px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0;" onclick="$('mpGstPct').value=5">5% (Oil)</button>
+              <button type="button" class="btn btn-xs" style="padding:4px 6px; font-size:11px; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1;" onclick="$('mpGstPct').value=12">12%</button>
+              <button type="button" class="btn btn-xs" style="padding:4px 6px; font-size:11px; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1;" onclick="$('mpGstPct').value=18">18%</button>
+            </div>
           </div>
         </div>
         <div class="form-row">
@@ -193,27 +199,104 @@
     </div>
   </div>
 
-  <!-- MODAL: ADD CUSTOM CATEGORY -->
-  <div id="addCategoryModal" class="modal-overlay">
-    <div class="modal-card" style="max-width:440px;">
+  <!-- MODAL: MANAGE PRODUCT CATEGORIES (FULL CRUD) -->
+  <div id="manageCategoriesModal" class="modal-overlay">
+    <div class="modal-card" style="max-width:640px; width:92vw;">
       <div class="modal-header">
-        <h3>📁 Add Product Category</h3>
-        <button class="modal-close" onclick="closeAddCategoryModal()">✕</button>
+        <h3>📁 Manage Product Categories (பிரிவுகள் மேலாண்மை)</h3>
+        <button class="modal-close" onclick="closeManageCategoriesModal()">✕</button>
       </div>
-      <div class="modal-body form-grid">
-        <div class="form-group">
-          <label>Category Name (English)*:</label>
-          <input type="text" id="newCatNameEn" placeholder="e.g. Oil Cakes, Millets, Spices" autofocus>
+      <div class="modal-body" style="padding:16px;">
+        <!-- Add / Edit Form Card -->
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:16px;">
+          <h4 id="catFormTitle" style="margin:0 0 10px; font-size:13px; color:#1e293b;">➕ Add New Category</h4>
+          <input type="hidden" id="editCatId" value="">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+            <div>
+              <label style="font-size:12px; font-weight:600; color:#475569;">Category Name (English) *</label>
+              <input type="text" id="newCatNameEn" placeholder="e.g. Seeds, Millets, Spices" style="width:100%; padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600; color:#475569;">Category Name (Tamil / தமிழ்)</label>
+              <input type="text" id="newCatNameTa" placeholder="e.g. விதை, தானியங்கள்" style="width:100%; padding:7px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+            </div>
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:8px;">
+            <button type="button" id="btnCancelCatEdit" class="btn btn-sm btn-secondary" onclick="resetCategoryForm()" style="display:none;">Cancel Edit</button>
+            <button type="button" id="btnSaveCategory" class="btn btn-sm btn-primary" onclick="saveCategoryCRUD()">💾 Save Category</button>
+          </div>
         </div>
-        <div class="form-group">
-          <label>Category Name (Tamil / தமிழ்):</label>
-          <input type="text" id="newCatNameTa" placeholder="e.g. புண்ணாக்கு, தானியங்கள்">
+
+        <!-- Category Listing Table -->
+        <h4 style="margin:0 0 8px; font-size:13px; color:#1e293b;">Existing Categories List / பிரிவுகள் விவரம்</h4>
+        <div class="table-responsive" style="max-height:280px; overflow-y:auto; border:1px solid var(--border-color); border-radius:6px;">
+          <table class="data-table" style="font-size:12px;">
+            <thead>
+              <tr style="background:#f8fafc;">
+                <th>English Name</th>
+                <th>Tamil Name</th>
+                <th class="center" style="width:90px;">Products</th>
+                <th class="center" style="width:120px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="categoryTableBody">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeAddCategoryModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="saveNewCategory()">Save Category</button>
+        <button class="btn btn-secondary" onclick="closeManageCategoriesModal()">Close</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Fallback alias for addCategoryModal to prevent any ID mismatch -->
+  <div id="addCategoryModal" style="display:none;"></div>
+
+  <!-- MODAL: ADD / EDIT CUSTOMER (FULL CRUD) -->
+  <div id="customerEditModal" class="modal-overlay">
+    <div class="modal-card" style="max-width:540px; width:95vw;">
+      <div class="modal-header">
+        <h3 id="ceModalTitle" style="margin:0; font-size:16px; color:#0f172a;">👤 Add New Customer</h3>
+        <button class="modal-close" onclick="closeCustomerEditModal()">✕</button>
+      </div>
+      <form id="customerEditForm" onsubmit="saveCustomerProfile(event)">
+        <div class="modal-body" style="padding:16px; display:flex; flex-direction:column; gap:12px;">
+          <input type="hidden" id="ceId" value="">
+          
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <label style="font-size:12px; font-weight:600; color:#475569;">Customer Name *</label>
+              <input type="text" id="ceName" required placeholder="e.g. Ramesh Kumar" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600; color:#475569;">Mobile Number *</label>
+              <input type="tel" id="cePhone" required placeholder="10-digit mobile" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:10px;">
+            <div>
+              <label style="font-size:12px; font-weight:600; color:#475569;">GSTIN (Optional Wholesale/B2B)</label>
+              <input type="text" id="ceGstin" placeholder="15-digit GSTIN (e.g. 33AAAAA...)" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; text-transform:uppercase; box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600; color:#475569;">State</label>
+              <input type="text" id="ceState" value="Tamil Nadu" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+            </div>
+          </div>
+
+          <div>
+            <label style="font-size:12px; font-weight:600; color:#475569;">Address / Street & Village</label>
+            <input type="text" id="ceAddress" placeholder="e.g. No. 45, Main Road, Vanur, Villupuram" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+          </div>
+        </div>
+        <div class="modal-footer" style="padding:12px 16px; display:flex; justify-content:flex-end; gap:8px;">
+          <button type="button" class="btn btn-secondary" onclick="closeCustomerEditModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="ceBtnSubmit">💾 Save Customer</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -282,6 +365,12 @@
           </div>
         </div>
 
+        <!-- View Tabs Switcher -->
+        <div style="display:flex; gap:10px; border-bottom:2px solid var(--border-color); margin-bottom:14px;">
+          <button type="button" id="chTabBtnPurchases" onclick="switchCustomerHistoryTab('purchases')" style="padding:8px 16px; border:none; background:none; font-weight:700; font-size:13px; border-bottom:3px solid #134e19; color:#134e19; cursor:pointer;">🛍️ Purchase History & Products</button>
+          <button type="button" id="chTabBtnLedger" onclick="switchCustomerHistoryTab('ledger')" style="padding:8px 16px; border:none; background:none; font-weight:700; font-size:13px; border-bottom:3px solid transparent; color:#64748b; cursor:pointer;">📜 Statement & Customer Ledger (கணக்கு ஏடு)</button>
+        </div>
+
         <!-- Period Filter & KPI Cards -->
         <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px;">
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
@@ -301,70 +390,203 @@
           </div>
         </div>
 
-        <!-- KPI Metric Badges -->
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px;">
-          <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #3b82f6;">
-            <div class="kpi-title" style="font-size:11px;">Total Purchases / Visits</div>
-            <div class="kpi-value" id="chKpiOrders" style="font-size:20px; font-weight:700; color:#1e3a8a;">0</div>
+        <!-- 1. VIEW: PURCHASES & PRODUCTS -->
+        <div id="chViewPurchases">
+          <!-- KPI Metric Badges -->
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px;">
+            <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #3b82f6;">
+              <div class="kpi-title" style="font-size:11px;">Total Purchases / Visits</div>
+              <div class="kpi-value" id="chKpiOrders" style="font-size:20px; font-weight:700; color:#1e3a8a;">0</div>
+            </div>
+            <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #10b981;">
+              <div class="kpi-title" style="font-size:11px;">Total Amount Spent</div>
+              <div class="kpi-value" id="chKpiSpend" style="font-size:20px; font-weight:700; color:#065f46;">₹0.00</div>
+            </div>
+            <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #8b5cf6;">
+              <div class="kpi-title" style="font-size:11px;">Average Bill Value</div>
+              <div class="kpi-value" id="chKpiAvg" style="font-size:20px; font-weight:700; color:#5b21b6;">₹0.00</div>
+            </div>
           </div>
-          <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #10b981;">
-            <div class="kpi-title" style="font-size:11px;">Total Amount Spent</div>
-            <div class="kpi-value" id="chKpiSpend" style="font-size:20px; font-weight:700; color:#065f46;">₹0.00</div>
+
+          <!-- Products Purchased Summary (What they bought) -->
+          <h4 style="margin:16px 0 8px; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
+            <span>🛍️</span> Products Purchased Summary / வாங்கிய பொருட்கள் விவரம்
+          </h4>
+          <div class="table-responsive" style="margin-bottom:16px; border:1px solid var(--border-color); border-radius:6px;">
+            <table class="data-table" style="font-size:12px;">
+              <thead>
+                <tr style="background:#f8fafc;">
+                  <th>Product Name</th>
+                  <th>Category</th>
+                  <th>Total Qty</th>
+                  <th>Total Spent (₹)</th>
+                  <th class="center">Times Bought</th>
+                  <th>Last Purchased</th>
+                </tr>
+              </thead>
+              <tbody id="chProductsTableBody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
           </div>
-          <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #8b5cf6;">
-            <div class="kpi-title" style="font-size:11px;">Average Bill Value</div>
-            <div class="kpi-value" id="chKpiAvg" style="font-size:20px; font-weight:700; color:#5b21b6;">₹0.00</div>
+
+          <!-- Invoices & Bills Log -->
+          <h4 style="margin:16px 0 8px; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
+            <span>🧾</span> Customer Bills & Invoices History
+          </h4>
+          <div class="table-responsive" style="border:1px solid var(--border-color); border-radius:6px;">
+            <table class="data-table" style="font-size:12px;">
+              <thead>
+                <tr style="background:#f8fafc;">
+                  <th>Bill No</th>
+                  <th>Date</th>
+                  <th>Payment Mode</th>
+                  <th>Items Count</th>
+                  <th>Total Value (₹)</th>
+                  <th class="center">Action</th>
+                </tr>
+              </thead>
+              <tbody id="chBillsTableBody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <!-- Products Purchased Summary (What they bought) -->
-        <h4 style="margin:16px 0 8px; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
-          <span>🛍️</span> Products Purchased Summary / வாங்கிய பொருட்கள் விவரம்
-        </h4>
-        <div class="table-responsive" style="margin-bottom:16px; border:1px solid var(--border-color); border-radius:6px;">
-          <table class="data-table" style="font-size:12px;">
-            <thead>
-              <tr style="background:#f8fafc;">
-                <th>Product Name</th>
-                <th>Category</th>
-                <th>Total Qty</th>
-                <th>Total Spent (₹)</th>
-                <th class="center">Times Bought</th>
-                <th>Last Purchased</th>
-              </tr>
-            </thead>
-            <tbody id="chProductsTableBody">
-              <!-- Populated dynamically -->
-            </tbody>
-          </table>
-        </div>
+        <!-- 2. VIEW: STATEMENT & CUSTOMER LEDGER -->
+        <div id="chViewLedger" style="display:none;">
+          <!-- Ledger Balance Summary & Toolbar -->
+          <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
+            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+              <div>
+                <div style="font-size:11px; color:#64748b; font-weight:600; text-transform:uppercase;">Opening Balance</div>
+                <div id="chLedgerOpening" style="font-size:15px; font-weight:700; color:#334155;">₹0.00</div>
+              </div>
+              <div style="height:28px; width:1px; background:#cbd5e1;"></div>
+              <div>
+                <div style="font-size:11px; color:#64748b; font-weight:600; text-transform:uppercase;">Total Invoiced (Debit)</div>
+                <div id="chLedgerDebit" style="font-size:15px; font-weight:700; color:#1e3a8a;">₹0.00</div>
+              </div>
+              <div style="height:28px; width:1px; background:#cbd5e1;"></div>
+              <div>
+                <div style="font-size:11px; color:#64748b; font-weight:600; text-transform:uppercase;">Total Paid (Credit)</div>
+                <div id="chLedgerCredit" style="font-size:15px; font-weight:700; color:#065f46;">₹0.00</div>
+              </div>
+              <div style="height:28px; width:1px; background:#cbd5e1;"></div>
+              <div>
+                <div id="chLedgerBalType" style="font-size:11px; color:#64748b; font-weight:600; text-transform:uppercase;">Net Balance</div>
+                <div id="chLedgerBalance" style="font-size:17px; font-weight:800; color:#b45309;">₹0.00</div>
+              </div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button type="button" class="btn btn-sm btn-primary" onclick="openRecordPaymentModal()">➕ Record Payment Receipt</button>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="exportCustomerLedgerExcel()">📥 Excel (.xlsx)</button>
+              <button type="button" class="btn btn-sm btn-secondary" onclick="printCustomerLedgerStatement()">🖨 Print Statement (A4)</button>
+            </div>
+          </div>
 
-        <!-- Invoices & Bills Log -->
-        <h4 style="margin:16px 0 8px; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
-          <span>🧾</span> Customer Bills & Invoices History
-        </h4>
-        <div class="table-responsive" style="border:1px solid var(--border-color); border-radius:6px;">
-          <table class="data-table" style="font-size:12px;">
-            <thead>
-              <tr style="background:#f8fafc;">
-                <th>Bill No</th>
-                <th>Date</th>
-                <th>Payment Mode</th>
-                <th>Items Count</th>
-                <th>Total Value (₹)</th>
-                <th class="center">Action</th>
-              </tr>
-            </thead>
-            <tbody id="chBillsTableBody">
-              <!-- Populated dynamically -->
-            </tbody>
-          </table>
+          <!-- Ledger Statement Table -->
+          <h4 style="margin:16px 0 8px; font-size:13px; color:#1e293b; display:flex; align-items:center; gap:6px;">
+            <span>📋</span> Customer Statement of Account (கணக்கு விவரம்)
+          </h4>
+          <div class="table-responsive" style="border:1px solid var(--border-color); border-radius:6px; margin-bottom:14px;">
+            <table class="data-table" style="font-size:12px;">
+              <thead>
+                <tr style="background:#f8fafc;">
+                  <th style="width:90px;">Date</th>
+                  <th style="width:140px;">Vch No</th>
+                  <th>Particulars</th>
+                  <th style="width:110px;" class="right">Debit (₹)</th>
+                  <th style="width:110px;" class="right">Credit (₹)</th>
+                  <th style="width:120px;" class="right">Balance (₹)</th>
+                  <th style="width:70px;" class="center">Action</th>
+                </tr>
+              </thead>
+              <tbody id="chLedgerTableBody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
         </div>
 
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeCustomerHistoryModal()">Close</button>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: RECORD CUSTOMER PAYMENT / RECEIPT -->
+  <div id="recordPaymentModal" class="modal-overlay">
+    <div class="modal-card" style="max-width:520px; width:95vw;">
+      <div class="modal-header">
+        <h3 style="margin:0; font-size:16px; color:#0f172a;">💵 Record Customer Payment / Receipt</h3>
+        <button class="modal-close" onclick="closeRecordPaymentModal()">✕</button>
+      </div>
+      <form id="recordPaymentForm" onsubmit="saveCustomerPaymentRecord(event)">
+        <div class="modal-body" style="padding:16px; display:flex; flex-direction:column; gap:12px;">
+          <div>
+            <label style="font-size:12px; font-weight:600; color:#475569;">Customer Name</label>
+            <input type="text" id="rpCustName" readonly style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; background:#f1f5f9; font-weight:600; box-sizing:border-box;">
+            <input type="hidden" id="rpCustPhone">
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <label style="font-size:12px; font-weight:600; color:#475569;">Receipt / Voucher No</label>
+              <input type="text" id="rpReceiptNo" required placeholder="e.g. RCPT-2026-001" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600; color:#475569;">Date *</label>
+              <input type="date" id="rpDate" required style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <label style="font-size:12px; font-weight:600; color:#475569;">Amount Received (₹) *</label>
+              <input type="number" id="rpAmount" step="0.01" min="0.01" required placeholder="0.00" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:15px; font-weight:700; color:#065f46; box-sizing:border-box;">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:600; color:#475569;">Payment Mode *</label>
+              <select id="rpPayMode" onchange="onPaymentModeChange(this.value)" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+                <option value="Bank Transfer">Bank Transfer (NEFT/RTGS/IMPS)</option>
+                <option value="UPI">UPI / GPay / PhonePe</option>
+                <option value="Cash">Cash Receipt</option>
+                <option value="Cheque">Cheque</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="rpBankGroup">
+            <label style="font-size:12px; font-weight:600; color:#475569;">Bank Name</label>
+            <input type="text" id="rpBankName" list="bankSuggestions" placeholder="e.g. The Karur Vysya Bank" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+            <datalist id="bankSuggestions">
+              <option value="The Karur Vysya Bank">
+              <option value="State Bank of India">
+              <option value="Indian Overseas Bank">
+              <option value="HDFC Bank">
+              <option value="ICICI Bank">
+              <option value="Canara Bank">
+              <option value="Punjab National Bank">
+            </datalist>
+          </div>
+
+          <div>
+            <label style="font-size:12px; font-weight:600; color:#475569;">Transaction Ref / UTR / Cheque No</label>
+            <input type="text" id="rpRefNo" placeholder="e.g. UTR1208135000000616" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+          </div>
+
+          <div>
+            <label style="font-size:12px; font-weight:600; color:#475569;">Notes / Remarks</label>
+            <input type="text" id="rpNote" placeholder="e.g. Part payment against October billing" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box;">
+          </div>
+        </div>
+        <div class="modal-footer" style="padding:12px 16px; display:flex; justify-content:flex-end; gap:8px;">
+          <button type="button" class="btn btn-secondary" onclick="closeRecordPaymentModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">💾 Save Receipt</button>
+        </div>
+      </form>
     </div>
   </div>
 

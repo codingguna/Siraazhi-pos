@@ -1,0 +1,57 @@
+    <!-- CUSTOMERS MANAGEMENT & DIRECTORY SECTION -->
+    <section id="tab-customers" class="tab-pane">
+      <div class="panel-box">
+        <div class="panel-toolbar" style="flex-wrap:wrap; gap:12px; justify-content:space-between; align-items:center;">
+          <div>
+            <h2 style="margin:0; font-size:18px;">👥 Customers & Wholesale Buyers Directory</h2>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">வாடிக்கையாளர்கள் மற்றும் மொத்த விற்பனை வாங்குவோர் மேலாண்மை</div>
+          </div>
+          <div class="toolbar-actions" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="openAddCustomerModal()">➕ Add New Customer</button>
+            <button class="btn btn-outline" onclick="loadCustomersPage()">🔄 Refresh</button>
+          </div>
+        </div>
+
+        <!-- Metric KPI Cards -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:16px;">
+          <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #3b82f6;">
+            <div class="kpi-title" style="font-size:11px;">Total Registered Customers</div>
+            <div class="kpi-value" id="cpKpiTotalCustomers" style="font-size:20px; font-weight:700; color:#1e3a8a;">0</div>
+          </div>
+          <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #10b981;">
+            <div class="kpi-title" style="font-size:11px;">Total Customer Spend (Sales)</div>
+            <div class="kpi-value" id="cpKpiTotalSpend" style="font-size:20px; font-weight:700; color:#065f46;">₹0.00</div>
+          </div>
+          <div class="kpi-card" style="padding:12px 14px; border-left:4px solid #f59e0b;">
+            <div class="kpi-title" style="font-size:11px;">Outstanding Receivables (Due)</div>
+            <div class="kpi-value" id="cpKpiTotalDue" style="font-size:20px; font-weight:700; color:#b45309;">₹0.00</div>
+          </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div style="margin-bottom:14px; display:flex; gap:10px; align-items:center;">
+          <input type="text" id="cpSearchInput" placeholder="🔍 Search customers by name, mobile phone number, or GSTIN..." oninput="onCustomersPageSearch(this.value)" style="flex:1; padding:9px 14px; border:1px solid var(--border-color); border-radius:6px; font-size:13px; background:var(--bg-card); color:var(--text-main);">
+        </div>
+
+        <!-- Customers Table -->
+        <div class="table-responsive">
+          <table class="data-table" id="customersTable">
+            <thead>
+              <tr>
+                <th>Customer Name</th>
+                <th>Mobile Number</th>
+                <th>Type / GSTIN</th>
+                <th>City / Address</th>
+                <th class="center">Orders</th>
+                <th class="right">Total Spent (₹)</th>
+                <th class="right">Ledger Balance (₹)</th>
+                <th class="center" style="min-width:180px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="customersTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>

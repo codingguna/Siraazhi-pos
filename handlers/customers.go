@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"siraazhi-pos/db"
 	"strconv"
+	"strings"
 )
 
 // HandleCustomers handles search queries and manual customer updates.
@@ -61,6 +62,36 @@ func HandleCustomers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		JSON(w, http.StatusOK, map[string]string{"message": "Customer saved successfully"})
+
+	default:
+		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
+}
+
+// HandleCustomerByID handles single customer operations such as deletion.
+func HandleCustomerByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/customers/")
+	id = strings.TrimSpace(id)
+	if id == "" {
+		ErrorJSON(w, http.StatusBadRequest, "Customer ID is required")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodDelete:
+		if err := db.DeleteCustomer(id); err != nil {
+			ErrorJSON(w, http.StatusInternalServerError, "Failed to delete customer: "+err.Error())
+			return
+		}
+		JSON(w, http.StatusOK, map[string]string{"message": "Customer deleted successfully"})
+
+	case http.MethodGet:
+		res, err := db.SearchCustomers(id, 1)
+		if err != nil || len(res) == 0 {
+			ErrorJSON(w, http.StatusNotFound, "Customer not found")
+			return
+		}
+		JSON(w, http.StatusOK, res[0])
 
 	default:
 		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -125,4 +156,77 @@ func HandleCustomerDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 	JSON(w, http.StatusOK, dir)
 }
+
+// HandleCustomerLedger provides complete statement of account (Ledger) matching standard commercial formats.
+func HandleCustomerLedger(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	q := r.URL.Query().Get("q")
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+
+	ledger, err := db.GetCustomerLedger(q, from, to)
+	if err != nil {
+		ErrorJSON(w, http.StatusNotFound, "Customer ledger not found: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, ledger)
+}
+
+// HandleCustomerPayments handles recording new payment receipts and listing customer payments.
+func HandleCustomerPayments(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		q := r.URL.Query().Get("q")
+		payments, err := db.GetCustomerPayments(q)
+		if err != nil {
+			ErrorJSON(w, http.StatusInternalServerError, "Failed to get payments: "+err.Error())
+			return
+		}
+		if payments == nil {
+			payments = []db.CustomerPayment{}
+		}
+		JSON(w, http.StatusOK, payments)
+
+	case http.MethodPost:
+		var p db.CustomerPayment
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			ErrorJSON(w, http.StatusBadRequest, "Invalid payment JSON: "+err.Error())
+			return
+		}
+		saved, err := db.SaveCustomerPayment(p)
+		if err != nil {
+			ErrorJSON(w, http.StatusInternalServerError, "Failed to record payment: "+err.Error())
+			return
+		}
+		JSON(w, http.StatusOK, saved)
+
+	default:
+		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
+}
+
+// HandleCustomerPaymentDelete handles deleting a recorded payment receipt.
+func HandleCustomerPaymentDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	// Extract ID from path: /api/customers/payments/{id}
+	path := r.URL.Path
+	const prefix = "/api/customers/payments/"
+	if len(path) <= len(prefix) {
+		ErrorJSON(w, http.StatusBadRequest, "Payment ID is required")
+		return
+	}
+	id := path[len(prefix):]
+	if err := db.DeleteCustomerPayment(id); err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, "Failed to delete payment: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "Payment receipt deleted successfully"})
+}
+
 

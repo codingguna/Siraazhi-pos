@@ -433,6 +433,8 @@ function switchTab(tabId) {
     setTimeout(() => $('barcodeScanInput').focus(), 100);
   } else if (tabId === 'dash') {
     loadDashboard();
+  } else if (tabId === 'customers') {
+    loadCustomersPage();
   } else if (tabId === 'inventory') {
     loadInventoryTable();
   } else if (tabId === 'production') {
@@ -1547,38 +1549,122 @@ function filterInventoryByCategory() {
   loadInventoryTable();
 }
 
+let CATEGORIES_CACHE = [];
+
 function openAddCategoryModal() {
-  const modal = $('addCategoryModal');
-  if (!modal) return;
-  $('newCatNameEn').value = '';
-  $('newCatNameTa').value = '';
-  modal.classList.add('active');
-  setTimeout(() => $('newCatNameEn').focus(), 100);
+  openManageCategoriesModal();
+  resetCategoryForm();
 }
 
-function closeAddCategoryModal() {
-  const modal = $('addCategoryModal');
+async function openManageCategoriesModal() {
+  const modal = $('manageCategoriesModal');
+  if (!modal) return;
+  modal.classList.add('active');
+  resetCategoryForm();
+  await refreshManageCategoriesList();
+}
+
+function closeManageCategoriesModal() {
+  const modal = $('manageCategoriesModal');
   if (modal) modal.classList.remove('active');
 }
 
-async function saveNewCategory() {
+function resetCategoryForm() {
+  if ($('catFormTitle')) $('catFormTitle').textContent = '➕ Add New Category';
+  if ($('editCatId')) $('editCatId').value = '';
+  if ($('newCatNameEn')) $('newCatNameEn').value = '';
+  if ($('newCatNameTa')) $('newCatNameTa').value = '';
+  if ($('btnCancelCatEdit')) $('btnCancelCatEdit').style.display = 'none';
+  if ($('btnSaveCategory')) $('btnSaveCategory').textContent = '💾 Save Category';
+}
+
+async function refreshManageCategoriesList() {
+  const tbody = $('categoryTableBody');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="4" class="center muted-text" style="padding:14px;">Loading categories...</td></tr>';
+  }
+  try {
+    const cats = await api('GET', '/api/categories');
+    CATEGORIES_CACHE = cats || [];
+    renderCategoriesList(CATEGORIES_CACHE);
+  } catch (err) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="center text-danger">Failed to load categories: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function renderCategoriesList(cats) {
+  const tbody = $('categoryTableBody');
+  if (!tbody) return;
+
+  if (!cats || cats.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="center muted-text" style="padding:16px;">No categories found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = cats.map(c => `
+    <tr>
+      <td><b>${escapeHtml(c.name)}</b></td>
+      <td style="color:#64748b;">${escapeHtml(c.nameTa || '—')}</td>
+      <td class="center"><span class="badge" style="background:#f1f5f9; font-weight:700;">${c.productCount || 0}</span></td>
+      <td class="center" style="white-space:nowrap;">
+        <button class="btn btn-sm btn-outline" onclick="editCategoryCRUD('${escapeHtml(c.id)}')">✏️ Edit</button>
+        <button class="btn btn-sm btn-outline text-danger" onclick="deleteCategoryCRUD('${escapeHtml(c.id)}', '${escapeHtml(c.name)}')">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function editCategoryCRUD(id) {
+  const c = CATEGORIES_CACHE.find(x => x.id === id);
+  if (!c) return;
+
+  if ($('catFormTitle')) $('catFormTitle').textContent = `✏️ Edit Category: ${c.name}`;
+  if ($('editCatId')) $('editCatId').value = c.id;
+  if ($('newCatNameEn')) $('newCatNameEn').value = c.name;
+  if ($('newCatNameTa')) $('newCatNameTa').value = c.nameTa || '';
+  if ($('btnCancelCatEdit')) $('btnCancelCatEdit').style.display = 'inline-block';
+  if ($('btnSaveCategory')) $('btnSaveCategory').textContent = '💾 Update Category';
+
+  if ($('newCatNameEn')) $('newCatNameEn').focus();
+}
+
+async function saveCategoryCRUD() {
+  const id = ($('editCatId') ? $('editCatId').value.trim() : '') || undefined;
   const nameEn = $('newCatNameEn').value.trim();
   const nameTa = $('newCatNameTa').value.trim();
+
   if (!nameEn) {
     showToast('Please enter category name in English', 'error');
     return;
   }
 
   try {
-    await api('POST', '/api/categories', { name: nameEn, nameTa: nameTa });
-    showToast(`Category "${nameEn}" created successfully!`, 'success');
-    closeAddCategoryModal();
+    await api('POST', '/api/categories', { id: id, name: nameEn, nameTa: nameTa });
+    showToast(`Category "${nameEn}" saved successfully!`, 'success');
+    resetCategoryForm();
+    await refreshManageCategoriesList();
     await loadCategories();
     if ($('mpCategory')) {
       $('mpCategory').value = nameEn;
     }
   } catch (err) {
     showToast('Failed to save category: ' + err.message, 'error');
+  }
+}
+
+async function deleteCategoryCRUD(id, name) {
+  if (!confirm(`Are you sure you want to delete category "${name}"? Any products currently in this category will be safely reassigned to "Other".`)) {
+    return;
+  }
+
+  try {
+    await api('DELETE', `/api/categories/${encodeURIComponent(id || name)}`);
+    showToast(`Category "${name}" deleted`, 'success');
+    resetCategoryForm();
+    await refreshManageCategoriesList();
+    await loadCategories();
+  } catch (err) {
+    showToast('Failed to delete category: ' + err.message, 'error');
   }
 }
 
@@ -1607,7 +1693,7 @@ async function loadInventoryTable() {
         <td><span class="chip-btn" style="background:#f1f5f9; font-size:11px;">${escapeHtml(p.category || '-')}</span></td>
         <td>${escapeHtml(p.hsn || '-')}</td>
         <td><code>${escapeHtml(p.barcode || '-')}</code></td>
-        <td>${p.gstPct}%</td>
+        <td>${p.gstPct === 0 ? '<span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:700;">0% Exempt</span>' : p.gstPct + '%'}</td>
         <td>${formatINR(p.mrp)}</td>
         <td><b>${formatINR(p.price)}</b></td>
         <td><b style="color:${p.stock <= p.lowAlert ? '#ef4444' : '#1b5e20'}">${p.stock}</b> ${escapeHtml(p.unit || 'Bottle')}</td>
@@ -1636,7 +1722,7 @@ function openProductModal(id) {
     $('mpVariant').value = p.variant;
     $('mpHsn').value = p.hsn || '';
     $('mpBarcode').value = p.barcode || '';
-    $('mpGstPct').value = p.gstPct;
+    $('mpGstPct').value = (p.gstPct !== undefined && p.gstPct !== null) ? p.gstPct : 5;
     $('mpPrice').value = p.price;
     $('mpMrp').value = p.mrp;
     $('mpStock').value = p.stock;
@@ -1662,6 +1748,9 @@ function closeProductModal() {
 }
 
 async function saveProductModal() {
+  const rawGst = $('mpGstPct').value.trim();
+  const gstVal = rawGst === '' ? 5 : (Number(rawGst) >= 0 ? Number(rawGst) : 0);
+
   const p = {
     id: $('mpId').value || undefined,
     nameEn: $('mpNameEn').value.trim(),
@@ -1670,7 +1759,7 @@ async function saveProductModal() {
     variant: $('mpVariant').value.trim(),
     hsn: $('mpHsn').value.trim(),
     barcode: $('mpBarcode').value.trim(),
-    gstPct: Number($('mpGstPct').value) || 5,
+    gstPct: gstVal,
     price: Number($('mpPrice').value),
     mrp: Number($('mpMrp').value) || Number($('mpPrice').value),
     stock: Number($('mpStock').value) || 0,
@@ -1713,13 +1802,23 @@ async function deleteProduct(id) {
 // --------------------------------------------------------------------------
 let CURRENT_HISTORY_QUERY = '';
 
+let CURRENT_HISTORY_SUBTAB = 'purchases';
+let CURRENT_LEDGER_DATA = null;
+let CURRENT_HISTORY_FROM = '';
+let CURRENT_HISTORY_TO = '';
+
 async function openCustomerHistory(query, from, to) {
   if (!query) return;
   CURRENT_HISTORY_QUERY = query;
+  CURRENT_HISTORY_FROM = from || '';
+  CURRENT_HISTORY_TO = to || '';
 
   const modal = $('customerHistoryModal');
   if (!modal) return;
   modal.classList.add('active');
+
+  // Ensure views are in sync with active subtab
+  switchCustomerHistoryTab(CURRENT_HISTORY_SUBTAB, false);
 
   $('chCustName').textContent = 'Loading...';
   $('chCustPhone').textContent = '—';
@@ -1802,9 +1901,244 @@ async function openCustomerHistory(query, from, to) {
       $('chBillsTableBody').innerHTML = `<tr><td colspan="6" class="center muted-text" style="padding:18px;">No bills recorded in this period</td></tr>`;
     }
 
+    // If currently on Ledger tab, fetch ledger data as well
+    if (CURRENT_HISTORY_SUBTAB === 'ledger') {
+      loadCustomerLedger(query, from, to);
+    }
+
   } catch (err) {
     showToast('Failed to load customer history: ' + err.message, 'error');
     $('chProductsTableBody').innerHTML = `<tr><td colspan="6" class="center text-danger">Failed to load history</td></tr>`;
+  }
+}
+
+function switchCustomerHistoryTab(tab, triggerLoad = true) {
+  CURRENT_HISTORY_SUBTAB = tab;
+  const btnPurchases = $('chTabBtnPurchases');
+  const btnLedger = $('chTabBtnLedger');
+  const viewPurchases = $('chViewPurchases');
+  const viewLedger = $('chViewLedger');
+
+  if (tab === 'ledger') {
+    if (btnPurchases) {
+      btnPurchases.style.borderBottom = '3px solid transparent';
+      btnPurchases.style.color = '#64748b';
+    }
+    if (btnLedger) {
+      btnLedger.style.borderBottom = '3px solid #134e19';
+      btnLedger.style.color = '#134e19';
+    }
+    if (viewPurchases) viewPurchases.style.display = 'none';
+    if (viewLedger) viewLedger.style.display = 'block';
+
+    if (triggerLoad) {
+      loadCustomerLedger(CURRENT_HISTORY_QUERY, CURRENT_HISTORY_FROM, CURRENT_HISTORY_TO);
+    }
+  } else {
+    if (btnPurchases) {
+      btnPurchases.style.borderBottom = '3px solid #134e19';
+      btnPurchases.style.color = '#134e19';
+    }
+    if (btnLedger) {
+      btnLedger.style.borderBottom = '3px solid transparent';
+      btnLedger.style.color = '#64748b';
+    }
+    if (viewPurchases) viewPurchases.style.display = 'block';
+    if (viewLedger) viewLedger.style.display = 'none';
+  }
+}
+
+async function loadCustomerLedger(query, from, to) {
+  if (!query) return;
+  const tbody = $('chLedgerTableBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="center muted-text" style="padding:20px;">Loading customer statement & ledger...</td></tr>';
+
+  let url = `/api/customers/ledger?q=${encodeURIComponent(query)}`;
+  if (from) url += `&from=${encodeURIComponent(from)}`;
+  if (to) url += `&to=${encodeURIComponent(to)}`;
+
+  try {
+    const data = await api('GET', url);
+    CURRENT_LEDGER_DATA = data;
+    renderCustomerLedger(data);
+  } catch (err) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="center text-danger" style="padding:16px;">Failed to load ledger: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function renderCustomerLedger(ledger) {
+  if (!ledger) return;
+
+  $('chLedgerOpening').textContent = formatINR(ledger.openingBalance || 0);
+  $('chLedgerDebit').textContent = formatINR(ledger.totalDebit || 0);
+  $('chLedgerCredit').textContent = formatINR(ledger.totalCredit || 0);
+
+  const balEl = $('chLedgerBalance');
+  const balTypeEl = $('chLedgerBalType');
+  const balVal = ledger.closingBalance || 0;
+
+  if (balTypeEl) balTypeEl.textContent = ledger.balanceType || (balVal >= 0 ? 'Debit Balance' : 'Credit Balance');
+  if (balEl) {
+    balEl.textContent = formatINR(Math.abs(balVal));
+    if (balVal > 0.005) {
+      balEl.style.color = '#b45309'; // Pending Debit (receivable)
+    } else if (balVal < -0.005) {
+      balEl.style.color = '#047857'; // Credit (advance)
+    } else {
+      balEl.style.color = '#15803d'; // Settled (0)
+    }
+  }
+
+  const tbody = $('chLedgerTableBody');
+  if (!tbody) return;
+
+  let rows = [];
+
+  // Opening Balance Row
+  if (ledger.openingBalance) {
+    rows.push(`
+      <tr style="background:#f8fafc; font-style:italic;">
+        <td style="color:#64748b;">${ledger.fromDate || ''}</td>
+        <td style="color:#64748b;">—</td>
+        <td><b>Opening Balance (கையிருப்பு இருப்பு)</b></td>
+        <td class="right">${ledger.openingBalance > 0 ? formatINR(ledger.openingBalance) : ''}</td>
+        <td class="right">${ledger.openingBalance < 0 ? formatINR(Math.abs(ledger.openingBalance)) : ''}</td>
+        <td class="right" style="font-weight:700;">${formatINR(ledger.openingBalance)}</td>
+        <td class="center">—</td>
+      </tr>
+    `);
+  }
+
+  // Ledger Entries
+  (ledger.entries || []).forEach(e => {
+    const isPayment = e.type === 'payment';
+    const canDelete = isPayment && e.refId && e.refId.startsWith('cpmt');
+    rows.push(`
+      <tr>
+        <td style="white-space:nowrap; font-size:11px;">${e.date}</td>
+        <td><b>${escapeHtml(e.vchNo || '—')}</b></td>
+        <td>${escapeHtml(e.particulars || '—')}</td>
+        <td class="right" style="font-weight:${e.debit > 0 ? '700' : 'normal'}; color:${e.debit > 0 ? '#1e3a8a' : '#64748b'};">${e.debit > 0 ? formatINR(e.debit) : ''}</td>
+        <td class="right" style="font-weight:${e.credit > 0 ? '700' : 'normal'}; color:${e.credit > 0 ? '#065f46' : '#64748b'};">${e.credit > 0 ? formatINR(e.credit) : ''}</td>
+        <td class="right" style="font-weight:700; color:#0f172a;">${formatINR(e.balance)}</td>
+        <td class="center">
+          ${canDelete ? `<button class="btn btn-sm btn-outline text-danger" title="Delete Payment Receipt" onclick="deleteCustomerPaymentRecord('${e.refId}')">🗑</button>` : '—'}
+        </td>
+      </tr>
+    `);
+  });
+
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="center muted-text" style="padding:20px;">No transactions recorded for this customer in this period.</td></tr>';
+  } else {
+    tbody.innerHTML = rows.join('');
+  }
+}
+
+function openRecordPaymentModal() {
+  const custName = $('chCustName') ? $('chCustName').textContent : '';
+  const custPhone = $('chCustPhone') ? $('chCustPhone').textContent : '';
+
+  $('rpCustName').value = custName;
+  $('rpCustPhone').value = (custPhone === '—' ? '' : custPhone);
+
+  const today = new Date().toISOString().slice(0, 10);
+  $('rpDate').value = today;
+  $('rpAmount').value = '';
+  $('rpReceiptNo').value = `RCPT-${today.replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+  $('rpPayMode').value = 'Bank Transfer';
+  $('rpBankName').value = 'The Karur Vysya Bank';
+  $('rpRefNo').value = '';
+  $('rpNote').value = '';
+
+  const modal = $('recordPaymentModal');
+  if (modal) modal.classList.add('active');
+}
+
+function closeRecordPaymentModal() {
+  const modal = $('recordPaymentModal');
+  if (modal) modal.classList.remove('active');
+}
+
+function onPaymentModeChange(val) {
+  const bankGroup = $('rpBankGroup');
+  if (!bankGroup) return;
+  if (val === 'Cash') {
+    bankGroup.style.display = 'none';
+  } else {
+    bankGroup.style.display = 'block';
+  }
+}
+
+async function saveCustomerPaymentRecord(event) {
+  if (event) event.preventDefault();
+
+  const payload = {
+    customerName: $('rpCustName').value.trim(),
+    customerPhone: $('rpCustPhone').value.trim(),
+    receiptNo: $('rpReceiptNo').value.trim(),
+    date: $('rpDate').value,
+    amount: parseFloat($('rpAmount').value) || 0,
+    payMode: $('rpPayMode').value,
+    bankName: $('rpBankName').value.trim(),
+    refNo: $('rpRefNo').value.trim(),
+    note: $('rpNote').value.trim()
+  };
+
+  if (!payload.customerName && !payload.customerPhone) {
+    showToast('Customer name or phone is required', 'error');
+    return;
+  }
+  if (payload.amount <= 0) {
+    showToast('Please enter a valid payment amount', 'error');
+    return;
+  }
+
+  try {
+    await api('POST', '/api/customers/payments', payload);
+    showToast('Payment receipt recorded successfully', 'success');
+    closeRecordPaymentModal();
+    // Reload ledger
+    loadCustomerLedger(CURRENT_HISTORY_QUERY, CURRENT_HISTORY_FROM, CURRENT_HISTORY_TO);
+  } catch (err) {
+    showToast('Failed to record payment: ' + err.message, 'error');
+  }
+}
+
+async function deleteCustomerPaymentRecord(id) {
+  if (!confirm('Are you sure you want to delete this payment receipt? This will adjust the customer balance.')) {
+    return;
+  }
+  try {
+    await api('DELETE', `/api/customers/payments/${encodeURIComponent(id)}`);
+    showToast('Payment receipt deleted', 'success');
+    loadCustomerLedger(CURRENT_HISTORY_QUERY, CURRENT_HISTORY_FROM, CURRENT_HISTORY_TO);
+  } catch (err) {
+    showToast('Failed to delete payment: ' + err.message, 'error');
+  }
+}
+
+function exportCustomerLedgerExcel() {
+  if (!CURRENT_LEDGER_DATA) {
+    showToast('No customer ledger data loaded to export', 'error');
+    return;
+  }
+  if (typeof ExportEngine !== 'undefined' && ExportEngine.exportCustomerLedgerToExcel) {
+    ExportEngine.exportCustomerLedgerToExcel(CURRENT_LEDGER_DATA, SETTINGS);
+  } else {
+    showToast('Excel export engine not available', 'error');
+  }
+}
+
+function printCustomerLedgerStatement() {
+  if (!CURRENT_LEDGER_DATA) {
+    showToast('No customer ledger data loaded to print', 'error');
+    return;
+  }
+  if (typeof PrintEngine !== 'undefined' && PrintEngine.printCustomerLedger) {
+    PrintEngine.printCustomerLedger(CURRENT_LEDGER_DATA, SETTINGS);
+  } else {
+    showToast('Print engine not available', 'error');
   }
 }
 
@@ -1862,6 +2196,191 @@ async function openCustomerDirectoryModal() {
 function closeCustomerDirectoryModal() {
   const modal = $('customerDirectoryModal');
   if (modal) modal.classList.remove('active');
+}
+
+// --------------------------------------------------------------------------
+// Master Customers Page & Full Customer CRUD
+// --------------------------------------------------------------------------
+let CUSTOMERS_PAGE_DATA = [];
+let customersSearchTimeout = null;
+
+async function loadCustomersPage(searchQuery = '') {
+  const tbody = $('customersTableBody');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="8" class="center muted-text" style="padding:24px;">Loading customers directory...</td></tr>';
+  }
+
+  let url = '/api/customers/directory?limit=250';
+  if (searchQuery) {
+    url += `&q=${encodeURIComponent(searchQuery)}`;
+  }
+
+  try {
+    const list = await api('GET', url);
+    CUSTOMERS_PAGE_DATA = list || [];
+
+    // Compute KPI metrics
+    const totalCount = CUSTOMERS_PAGE_DATA.length;
+    const totalSpend = CUSTOMERS_PAGE_DATA.reduce((sum, c) => sum + (c.totalSpent || 0), 0);
+    const totalDue = CUSTOMERS_PAGE_DATA.reduce((sum, c) => sum + (c.balance > 0 ? c.balance : 0), 0);
+
+    if ($('cpKpiTotalCustomers')) $('cpKpiTotalCustomers').textContent = totalCount;
+    if ($('cpKpiTotalSpend')) $('cpKpiTotalSpend').textContent = formatINR(totalSpend);
+    if ($('cpKpiTotalDue')) $('cpKpiTotalDue').textContent = formatINR(totalDue);
+
+    renderCustomersPageTable(CUSTOMERS_PAGE_DATA);
+  } catch (err) {
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="8" class="center text-danger" style="padding:20px;">Failed to load customers: ${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+}
+
+function renderCustomersPageTable(list) {
+  const tbody = $('customersTableBody');
+  if (!tbody) return;
+
+  if (!list || list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="center muted-text" style="padding:24px;">No customers found. Click "➕ Add New Customer" to register one.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(c => {
+    const isB2B = !!(c.gstin && c.gstin.trim());
+    const bal = c.balance || 0;
+    let balColor = '#15803d'; // 0 / settled
+    let balLabel = '₹0.00';
+    if (bal > 0.005) {
+      balColor = '#b45309'; // Due / receivable
+      balLabel = `Due: ${formatINR(bal)}`;
+    } else if (bal < -0.005) {
+      balColor = '#047857'; // Advance
+      balLabel = `Adv: ${formatINR(Math.abs(bal))}`;
+    }
+
+    const searchKey = escapeHtml(c.phone || c.name || '');
+
+    return `
+      <tr>
+        <td>
+          <b>${escapeHtml(c.name || 'Walk-in')}</b>
+          ${c.isRegistered ? '<span class="badge" style="background:#dcfce7; color:#15803d; font-size:10px; margin-left:6px;">Registered</span>' : '<span class="badge" style="background:#fef3c7; color:#b45309; font-size:10px; margin-left:6px;">New</span>'}
+        </td>
+        <td><code>${escapeHtml(c.phone || '—')}</code></td>
+        <td>
+          ${isB2B 
+            ? `<span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:700;">B2B Wholesale</span><br><code style="font-size:11px;">${escapeHtml(c.gstin)}</code>` 
+            : '<span class="badge" style="background:#f1f5f9; color:#475569;">Retail Consumer</span>'}
+        </td>
+        <td style="font-size:12px; color:#475569;">${escapeHtml((c.address || '') + (c.state ? `, ${c.state}` : '') || '—')}</td>
+        <td class="center"><b>${c.billsCount || 0}</b></td>
+        <td class="right" style="font-weight:700; color:#0f766e;">${formatINR(c.totalSpent)}</td>
+        <td class="right" style="font-weight:700; color:${balColor};">${balLabel}</td>
+        <td class="center" style="white-space:nowrap;">
+          <button class="btn btn-sm btn-outline" onclick="openCustomerLedgerDirect('${searchKey}')" title="View Customer Ledger & Statement">📜 Ledger</button>
+          <button class="btn btn-sm btn-outline" onclick="openCustomerHistory('${searchKey}')" title="View CRM Purchase History">🛍️ History</button>
+          <button class="btn btn-sm btn-outline" onclick="openEditCustomerModal('${escapeHtml(c.id)}')" title="Edit Customer Profile">✏️ Edit</button>
+          <button class="btn btn-sm btn-outline text-danger" onclick="deleteCustomerProfile('${escapeHtml(c.id)}', '${escapeHtml(c.name)}')" title="Delete Customer">🗑️</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openCustomerLedgerDirect(query) {
+  openCustomerHistory(query);
+  switchCustomerHistoryTab('ledger');
+}
+
+function onCustomersPageSearch(val) {
+  clearTimeout(customersSearchTimeout);
+  customersSearchTimeout = setTimeout(() => {
+    loadCustomersPage(val.trim());
+  }, 300);
+}
+
+function openAddCustomerModal() {
+  $('ceModalTitle').textContent = '👤 Add New Customer';
+  $('ceId').value = '';
+  $('ceName').value = '';
+  $('cePhone').value = '';
+  $('ceGstin').value = '';
+  $('ceAddress').value = '';
+  $('ceState').value = 'Tamil Nadu';
+  $('ceBtnSubmit').textContent = '💾 Save Customer';
+
+  const modal = $('customerEditModal');
+  if (modal) modal.classList.add('active');
+  setTimeout(() => $('ceName').focus(), 100);
+}
+
+function openEditCustomerModal(id) {
+  const c = CUSTOMERS_PAGE_DATA.find(x => x.id === id);
+  if (!c) {
+    showToast('Customer record not found', 'error');
+    return;
+  }
+
+  $('ceModalTitle').textContent = '✏️ Edit Customer Profile';
+  $('ceId').value = c.id || '';
+  $('ceName').value = c.name || '';
+  $('cePhone').value = c.phone || '';
+  $('ceGstin').value = c.gstin || '';
+  $('ceAddress').value = c.address || '';
+  $('ceState').value = c.state || 'Tamil Nadu';
+  $('ceBtnSubmit').textContent = '💾 Update Customer';
+
+  const modal = $('customerEditModal');
+  if (modal) modal.classList.add('active');
+}
+
+function closeCustomerEditModal() {
+  const modal = $('customerEditModal');
+  if (modal) modal.classList.remove('active');
+}
+
+async function saveCustomerProfile(event) {
+  if (event) event.preventDefault();
+
+  const payload = {
+    id: $('ceId').value.trim() || undefined,
+    name: $('ceName').value.trim(),
+    phone: $('cePhone').value.trim(),
+    gstin: $('ceGstin').value.trim().toUpperCase(),
+    address: $('ceAddress').value.trim(),
+    state: $('ceState').value.trim() || 'Tamil Nadu'
+  };
+
+  if (!payload.name) {
+    showToast('Customer name is required', 'error');
+    return;
+  }
+  if (!payload.phone) {
+    showToast('Customer mobile phone is required', 'error');
+    return;
+  }
+
+  try {
+    await api('POST', '/api/customers', payload);
+    showToast(`Customer "${payload.name}" saved successfully!`, 'success');
+    closeCustomerEditModal();
+    loadCustomersPage();
+  } catch (err) {
+    showToast('Failed to save customer: ' + err.message, 'error');
+  }
+}
+
+async function deleteCustomerProfile(id, name) {
+  if (!confirm(`Are you sure you want to delete customer "${name || id}"?`)) {
+    return;
+  }
+  try {
+    await api('DELETE', `/api/customers/${encodeURIComponent(id)}`);
+    showToast(`Customer "${name}" deleted`, 'success');
+    loadCustomersPage();
+  } catch (err) {
+    showToast('Failed to delete customer: ' + err.message, 'error');
+  }
 }
 
 function onCustomerDirectorySearch(query) {

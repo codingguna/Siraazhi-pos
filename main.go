@@ -135,9 +135,13 @@ func main() {
 	mux.HandleFunc("/api/categories/", handlers.HandleCategoryDelete)
 
 	mux.HandleFunc("/api/customers", handlers.HandleCustomers)
+	mux.HandleFunc("/api/customers/", handlers.HandleCustomerByID)
 	mux.HandleFunc("/api/customers/lookup", handlers.HandleCustomerLookup)
 	mux.HandleFunc("/api/customers/history", handlers.HandleCustomerHistory)
 	mux.HandleFunc("/api/customers/directory", handlers.HandleCustomerDirectory)
+	mux.HandleFunc("/api/customers/ledger", handlers.HandleCustomerLedger)
+	mux.HandleFunc("/api/customers/payments", handlers.HandleCustomerPayments)
+	mux.HandleFunc("/api/customers/payments/", handlers.HandleCustomerPaymentDelete)
 
 	mux.HandleFunc("/api/inventory/adjust", handlers.HandleStockAdjust)
 	mux.HandleFunc("/api/inventory/production", handlers.HandleProduction)

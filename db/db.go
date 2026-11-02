@@ -46,6 +46,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -263,6 +264,20 @@ func createTables() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS customer_payments (
+		id TEXT PRIMARY KEY,
+		receipt_no TEXT NOT NULL,
+		date TEXT NOT NULL,
+		customer_name TEXT NOT NULL,
+		customer_phone TEXT DEFAULT '',
+		amount REAL NOT NULL,
+		pay_mode TEXT NOT NULL,
+		bank_name TEXT DEFAULT '',
+		ref_no TEXT DEFAULT '',
+		note TEXT DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_bills_date ON bills(date);
 	CREATE INDEX IF NOT EXISTS idx_stock_moves_pid ON stock_moves(product_id);
 	CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(date);
@@ -271,6 +286,9 @@ func createTables() error {
 	CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
 	CREATE INDEX IF NOT EXISTS idx_bills_customer_phone ON bills(customer_phone);
 	CREATE INDEX IF NOT EXISTS idx_bill_items_pid ON bill_items(product_id);
+	CREATE INDEX IF NOT EXISTS idx_customer_payments_phone ON customer_payments(customer_phone);
+	CREATE INDEX IF NOT EXISTS idx_customer_payments_name ON customer_payments(customer_name);
+	CREATE INDEX IF NOT EXISTS idx_customer_payments_date ON customer_payments(date);
 	`
 	_, err := DB.Exec(schema)
 	if err != nil {
@@ -564,6 +582,13 @@ func NextBillSeq(prefix, fy string) (string, error) {
 func CreateBill(bill Bill) (Bill, error) {
 	lock.Lock()
 	defer lock.Unlock()
+
+	if bill.ID == "" {
+		bill.ID = GenID("b")
+	}
+	if bill.BillNo == "" {
+		bill.BillNo = GenID("BILL")
+	}
 
 	tx, err := DB.Begin()
 	if err != nil {
@@ -1185,6 +1210,23 @@ func saveCustomerLocked(c Customer) error {
 		c.State = "Tamil Nadu"
 	}
 
+	// If customer already exists by ID, update directly
+	var existingID string
+	err := DB.QueryRow("SELECT id FROM customers WHERE id = ?", c.ID).Scan(&existingID)
+	if err == nil && existingID != "" {
+		_, err = DB.Exec(`UPDATE customers SET 
+			name = ?,
+			phone = ?,
+			address = ?,
+			gstin = ?,
+			state = ?,
+			updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?`,
+			name, phone, strings.TrimSpace(c.Address), strings.TrimSpace(c.Gstin), c.State, c.ID,
+		)
+		return err
+	}
+
 	if phone != "" {
 		_, err := DB.Exec(`INSERT INTO customers (id, name, phone, address, gstin, state, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -1199,7 +1241,7 @@ func saveCustomerLocked(c Customer) error {
 		return err
 	}
 
-	_, err := DB.Exec(`INSERT INTO customers (id, name, phone, address, gstin, state, updated_at)
+	_, err = DB.Exec(`INSERT INTO customers (id, name, phone, address, gstin, state, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
@@ -1209,6 +1251,16 @@ func saveCustomerLocked(c Customer) error {
 			updated_at = CURRENT_TIMESTAMP`,
 		c.ID, name, "", strings.TrimSpace(c.Address), strings.TrimSpace(c.Gstin), c.State,
 	)
+	return err
+}
+
+// DeleteCustomer removes a customer profile by ID or phone number.
+func DeleteCustomer(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("customer ID is required")
+	}
+	_, err := DB.Exec("DELETE FROM customers WHERE id = ? OR phone = ?", id, id)
 	return err
 }
 
@@ -1247,22 +1299,24 @@ func SearchCustomers(query string, limit int) ([]Customer, error) {
 	return list, nil
 }
 
-// GetCategories returns all available product categories (both predefined and custom created).
+// GetCategories returns all available product categories (both predefined and custom created) with product counts.
 func GetCategories() ([]Category, error) {
 	rows, err := DB.Query(`
-		SELECT id, name, COALESCE(name_ta, '') 
-		FROM categories 
+		SELECT c.id, c.name, COALESCE(c.name_ta, ''), COUNT(p.id) as pcount
+		FROM categories c
+		LEFT JOIN products p ON LOWER(TRIM(c.name)) = LOWER(TRIM(p.category))
+		GROUP BY c.id, c.name, c.name_ta
 		ORDER BY CASE 
-			WHEN name = 'Groundnut' THEN 1
-			WHEN name = 'Sesame' THEN 2
-			WHEN name = 'Coconut' THEN 3
-			WHEN name = 'Oil Cakes' THEN 4
-			WHEN name = 'Lamp Oil' THEN 5
-			WHEN name = 'Seeds' THEN 6
-			WHEN name = 'Millets' THEN 7
-			WHEN name = 'Other' THEN 99
+			WHEN c.name = 'Groundnut' THEN 1
+			WHEN c.name = 'Sesame' THEN 2
+			WHEN c.name = 'Coconut' THEN 3
+			WHEN c.name = 'Oil Cakes' THEN 4
+			WHEN c.name = 'Lamp Oil' THEN 5
+			WHEN c.name = 'Seeds' THEN 6
+			WHEN c.name = 'Millets' THEN 7
+			WHEN c.name = 'Other' THEN 99
 			ELSE 10 
-		END, name ASC`)
+		END, c.name ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -1271,7 +1325,7 @@ func GetCategories() ([]Category, error) {
 	var list []Category
 	for rows.Next() {
 		var c Category
-		if err := rows.Scan(&c.ID, &c.Name, &c.NameTa); err == nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.NameTa, &c.ProductCount); err == nil {
 			list = append(list, c)
 		}
 	}
@@ -1287,9 +1341,12 @@ func GetCategories() ([]Category, error) {
 		for pRows.Next() {
 			var pCat string
 			if err := pRows.Scan(&pCat); err == nil && !existing[strings.ToLower(pCat)] {
+				var count int
+				_ = DB.QueryRow("SELECT COUNT(*) FROM products WHERE LOWER(TRIM(category)) = LOWER(TRIM(?))", pCat).Scan(&count)
 				list = append(list, Category{
-					ID:   GenID("cat"),
-					Name: pCat,
+					ID:           GenID("cat"),
+					Name:         pCat,
+					ProductCount: count,
 				})
 				existing[strings.ToLower(pCat)] = true
 			}
@@ -1300,23 +1357,59 @@ func GetCategories() ([]Category, error) {
 }
 
 // SaveCategory creates or updates a custom category.
+// If an existing category is renamed, all products using that category are automatically updated.
 func SaveCategory(c Category) error {
 	name := strings.TrimSpace(c.Name)
+	nameTa := strings.TrimSpace(c.NameTa)
 	if name == "" {
 		return errors.New("category name is required")
 	}
+
+	// If ID is provided, check if existing
+	if c.ID != "" {
+		var oldName, oldNameTa string
+		err := DB.QueryRow("SELECT name, COALESCE(name_ta, '') FROM categories WHERE id = ?", c.ID).Scan(&oldName, &oldNameTa)
+		if err == nil && oldName != "" {
+			// Update category record
+			_, err = DB.Exec("UPDATE categories SET name = ?, name_ta = ? WHERE id = ?", name, nameTa, c.ID)
+			if err != nil {
+				return err
+			}
+			// Update products using the old category name
+			if !strings.EqualFold(oldName, name) || (nameTa != "" && oldNameTa != nameTa) {
+				_, _ = DB.Exec("UPDATE products SET category = ?, category_ta = ? WHERE LOWER(TRIM(category)) = LOWER(TRIM(?))", name, nameTa, oldName)
+			}
+			return nil
+		}
+	}
+
 	if c.ID == "" {
 		c.ID = GenID("cat")
 	}
+
 	_, err := DB.Exec(`INSERT INTO categories (id, name, name_ta) VALUES (?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET name_ta = CASE WHEN excluded.name_ta != '' THEN excluded.name_ta ELSE categories.name_ta END`,
-		c.ID, name, strings.TrimSpace(c.NameTa),
+		c.ID, name, nameTa,
 	)
 	return err
 }
 
-// DeleteCategory deletes a category by ID or Name.
+// DeleteCategory deletes a category by ID or Name and safely reassigns products to 'Other'.
 func DeleteCategory(idOrName string) error {
+	idOrName = strings.TrimSpace(idOrName)
+	if idOrName == "" {
+		return errors.New("category ID or name is required")
+	}
+
+	var catName string
+	_ = DB.QueryRow("SELECT name FROM categories WHERE id = ? OR name = ?", idOrName, idOrName).Scan(&catName)
+	if catName == "" {
+		catName = idOrName
+	}
+
+	// Reassign products to Other so inventory is never lost
+	_, _ = DB.Exec("UPDATE products SET category = 'Other', category_ta = 'மற்றவை' WHERE LOWER(TRIM(category)) = LOWER(TRIM(?))", catName)
+
 	_, err := DB.Exec("DELETE FROM categories WHERE id = ? OR name = ?", idOrName, idOrName)
 	return err
 }
@@ -1550,22 +1643,26 @@ func GetCustomerHistory(query string, from string, to string) (*CustomerHistory,
 	return hist, nil
 }
 
-// GetCustomerDirectory retrieves directory of all customers with order counts and spend.
+// GetCustomerDirectory retrieves directory of all customers with order counts, spend, and ledger balance.
 func GetCustomerDirectory(query string, limit int) ([]CustomerDirectoryItem, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	if limit <= 0 || limit > 500 {
+		limit = 200
 	}
 	query = strings.TrimSpace(query)
 
 	qStr := `
 		SELECT 
 			c.id, c.name, COALESCE(c.phone, ''), COALESCE(c.address, ''), COALESCE(c.gstin, ''), COALESCE(c.state, 'Tamil Nadu'),
-			COUNT(b.id) as bills_count,
+			COUNT(DISTINCT b.id) as bills_count,
 			COALESCE(SUM(b.grand_total), 0) as total_spent,
 			COALESCE(MIN(b.date), '') as first_visit,
-			COALESCE(MAX(b.date), '') as last_visit
+			COALESCE(MAX(b.date), '') as last_visit,
+			ROUND(
+				COALESCE((SELECT SUM(b2.grand_total) - SUM(b2.paid) FROM bills b2 WHERE (b2.customer_phone = c.phone AND c.phone != '') OR b2.customer_name = c.name), 0) -
+				COALESCE((SELECT SUM(p.amount) FROM customer_payments p WHERE (p.customer_phone = c.phone AND c.phone != '') OR p.customer_name = c.name), 0)
+			, 2) as balance
 		FROM customers c
-		LEFT JOIN bills b ON c.phone = b.customer_phone AND c.phone != ''`
+		LEFT JOIN bills b ON (c.phone = b.customer_phone AND c.phone != '') OR c.name = b.customer_name`
 
 	var args []interface{}
 	if query != "" {
@@ -1588,14 +1685,322 @@ func GetCustomerDirectory(query string, limit int) ([]CustomerDirectoryItem, err
 		var item CustomerDirectoryItem
 		if err := rows.Scan(
 			&item.ID, &item.Name, &item.Phone, &item.Address, &item.Gstin, &item.State,
-			&item.BillsCount, &item.TotalSpent, &item.FirstVisit, &item.LastVisit,
+			&item.BillsCount, &item.TotalSpent, &item.FirstVisit, &item.LastVisit, &item.Balance,
 		); err == nil {
 			item.TotalSpent = roundMoney(item.TotalSpent)
+			item.Balance = roundMoney(item.Balance)
 			item.IsRegistered = item.BillsCount > 0
 			list = append(list, item)
 		}
 	}
 	return list, nil
+}
+
+// SaveCustomerPayment records a formal cash, bank transfer, UPI or cheque receipt from a customer.
+func SaveCustomerPayment(p CustomerPayment) (CustomerPayment, error) {
+	name := strings.TrimSpace(p.CustomerName)
+	phone := strings.TrimSpace(p.CustomerPhone)
+	if name == "" && phone == "" {
+		return p, errors.New("customer name or phone is required")
+	}
+	if p.Amount <= 0 {
+		return p, errors.New("payment amount must be greater than zero")
+	}
+	if p.ID == "" {
+		p.ID = GenID("cpmt")
+	}
+	if p.ReceiptNo == "" {
+		p.ReceiptNo = fmt.Sprintf("RCPT-%s-%04d", time.Now().Format("20060102"), time.Now().Unix()%10000)
+	}
+	if p.Date == "" {
+		p.Date = time.Now().Format("2006-01-02")
+	}
+	if p.PayMode == "" {
+		p.PayMode = "Bank Transfer"
+	}
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = time.Now()
+	}
+
+	_, err := DB.Exec(`INSERT INTO customer_payments 
+		(id, receipt_no, date, customer_name, customer_phone, amount, pay_mode, bank_name, ref_no, note, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			receipt_no = excluded.receipt_no,
+			date = excluded.date,
+			customer_name = excluded.customer_name,
+			customer_phone = excluded.customer_phone,
+			amount = excluded.amount,
+			pay_mode = excluded.pay_mode,
+			bank_name = excluded.bank_name,
+			ref_no = excluded.ref_no,
+			note = excluded.note`,
+		p.ID, p.ReceiptNo, p.Date, name, phone, p.Amount, p.PayMode, strings.TrimSpace(p.BankName), strings.TrimSpace(p.RefNo), strings.TrimSpace(p.Note), p.CreatedAt,
+	)
+	if err != nil {
+		return p, err
+	}
+
+	// Auto-save/update customer in customers table
+	if phone != "" || (name != "" && !strings.EqualFold(name, "Walk-in")) {
+		_ = saveCustomerLocked(Customer{
+			Name:  name,
+			Phone: phone,
+		})
+	}
+	return p, nil
+}
+
+// DeleteCustomerPayment removes a recorded payment receipt.
+func DeleteCustomerPayment(id string) error {
+	_, err := DB.Exec("DELETE FROM customer_payments WHERE id = ?", id)
+	return err
+}
+
+// GetCustomerPayments returns all recorded receipts for a customer.
+func GetCustomerPayments(query string) ([]CustomerPayment, error) {
+	query = strings.TrimSpace(query)
+	var rows *sql.Rows
+	var err error
+	if query == "" {
+		rows, err = DB.Query("SELECT id, receipt_no, date, customer_name, customer_phone, amount, pay_mode, bank_name, ref_no, note, created_at FROM customer_payments ORDER BY date DESC, id DESC LIMIT 100")
+	} else {
+		rows, err = DB.Query(`SELECT id, receipt_no, date, customer_name, customer_phone, amount, pay_mode, bank_name, ref_no, note, created_at 
+			FROM customer_payments 
+			WHERE (customer_phone = ? AND customer_phone != '') OR customer_name = ?
+			ORDER BY date DESC, id DESC`, query, query)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []CustomerPayment
+	for rows.Next() {
+		var p CustomerPayment
+		if err := rows.Scan(&p.ID, &p.ReceiptNo, &p.Date, &p.CustomerName, &p.CustomerPhone, &p.Amount, &p.PayMode, &p.BankName, &p.RefNo, &p.Note, &p.CreatedAt); err == nil {
+			list = append(list, p)
+		}
+	}
+	return list, nil
+}
+
+// GetCustomerLedger compiles the complete statement of account (Ledger) matching standard commercial formats.
+// Produces: Date | Vch No | Particulars | Debit | Credit | Balance, along with Opening & Closing balance.
+func GetCustomerLedger(query string, from string, to string) (*CustomerLedger, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, errors.New("customer identifier is required")
+	}
+
+	// 1. Resolve Customer details
+	var c Customer
+	err := DB.QueryRow(`
+		SELECT id, name, COALESCE(phone, ''), COALESCE(address, ''), COALESCE(gstin, ''), COALESCE(state, 'Tamil Nadu')
+		FROM customers 
+		WHERE phone = ? OR name = ? OR id = ?
+		LIMIT 1`, query, query, query).
+		Scan(&c.ID, &c.Name, &c.Phone, &c.Address, &c.Gstin, &c.State)
+
+	if err != nil {
+		// Fallback to bills
+		var bName, bPhone, bGstin, bAddr, bState sql.NullString
+		bErr := DB.QueryRow(`
+			SELECT customer_name, customer_phone, customer_gstin, customer_address, customer_state
+			FROM bills 
+			WHERE customer_phone = ? OR customer_name = ?
+			ORDER BY date DESC LIMIT 1`, query, query).
+			Scan(&bName, &bPhone, &bGstin, &bAddr, &bState)
+		if bErr != nil {
+			return nil, errors.New("customer not found")
+		}
+		c = Customer{
+			ID:      GenID("cust"),
+			Name:    bName.String,
+			Phone:   bPhone.String,
+			Address: bAddr.String,
+			Gstin:   bGstin.String,
+			State:   bState.String,
+		}
+	}
+
+	ledger := &CustomerLedger{
+		Customer: c,
+		FromDate: from,
+		ToDate:   to,
+		Entries:  []CustomerLedgerEntry{},
+	}
+
+	phone := c.Phone
+	name := c.Name
+
+	// 2. Compute Opening Balance (All debits and credits prior to 'from')
+	var openingBal float64
+	if from != "" {
+		var priorDebits sql.NullFloat64
+		var priorBillPaid sql.NullFloat64
+		_ = DB.QueryRow(`SELECT SUM(grand_total), SUM(paid) FROM bills 
+			WHERE ((customer_phone = ? AND customer_phone != '') OR customer_name = ?) AND date < ?`,
+			phone, name, from).Scan(&priorDebits, &priorBillPaid)
+
+		var priorDirectPayments sql.NullFloat64
+		_ = DB.QueryRow(`SELECT SUM(amount) FROM customer_payments 
+			WHERE ((customer_phone = ? AND customer_phone != '') OR customer_name = ?) AND date < ?`,
+			phone, name, from).Scan(&priorDirectPayments)
+
+		deb := 0.0
+		if priorDebits.Valid {
+			deb = priorDebits.Float64
+		}
+		cred := 0.0
+		if priorBillPaid.Valid {
+			cred += priorBillPaid.Float64
+		}
+		if priorDirectPayments.Valid {
+			cred += priorDirectPayments.Float64
+		}
+		openingBal = roundMoney(deb - cred)
+	}
+	ledger.OpeningBalance = openingBal
+
+	// 3. Collect Bills within [from, to]
+	bQuery := `SELECT id, bill_no, date, grand_total, paid, pay_mode, gst_on, note FROM bills 
+		WHERE ((customer_phone = ? AND customer_phone != '') OR customer_name = ?)`
+	var bArgs []interface{}
+	bArgs = append(bArgs, phone, name)
+	if from != "" {
+		bQuery += " AND date >= ?"
+		bArgs = append(bArgs, from)
+	}
+	if to != "" {
+		bQuery += " AND date <= ?"
+		bArgs = append(bArgs, to)
+	}
+	bQuery += " ORDER BY date ASC, bill_no ASC"
+
+	bRows, err := DB.Query(bQuery, bArgs...)
+	if err == nil {
+		defer bRows.Close()
+		for bRows.Next() {
+			var bID, bNo, bDate, bPayMode, bNote string
+			var bGrandTotal, bPaid float64
+			var gstOnInt int
+			if err := bRows.Scan(&bID, &bNo, &bDate, &bGrandTotal, &bPaid, &bPayMode, &gstOnInt, &bNote); err == nil {
+				// Invoice Debit entry
+				particulars := "Sales"
+				if gstOnInt == 1 {
+					particulars = "Sales (GST Tax Invoice)"
+				}
+				ledger.Entries = append(ledger.Entries, CustomerLedgerEntry{
+					Date:        bDate,
+					VchNo:       bNo,
+					Particulars: particulars,
+					Type:        "sale",
+					Debit:       roundMoney(bGrandTotal),
+					Credit:      0,
+					RefID:       bID,
+				})
+
+				// If counter receipt paid directly on this bill, record credit entry
+				if bPaid > 0 {
+					payLabel := fmt.Sprintf("Receipt (Counter - %s)", bPayMode)
+					ledger.Entries = append(ledger.Entries, CustomerLedgerEntry{
+						Date:        bDate,
+						VchNo:       bNo,
+						Particulars: payLabel,
+						Type:        "payment",
+						Debit:       0,
+						Credit:      roundMoney(bPaid),
+						RefID:       bID,
+					})
+				}
+			}
+		}
+	}
+
+	// 4. Collect Customer Payments (Bank receipts, cheques, standalone receipts)
+	pQuery := `SELECT id, receipt_no, date, amount, pay_mode, bank_name, ref_no, note FROM customer_payments 
+		WHERE ((customer_phone = ? AND customer_phone != '') OR customer_name = ?)`
+	var pArgs []interface{}
+	pArgs = append(pArgs, phone, name)
+	if from != "" {
+		pQuery += " AND date >= ?"
+		pArgs = append(pArgs, from)
+	}
+	if to != "" {
+		pQuery += " AND date <= ?"
+		pArgs = append(pArgs, to)
+	}
+	pQuery += " ORDER BY date ASC, receipt_no ASC"
+
+	pRows, err := DB.Query(pQuery, pArgs...)
+	if err == nil {
+		defer pRows.Close()
+		for pRows.Next() {
+			var pID, pRecNo, pDate, pPayMode, pBank, pRef, pNote string
+			var pAmount float64
+			if err := pRows.Scan(&pID, &pRecNo, &pDate, &pAmount, &pPayMode, &pBank, &pRef, &pNote); err == nil {
+				part := pBank
+				if part == "" {
+					part = pPayMode
+				}
+				if pRef != "" {
+					part += fmt.Sprintf("(%s)", pRef)
+				}
+				if pNote != "" {
+					part += " - " + pNote
+				}
+				ledger.Entries = append(ledger.Entries, CustomerLedgerEntry{
+					Date:        pDate,
+					VchNo:       pRecNo,
+					Particulars: part,
+					Type:        "payment",
+					Debit:       0,
+					Credit:      roundMoney(pAmount),
+					RefID:       pID,
+				})
+			}
+		}
+	}
+
+	// 5. Stable Sort chronologically by Date. On same date, Debits (sales) come before Credits (payments)
+	sort.SliceStable(ledger.Entries, func(i, j int) bool {
+		if ledger.Entries[i].Date != ledger.Entries[j].Date {
+			return ledger.Entries[i].Date < ledger.Entries[j].Date
+		}
+		// On the same date, place Sales (Debit) before Receipts (Credit)
+		if ledger.Entries[i].Debit > 0 && ledger.Entries[j].Credit > 0 {
+			return true
+		}
+		if ledger.Entries[i].Credit > 0 && ledger.Entries[j].Debit > 0 {
+			return false
+		}
+		return ledger.Entries[i].VchNo < ledger.Entries[j].VchNo
+	})
+
+	// 6. Calculate cumulative running balance and totals
+	runningBal := openingBal
+	var totalDebit, totalCredit float64
+	for i := range ledger.Entries {
+		totalDebit += ledger.Entries[i].Debit
+		totalCredit += ledger.Entries[i].Credit
+		runningBal = roundMoney(runningBal + ledger.Entries[i].Debit - ledger.Entries[i].Credit)
+		ledger.Entries[i].Balance = runningBal
+	}
+
+	ledger.TotalDebit = roundMoney(totalDebit)
+	ledger.TotalCredit = roundMoney(totalCredit)
+	ledger.ClosingBalance = roundMoney(openingBal + totalDebit - totalCredit)
+
+	if ledger.ClosingBalance > 0.005 {
+		ledger.BalanceType = "Debit Balance"
+	} else if ledger.ClosingBalance < -0.005 {
+		ledger.BalanceType = "Credit Balance"
+	} else {
+		ledger.BalanceType = "Settled (Nil)"
+	}
+
+	return ledger, nil
 }
 
 // RestoreBillsAndMoves imports historical bills and stock audit ledger entries from a backup.

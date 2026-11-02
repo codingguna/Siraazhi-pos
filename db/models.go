@@ -97,9 +97,10 @@ type Product struct {
 
 // Category represents a product classification (e.g. Groundnut Oil, Sesame Oil, Coconut Oil, Oil Cakes, Millets, Spices).
 type Category struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	NameTa string `json:"nameTa"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	NameTa       string `json:"nameTa"`
+	ProductCount int    `json:"productCount,omitempty"`
 }
 
 // Customer represents customer details captured on an invoice.
@@ -160,6 +161,7 @@ type CustomerDirectoryItem struct {
 	State        string  `json:"state"`
 	BillsCount   int     `json:"billsCount"`
 	TotalSpent   float64 `json:"totalSpent"`
+	Balance      float64 `json:"balance"`
 	FirstVisit   string  `json:"firstVisit"`
 	LastVisit    string  `json:"lastVisit"`
 	IsRegistered bool    `json:"isRegistered"`
@@ -263,3 +265,46 @@ type DashboardStats struct {
 	MonthExpenses   float64   `json:"monthExpenses"`
 	LowStockItems   []Product `json:"lowStockItems"`
 }
+
+// CustomerPayment represents a cash, bank transfer, UPI or cheque receipt from a customer.
+// WHAT IT IS: A formal payment/receipt voucher credited to a customer's ledger account.
+type CustomerPayment struct {
+	ID            string    `json:"id"`
+	ReceiptNo     string    `json:"receiptNo"`
+	Date          string    `json:"date"`
+	CustomerName  string    `json:"customerName"`
+	CustomerPhone string    `json:"customerPhone"`
+	Amount        float64   `json:"amount"`
+	PayMode       string    `json:"payMode"`  // "Bank Transfer", "Cash", "UPI", "Cheque"
+	BankName      string    `json:"bankName"` // e.g. "The Karur Vysya Bank", "State Bank of India"
+	RefNo         string    `json:"refNo"`    // UTR / Transaction Ref / Cheque No
+	Note          string    `json:"note"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+
+// CustomerLedgerEntry represents an individual row in a party statement of account.
+// Matches standard Indian accounting statements (Date | Vch No | Particulars | Debit | Credit | Balance).
+type CustomerLedgerEntry struct {
+	Date        string  `json:"date"`
+	VchNo       string  `json:"vchNo"`       // Invoice bill number or receipt voucher number
+	Particulars string  `json:"particulars"` // "Sales", "The Karur Vysya Bank...", "Sales Return", etc.
+	Type        string  `json:"type"`        // "sale", "payment", "return"
+	Debit       float64 `json:"debit"`       // Sales amount (increases balance receivable)
+	Credit      float64 `json:"credit"`      // Payment amount (decreases balance receivable)
+	Balance     float64 `json:"balance"`     // Cumulative running balance
+	RefID       string  `json:"refId,omitempty"`
+}
+
+// CustomerLedger represents the complete customer statement of account over a period.
+type CustomerLedger struct {
+	Customer       Customer              `json:"customer"`
+	FromDate       string                `json:"fromDate"`
+	ToDate         string                `json:"toDate"`
+	OpeningBalance float64               `json:"openingBalance"`
+	Entries        []CustomerLedgerEntry `json:"entries"`
+	TotalDebit     float64               `json:"totalDebit"`
+	TotalCredit    float64               `json:"totalCredit"`
+	ClosingBalance float64               `json:"closingBalance"`
+	BalanceType    string                `json:"balanceType"` // "Debit Balance", "Credit Balance", "Settled (Nil)"
+}
+

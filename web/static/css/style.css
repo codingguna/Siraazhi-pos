@@ -198,9 +198,10 @@ body {
 .main-content {
   flex: 1;
   padding: 16px;
-  max-width: 1440px;
+  max-width: 1720px;
   width: 100%;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .tab-pane {
@@ -216,19 +217,32 @@ body {
    ========================================================================== */
 .pos-workspace {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: minmax(0, 1fr) 440px;
   gap: 16px;
   align-items: start;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-@media (max-width: 1024px) {
+@media (min-width: 1600px) {
   .pos-workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) 480px;
+    gap: 20px;
+  }
+}
+
+@media (max-width: 1150px) and (min-width: 851px) {
+  .pos-workspace {
+    grid-template-columns: minmax(0, 1fr) 390px;
+    gap: 12px;
   }
 }
 
 /* Left Catalog Panel */
 .pos-catalog-panel {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   padding: 16px;
@@ -282,8 +296,8 @@ body {
 
 .category-pills {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  overflow-x: auto;
   padding-bottom: 4px;
 }
 
@@ -419,6 +433,9 @@ body {
 
 /* Right Cart Terminal */
 .pos-cart-panel {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   padding: 16px;

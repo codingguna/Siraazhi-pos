@@ -21,10 +21,11 @@ func TestAssembleIndexHTML(t *testing.T) {
 		t.Errorf("Found unresolved <!-- INCLUDE: --> directive in assembled HTML")
 	}
 
-	// Verify all 9 sections are present in assembled output
+	// Verify all application sections are present in assembled output
 	expectedSections := []string{
 		`id="tab-pos"`,
 		`id="tab-dash"`,
+		`id="tab-customers"`,
 		`id="tab-inventory"`,
 		`id="tab-production"`,
 		`id="tab-purchases"`,
