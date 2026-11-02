@@ -1450,7 +1450,7 @@ async function loadDashboard() {
 
     // Recent transactions
     const bills = await api('GET', '/api/bills');
-    const recent = bills.slice(0, 6);
+    const recent = (bills || []).slice(0, 6);
     $('recentBillsContainer').innerHTML = recent.length ? recent.map(b => `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #f1f5f9;">
         <div>
@@ -1463,6 +1463,17 @@ async function loadDashboard() {
       </div>
     `).join('') : '<div style="color:#64748b; padding:10px 0;">No sales recorded yet.</div>';
 
+    // Populate Product Category & Item Sales Summary with timeline filtering
+    if ($('dashCategorySummaryBody')) {
+      DASH_CATEGORY_BILLS = bills || [];
+      await applyDashCategoryFilter();
+    }
+
+  } catch (err) {
+    console.error('Dashboard load failed:', err);
+  }
+}
+
 // --------------------------------------------------------------------------
 // Category & Item Sales Summary Timeline Filtering & Renderer (Dashboard & Reports)
 // --------------------------------------------------------------------------
@@ -1470,15 +1481,17 @@ let DASH_CATEGORY_BILLS = [];
 
 /**
  * filterBillsByTimeline filters an array of bills based on a selected period or custom date range.
+ * Uses local time components to avoid UTC date boundary issues.
  */
 function filterBillsByTimeline(bills, period, customFrom, customTo) {
   if (!Array.isArray(bills) || bills.length === 0) return [];
   const now = new Date();
   const currentYear = now.getFullYear();
-  const currentMonthNum = now.getMonth();
+  const currentMonthNum = now.getMonth(); // 0 = Jan, 10 = Nov
 
-  const toDateStr = d => d.toISOString().slice(0, 10);
-  const toMonthStr = d => d.toISOString().slice(0, 7);
+  const padZero = n => (n < 10 ? '0' + n : '' + n);
+  const toDateStr = d => `${d.getFullYear()}-${padZero(d.getMonth() + 1)}-${padZero(d.getDate())}`;
+  const toMonthStr = d => `${d.getFullYear()}-${padZero(d.getMonth() + 1)}`;
 
   const todayStr = toDateStr(now);
   const currentMonthStr = toMonthStr(now);
@@ -1513,7 +1526,10 @@ function filterBillsByTimeline(bills, period, customFrom, customTo) {
       return bills.filter(b => b.date && b.date.startsWith(lastMonthStr));
 
     case 'last_3_months':
-      return bills.filter(b => b.date && b.date.slice(0, 7) >= threeMonthsAgoMonthStr && b.date.slice(0, 7) <= currentMonthStr);
+      return bills.filter(b => {
+        const m = (b.date || '').slice(0, 7);
+        return m >= threeMonthsAgoMonthStr && m <= currentMonthStr;
+      });
 
     case 'fy':
       return bills.filter(b => b.date && b.date >= fyStartStr && b.date <= fyEndStr);
@@ -1548,8 +1564,8 @@ function renderCategoryAndItemRows(summary, periodLabel) {
         <td colspan="6" class="center muted-text" style="padding:24px 16px;">
           <div style="font-size:13.5px; font-weight:600; color:#64748b;">No product sales recorded for ${escapeHtml(label)}</div>
           <div style="margin-top:10px; display:flex; justify-content:center; gap:8px; flex-wrap:wrap;">
-            <button class="btn btn-sm btn-outline" onclick="selectDashCategoryPeriod('last_month')" style="font-size:11.5px;">📅 View Last Month</button>
-            <button class="btn btn-sm btn-outline" onclick="selectDashCategoryPeriod('all')" style="font-size:11.5px;">📚 View All Time Data</button>
+            <button class="btn btn-sm btn-outline" onclick="selectDashCategoryPeriod('last_month')" style="font-size:11.5px; cursor:pointer;">📅 View Last Month</button>
+            <button class="btn btn-sm btn-outline" onclick="selectDashCategoryPeriod('all')" style="font-size:11.5px; cursor:pointer;">📚 View All Time Data</button>
           </div>
         </td>
       </tr>
@@ -1617,7 +1633,20 @@ function renderCategoryAndItemRows(summary, periodLabel) {
 function onDashCategoryPeriodChange(val) {
   const customRow = $('dashCatCustomDateRow');
   if (customRow) {
-    customRow.style.display = (val === 'custom') ? 'inline-flex' : 'none';
+    const isCustom = (val === 'custom');
+    customRow.style.display = isCustom ? 'inline-flex' : 'none';
+    if (isCustom) {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = (now.getMonth() + 1 < 10 ? '0' : '') + (now.getMonth() + 1);
+      const d = (now.getDate() < 10 ? '0' : '') + now.getDate();
+      if ($('dashCatDateFrom') && !$('dashCatDateFrom').value) {
+        $('dashCatDateFrom').value = `${y}-${m}-01`;
+      }
+      if ($('dashCatDateTo') && !$('dashCatDateTo').value) {
+        $('dashCatDateTo').value = `${y}-${m}-${d}`;
+      }
+    }
   }
   applyDashCategoryFilter();
 }
@@ -1625,17 +1654,26 @@ function onDashCategoryPeriodChange(val) {
 function selectDashCategoryPeriod(val) {
   if ($('dashCatFilterPeriod')) {
     $('dashCatFilterPeriod').value = val;
-    onDashCategoryPeriodChange(val);
   }
+  onDashCategoryPeriodChange(val);
 }
 
-function applyDashCategoryFilter() {
+async function applyDashCategoryFilter() {
   if (!$('dashCategorySummaryBody')) return;
 
   const periodSelect = $('dashCatFilterPeriod');
   const period = periodSelect ? periodSelect.value : 'this_month';
   const from = $('dashCatDateFrom') ? $('dashCatDateFrom').value : '';
   const to = $('dashCatDateTo') ? $('dashCatDateTo').value : '';
+
+  // If local bills cache is not loaded yet, fetch bills from API
+  if (!DASH_CATEGORY_BILLS || DASH_CATEGORY_BILLS.length === 0) {
+    try {
+      DASH_CATEGORY_BILLS = (await api('GET', '/api/bills')) || [];
+    } catch (e) {
+      console.warn('Failed to load bills for dashboard category filter:', e);
+    }
+  }
 
   const filteredBills = filterBillsByTimeline(DASH_CATEGORY_BILLS, period, from, to);
   const summary = ExportEngine.computeCategorySummary(filteredBills);
@@ -1676,16 +1714,13 @@ function exportCategorySummaryExcel() {
   ExportEngine.exportCategorySummaryToExcel(filteredBills, label);
 }
 
-    // Populate Product Category & Item Sales Summary with timeline filtering
-    if ($('dashCategorySummaryBody')) {
-      DASH_CATEGORY_BILLS = bills || [];
-      applyDashCategoryFilter();
-    }
-
-  } catch (err) {
-    console.error('Dashboard load failed:', err);
-  }
-}
+// Explicitly register on window to ensure inline HTML handlers always find them
+window.filterBillsByTimeline = filterBillsByTimeline;
+window.renderCategoryAndItemRows = renderCategoryAndItemRows;
+window.onDashCategoryPeriodChange = onDashCategoryPeriodChange;
+window.selectDashCategoryPeriod = selectDashCategoryPeriod;
+window.applyDashCategoryFilter = applyDashCategoryFilter;
+window.exportCategorySummaryExcel = exportCategorySummaryExcel;
 
 // --------------------------------------------------------------------------
 // 6. Inventory, Categories & Catalog Management
@@ -3155,35 +3190,12 @@ async function loadGSTR1Report() {
       </div>
     `;
 
-let GSTR1_CURRENT_BILLS = [];
-let GSTR1_LIFETIME_BILLS_CACHE = null;
-
-async function onGstrCategoryPeriodChange(val) {
-  await applyGstrCategoryFilter(val);
-}
-
-async function applyGstrCategoryFilter(period) {
-  if (!$('itemCategorySummaryBody')) return;
-  const p = period || ($('gstrCatFilterPeriod') ? $('gstrCatFilterPeriod').value : 'selected_month');
-
-  let billsToUse = GSTR1_CURRENT_BILLS;
-  if (p === 'all' || p === 'last_month' || p === 'last_3_months' || p === 'fy') {
-    if (!GSTR1_LIFETIME_BILLS_CACHE) {
-      GSTR1_LIFETIME_BILLS_CACHE = (await api('GET', '/api/bills')) || [];
-    }
-    billsToUse = filterBillsByTimeline(GSTR1_LIFETIME_BILLS_CACHE, p);
-  }
-
-  const summary = ExportEngine.computeCategorySummary(billsToUse);
-  $('itemCategorySummaryBody').innerHTML = renderCategoryAndItemRows(summary, p === 'selected_month' ? 'Selected Month' : p);
-}
-
     // Item Category Summary Table
     if ($('itemCategorySummaryBody')) {
       GSTR1_CURRENT_BILLS = billsList || [];
       const periodSelect = $('gstrCatFilterPeriod');
       const period = periodSelect ? periodSelect.value : 'selected_month';
-      applyGstrCategoryFilter(period);
+      await applyGstrCategoryFilter(period);
     }
 
     // B2B Table
@@ -3253,6 +3265,35 @@ async function exportMonthlyPnLExcel() {
     showToast('❌ Export failed: ' + err.message, 'danger', 4000);
   }
 }
+
+// --------------------------------------------------------------------------
+// GSTR-1 Timeline Category Filtering
+// --------------------------------------------------------------------------
+let GSTR1_CURRENT_BILLS = [];
+let GSTR1_LIFETIME_BILLS_CACHE = null;
+
+async function onGstrCategoryPeriodChange(val) {
+  await applyGstrCategoryFilter(val);
+}
+
+async function applyGstrCategoryFilter(period) {
+  if (!$('itemCategorySummaryBody')) return;
+  const p = period || ($('gstrCatFilterPeriod') ? $('gstrCatFilterPeriod').value : 'selected_month');
+
+  let billsToUse = GSTR1_CURRENT_BILLS;
+  if (p === 'all' || p === 'last_month' || p === 'last_3_months' || p === 'fy') {
+    if (!GSTR1_LIFETIME_BILLS_CACHE) {
+      GSTR1_LIFETIME_BILLS_CACHE = (await api('GET', '/api/bills')) || [];
+    }
+    billsToUse = filterBillsByTimeline(GSTR1_LIFETIME_BILLS_CACHE, p);
+  }
+
+  const summary = ExportEngine.computeCategorySummary(billsToUse);
+  $('itemCategorySummaryBody').innerHTML = renderCategoryAndItemRows(summary, p === 'selected_month' ? 'Selected Month' : p);
+}
+
+window.onGstrCategoryPeriodChange = onGstrCategoryPeriodChange;
+window.applyGstrCategoryFilter = applyGstrCategoryFilter;
 
 // --------------------------------------------------------------------------
 // 11. Settings & Multi-Device Wi-Fi Setup
