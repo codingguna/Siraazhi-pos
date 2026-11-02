@@ -1,95 +1,87 @@
 @echo off
-:: ============================================================================
-:: Siraazhi Pro POS — 1-Click Automated Build Script with Icon Embedding
-:: WHAT IT DOES:
-::   1. Generates Windows resource .syso files from app.ico.
-::   2. Compiles the main standalone app (siraazhi-pos.exe) with embedded icon & assets.
-::   3. Staged binary & icon into installer package.
-::   4. Compiles the self-extracting installer (SiraazhiPOS-Setup.exe) with embedded icon.
-::   5. Uses -H=windowsgui so NO black command prompt window ever appears!
-:: ============================================================================
+setlocal
+REM ============================================================================
+REM Siraazhi Pro POS -- 1-Click Automated Build and Installer Script (Inno Setup)
+REM WHAT IT DOES:
+REM   1. Compiles the main standalone app (siraazhi-pos.exe).
+REM   2. Uses -H=windowsgui so NO black command prompt window ever appears!
+REM   3. Locates Inno Setup Compiler (ISCC.exe) in PATH or standard Program Files.
+REM   4. Compiles installer.iss into a single, high-compression Windows installer
+REM      (SiraazhiPOS_Setup.exe) with embedded app icon, autostart, and uninstaller.
+REM ============================================================================
 
-title Building Siraazhi Pro POS
+title Building Siraazhi Pro POS and Inno Setup Installer
 cd /d "%~dp0"
 
 echo.
 echo ==================================================================
-echo   Building Siraazhi Pro POS Final Output Executables (with Icon)
+echo   Building Siraazhi Pro POS Application and Inno Setup Installer
 echo ==================================================================
 echo.
 
-:: 1. Generate Windows Icon Resources
-echo [1/5] Embedding Windows App Icon (app.ico)...
-if exist "app.ico" (
-    rsrc -ico app.ico -o rsrc.syso >nul 2>&1
-    if not exist "installer" mkdir "installer"
-    copy /y "app.ico" "installer\app.ico" >nul 2>&1
-    rsrc -ico installer\app.ico -o installer\rsrc.syso >nul 2>&1
-    if not exist "uninstaller" mkdir "uninstaller"
-    rsrc -ico app.ico -o uninstaller\rsrc.syso >nul 2>&1
-)
-
-:: 2. Compile Main Application
-echo [2/5] Compiling Main Standalone POS (siraazhi-pos.exe)...
+REM [1] Compile Main Standalone POS
+echo [1/3] Compiling Main Standalone POS: siraazhi-pos.exe...
 go build -v -ldflags "-s -w -H=windowsgui" -o siraazhi-pos.exe .
-if %errorlevel% neq 0 (
+if errorlevel 1 (
     echo.
-    echo [ERROR] Failed to compile main binary.
+    echo [ERROR] Failed to compile main Go binary: siraazhi-pos.exe
     pause
-    exit /b %errorlevel%
+    exit /b 1
 )
-echo       -^> Generated: siraazhi-pos.exe (with Official Logo Icon)
+echo       --^> Successfully generated: siraazhi-pos.exe
 
-:: 3. Compile Standalone GUI Uninstaller
-echo [3/5] Compiling Standalone Uninstaller (uninstall.exe)...
-go build -v -ldflags "-s -w -H=windowsgui" -o uninstall.exe .\uninstaller
-if %errorlevel% neq 0 (
+REM [2] Locate Inno Setup Compiler ISCC.exe
+echo.
+echo [2/3] Detecting Inno Setup Compiler: ISCC.exe...
+
+set "ISCC_EXE="
+where iscc >nul 2>&1
+if not errorlevel 1 (
+    for /f "delims=" %%i in ('where iscc') do set "ISCC_EXE=%%i"
+)
+
+if not defined ISCC_EXE if exist "C:\Program Files\Inno Setup 7\ISCC.exe" set "ISCC_EXE=C:\Program Files\Inno Setup 7\ISCC.exe"
+if not defined ISCC_EXE if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set "ISCC_EXE=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if not defined ISCC_EXE if exist "C:\Program Files\Inno Setup 6\ISCC.exe" set "ISCC_EXE=C:\Program Files\Inno Setup 6\ISCC.exe"
+if not defined ISCC_EXE if exist "%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe" set "ISCC_EXE=%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe"
+if not defined ISCC_EXE if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+
+if not defined ISCC_EXE (
     echo.
-    echo [ERROR] Failed to compile uninstaller.
-    pause
-    exit /b %errorlevel%
-)
-echo       -^> Generated: uninstall.exe (with Official Logo Icon)
-
-:: 4. Stage components for installer embedding
-echo [4/5] Staging components into Setup Installer package...
-copy /y "siraazhi-pos.exe" "installer\siraazhi-pos.exe" >nul
-copy /y "uninstall.exe" "installer\uninstall.exe" >nul
-copy /y "app.ico" "installer\app.ico" >nul
-copy /y "README.txt" "installer\README.txt" >nul
-copy /y "LICENSE.txt" "installer\LICENSE.txt" >nul
-
-:: 5. Compile Standalone Installer
-echo [5/5] Compiling Standalone Windows Setup (SiraazhiPOS-Setup.exe)...
-go build -tags installer -v -ldflags "-s -w -H=windowsgui" -o SiraazhiPOS-Setup.exe .\installer
-if %errorlevel% neq 0 (
+    echo [WARNING] Inno Setup compiler ISCC.exe not found on this system!
+    echo To compile the Windows installer, install Inno Setup:
+    echo   Run: winget install JRSoftware.InnoSetup.7
+    echo   Or download from: https://jrsoftware.org/isdl.php
     echo.
-    echo [ERROR] Failed to compile installer.
+    echo The portable application siraazhi-pos.exe was built successfully.
     pause
-    exit /b %errorlevel%
+    exit /b 0
 )
-echo       -^> Generated: SiraazhiPOS-Setup.exe (with Official Setup Icon)
 
-:: Clean up staged temporary files
-del /f /q "installer\siraazhi-pos.exe" >nul 2>&1
-del /f /q "installer\uninstall.exe" >nul 2>&1
-del /f /q "installer\README.txt" >nul 2>&1
-del /f /q "installer\LICENSE.txt" >nul 2>&1
+echo       --^> Found Inno Setup: "%ISCC_EXE%"
+
+REM [3] Compile Inno Setup Script
+echo.
+echo [3/3] Compiling Professional Windows Installer: installer.iss...
+"%ISCC_EXE%" installer.iss
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Inno Setup compilation failed!
+    pause
+    exit /b 1
+)
 
 echo.
 echo ==================================================================
 echo   BUILD COMPLETED SUCCESSFULLY!
 echo ==================================================================
 echo.
-echo   Final Output Files in this folder:
+echo   Final Output Files:
 echo.
-echo   1. SiraazhiPOS-Setup.exe  -^> The single installer to upload to GitHub
-echo                               (with Windows Logo Icon)
+echo   1. SiraazhiPOS_Setup.exe  --^> Single Windows Setup wizard
+echo                                 Includes official icon, autostart, and uninstaller
 echo.
-echo   2. siraazhi-pos.exe       -^> The portable standalone application
-echo                               (with Windows Logo Icon)
-echo.
-echo   3. uninstall.exe          -^> Standalone GUI uninstaller
+echo   2. siraazhi-pos.exe       --^> Standalone portable binary
 echo ==================================================================
 echo.
 pause

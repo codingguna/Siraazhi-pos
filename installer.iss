@@ -25,6 +25,10 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+SetupIconFile=app.ico
+UninstallDisplayIcon={app}\app.ico
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -37,10 +41,11 @@ Name: "autostart"; Description: "Automatically start Siraazhi POS background ser
 Source: "siraazhi-pos.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start_silent.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "-port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "-port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "-port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""; IconFilename: "{app}\app.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "-port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""; IconFilename: "{app}\app.ico"; Tasks: desktopicon
 
 [Registry]
 Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "SiraazhiPOS"; ValueData: """{app}\{#MyAppExeName}"" -headless -port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""; Flags: uninsdeletevalue; Tasks: autostart
