@@ -1,15 +1,18 @@
-; Inno Setup Script for Siraazhi Pro POS
-; This script generates a standard professional Windows Setup wizard (SiraazhiPOS_Setup.exe)
-; identical to how Python, Chrome, and VS Code installers operate.
+; =====================================================================
+; Siraazhi Pro POS™ — Professional Windows Setup Script (Inno Setup)
+; Unified Standard Installer & Maintenance Engine for Windows 10 & 11 (64-bit)
+; Modeled after BioVault™ Standard Deployment Pipeline
+; =====================================================================
 
 #define MyAppName "Siraazhi Pro POS"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "Vanur Farmer Producer Company Limited"
 #define MyAppURL "https://siraazhi.netlify.app"
 #define MyAppExeName "siraazhi-pos.exe"
+#define MyAppId "{E681C49B-5A38-4F2E-9D4A-3C981452D120}"
 
 [Setup]
-AppId={{E681C49B-5A38-4F2E-9D4A-3C981452D120}
+AppId={{E681C49B-5A38-4F2E-9D4A-3C981452D120}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -18,15 +21,18 @@ AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\SiraazhiPOS
 DefaultGroupName={#MyAppName}
-DisableProgramGroupPage=yes
-OutputDir=.
-OutputBaseFilename=SiraazhiPOS_Setup
-Compression=lzma2/ultra64
-SolidCompression=yes
-WizardStyle=modern
 PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=dialog
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 SetupIconFile=app.ico
 UninstallDisplayIcon={app}\app.ico
+OutputDir=output
+OutputBaseFilename=SiraazhiPOS_Setup_v1.0.0
+Compression=lzma2/max
+SolidCompression=yes
+WizardStyle=modern
+DisableWelcomePage=no
 CloseApplications=yes
 RestartApplications=no
 
@@ -37,6 +43,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "autostart"; Description: "Automatically start Siraazhi POS background service when Windows starts"; GroupDescription: "Windows Integration"
 
+[Dirs]
+; Protected data directories for SQLite database and automatic daily backups
+Name: "{commonappdata}\SiraazhiPOS"; Flags: uninsneveruninstall
+Name: "{commonappdata}\SiraazhiPOS\data"; Flags: uninsneveruninstall
+Name: "{commonappdata}\SiraazhiPOS\backups"; Flags: uninsneveruninstall
+
 [Files]
 Source: "siraazhi-pos.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start_silent.vbs"; DestDir: "{app}"; Flags: ignoreversion
@@ -44,11 +56,118 @@ Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "-port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""; IconFilename: "{app}\app.ico"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "-port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""; IconFilename: "{app}\app.ico"
+Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "-port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""; IconFilename: "{app}\app.ico"; Tasks: desktopicon
 
 [Registry]
 Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "SiraazhiPOS"; ValueData: """{app}\{#MyAppExeName}"" -headless -port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""; Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Parameters: "-port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent runascurrentuser
+
+[UninstallRun]
+; Terminate processes before file removal
+Filename: "taskkill"; Parameters: "/f /im {#MyAppExeName}"; Flags: runhidden; RunOnceId: "KillAppProcs"
+
+[Code]
+// -------------------------------------------------------------------
+// Helper: Execute a command and wait for completion
+// -------------------------------------------------------------------
+function ExecCommand(const Filename, Params: String; var ResultCode: Integer): Boolean;
+begin
+  Result := Exec(Filename, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+// -------------------------------------------------------------------
+// Helper: Check registry for existing installation across 32/64 bit views
+// -------------------------------------------------------------------
+function GetInstalledUninstaller(var UninstallerPath: String): Boolean;
+var
+  SubKey: String;
+begin
+  Result := False;
+  SubKey := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1';
+  if RegQueryStringValue(HKLM64, SubKey, 'UninstallString', UninstallerPath) then
+  begin
+    Result := True;
+    Exit;
+  end;
+  if RegQueryStringValue(HKLM32, SubKey, 'UninstallString', UninstallerPath) then
+  begin
+    Result := True;
+    Exit;
+  end;
+end;
+
+// -------------------------------------------------------------------
+// Single Setup Handler: Detect existing installation & handle Install / Uninstall / Reinstall
+// -------------------------------------------------------------------
+function InitializeSetup(): Boolean;
+var
+  UninstallerPath: String;
+  ResultCode: Integer;
+  Choice: Integer;
+begin
+  Result := True;
+
+  // Check if Siraazhi Pro POS is already installed on this PC
+  if GetInstalledUninstaller(UninstallerPath) then
+  begin
+    Choice := MsgBox('Siraazhi Pro POS is ALREADY INSTALLED on this computer.'#13#10#13#10 +
+                     'What action would you like to perform?'#13#10#13#10 +
+                     '• Click [YES] to completely UNINSTALL Siraazhi Pro POS.'#13#10 +
+                     '• Click [NO] to REINSTALL / UPDATE the installation.'#13#10 +
+                     '• Click [CANCEL] to abort and exit.',
+                     mbConfirmation, MB_YESNOCANCEL);
+
+    if Choice = IDYES then
+    begin
+      // Launch standard uninstaller
+      Exec(RemoveQuotes(UninstallerPath), '', '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
+      Result := False; // Exit setup after uninstaller completes
+      Exit;
+    end
+    else if Choice = IDCANCEL then
+    begin
+      Result := False; // Abort setup
+      Exit;
+    end;
+    // If Choice = IDNO, continue with Reinstall/Upgrade!
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+begin
+  if CurStep = ssInstall then
+  begin
+    // Terminate any running POS instances before copying new files
+    ExecCommand('taskkill.exe', '/f /im {#MyAppExeName}', ResultCode);
+  end;
+end;
+
+// -------------------------------------------------------------------
+// Post-Uninstall Cleanup Handler: Prompt before deleting database
+// -------------------------------------------------------------------
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir: String;
+  DelChoice: Integer;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    DataDir := ExpandConstant('{commonappdata}\SiraazhiPOS\data');
+    if DirExists(DataDir) then
+    begin
+      DelChoice := MsgBox('Do you also want to DELETE all sales records, customer bills, and product database in ' + DataDir + '?'#13#10#13#10 +
+                          '(Click [Yes] to permanently delete all store data, or [No] to safely keep records for future reinstallation)',
+                          mbConfirmation, MB_YESNO);
+      if DelChoice = IDYES then
+      begin
+        DelTree(ExpandConstant('{commonappdata}\SiraazhiPOS'), True, True, True);
+      end;
+    end;
+  end;
+end;
