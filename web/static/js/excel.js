@@ -167,10 +167,15 @@ const ExportEngine = {
    * getItemCategory identifies the primary product family for any line item SKU.
    */
   getItemCategory(item) {
+    let cat = (item.category || '').trim();
+    if (!cat && typeof PRODUCTS !== 'undefined' && Array.isArray(PRODUCTS) && item.productId) {
+      const p = PRODUCTS.find(prod => prod.id === item.productId);
+      if (p && p.category) cat = p.category.trim();
+    }
     const nameEn = (item.nameEn || '').toLowerCase();
     const nameTa = (item.nameTa || '').toLowerCase();
-    const cat = (item.category || '').toLowerCase();
-    const combined = `${nameEn} ${nameTa} ${cat}`;
+    const catLower = (cat || '').toLowerCase();
+    const combined = `${nameEn} ${nameTa} ${catLower}`;
 
     if (
       combined.includes('cake') ||
@@ -227,21 +232,24 @@ const ExportEngine = {
     ) {
       return 'Lamp Oil (Deepam)';
     }
+    if (cat && catLower !== 'other' && catLower !== 'all' && catLower !== 'general') {
+      return cat;
+    }
     return 'Other Items';
   },
 
   /**
-   * computeCategorySummary calculates aggregated sales by major product category.
+   * computeCategorySummary calculates aggregated sales by major product category and exact items sold.
    */
   computeCategorySummary(bills) {
     const catMap = {
-      'Groundnut Oil': { name: 'Groundnut Oil (கடலை எண்ணெய்)', icon: '🥜', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0 },
-      'Sesame Oil': { name: 'Sesame Oil (நல்லெண்ணெய்)', icon: '🫘', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0 },
-      'Coconut Oil': { name: 'Coconut Oil (தேங்காய் எண்ணெய்)', icon: '🥥', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0 },
-      'Oil Cakes (Cattle Feed)': { name: 'Oil Cakes (புண்ணாக்கு / By-Products)', icon: '🌾', unit: 'kg', qty: 0, cash: 0, bank: 0, total: 0 },
-      'Lamp Oil (Deepam)': { name: 'Lamp Oil (விளக்கு எண்ணெய்)', icon: '🪔', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0 },
-      'Seeds & Raw Materials': { name: 'Seeds & Raw Materials', icon: '🌱', unit: 'kg', qty: 0, cash: 0, bank: 0, total: 0 },
-      'Other Items': { name: 'Other Items & Sundry Sales', icon: '📦', unit: 'units', qty: 0, cash: 0, bank: 0, total: 0 }
+      'Groundnut Oil': { name: 'Groundnut Oil (கடலை எண்ணெய்)', icon: '🥜', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Sesame Oil': { name: 'Sesame Oil (நல்லெண்ணெய்)', icon: '🫘', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Coconut Oil': { name: 'Coconut Oil (தேங்காய் எண்ணெய்)', icon: '🥥', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Oil Cakes (Cattle Feed)': { name: 'Oil Cakes (புண்ணாக்கு / By-Products)', icon: '🌾', unit: 'kg', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Lamp Oil (Deepam)': { name: 'Lamp Oil (விளக்கு எண்ணெய்)', icon: '🪔', unit: 'L', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Seeds & Raw Materials': { name: 'Seeds & Raw Materials', icon: '🌱', unit: 'kg', qty: 0, cash: 0, bank: 0, total: 0, items: {} },
+      'Other Items': { name: 'Other Items & Sundry Sales', icon: '📦', unit: 'units', qty: 0, cash: 0, bank: 0, total: 0, items: {} }
     };
 
     let grandCash = 0;
@@ -271,61 +279,103 @@ const ExportEngine = {
           const itBank = Math.round(bBank * ratio * 100) / 100;
           const cat = this.getItemCategory(it);
           if (!catMap[cat]) {
-            catMap[cat] = { name: cat, icon: '📦', unit: 'units', qty: 0, cash: 0, bank: 0, total: 0 };
+            catMap[cat] = { name: cat, icon: '📦', unit: 'units', qty: 0, cash: 0, bank: 0, total: 0, items: {} };
           }
-          catMap[cat].qty += Number(it.qty) || 0;
+          if (!catMap[cat].items) {
+            catMap[cat].items = {};
+          }
+          const itQty = Number(it.qty) || 0;
+          const itTotal = Number(it.amount) || 0;
+
+          catMap[cat].qty += itQty;
           catMap[cat].cash += itCash;
           catMap[cat].bank += itBank;
-          catMap[cat].total += Number(it.amount) || 0;
-          grandQty += Number(it.qty) || 0;
+          catMap[cat].total += itTotal;
+          grandQty += itQty;
+
+          // Aggregate individual exact product item
+          const itemKey = (it.nameEn || it.nameTa || 'General Item').trim();
+          if (!catMap[cat].items[itemKey]) {
+            catMap[cat].items[itemKey] = {
+              nameEn: it.nameEn || itemKey,
+              nameTa: it.nameTa || '',
+              hsn: it.hsn || '',
+              qty: 0,
+              cash: 0,
+              bank: 0,
+              total: 0
+            };
+          }
+          catMap[cat].items[itemKey].qty += itQty;
+          catMap[cat].items[itemKey].cash += itCash;
+          catMap[cat].items[itemKey].bank += itBank;
+          catMap[cat].items[itemKey].total += itTotal;
         });
       } else {
         const cat = 'Other Items';
+        if (!catMap[cat].items) catMap[cat].items = {};
         catMap[cat].qty += 1;
         catMap[cat].cash += bCash;
         catMap[cat].bank += bBank;
         catMap[cat].total += Number(b.grandTotal) || 0;
         grandQty += 1;
+
+        const itemKey = 'General Counter Sales';
+        if (!catMap[cat].items[itemKey]) {
+          catMap[cat].items[itemKey] = {
+            nameEn: itemKey,
+            nameTa: '',
+            hsn: '',
+            qty: 0,
+            cash: 0,
+            bank: 0,
+            total: 0
+          };
+        }
+        catMap[cat].items[itemKey].qty += 1;
+        catMap[cat].items[itemKey].cash += bCash;
+        catMap[cat].items[itemKey].bank += bBank;
+        catMap[cat].items[itemKey].total += Number(b.grandTotal) || 0;
       }
     });
 
     const categories = [];
     const order = ['Groundnut Oil', 'Sesame Oil', 'Coconut Oil', 'Oil Cakes (Cattle Feed)', 'Lamp Oil (Deepam)', 'Seeds & Raw Materials', 'Other Items'];
 
+    const formatCategory = (catKey, d) => {
+      const pct = grandTotal > 0 ? ((d.total / grandTotal) * 100).toFixed(2) : '0.00';
+      const items = Object.values(d.items || {})
+        .sort((a, b) => b.total - a.total)
+        .map(it => ({
+          ...it,
+          pct: grandTotal > 0 ? ((it.total / grandTotal) * 100).toFixed(2) : '0.00'
+        }));
+
+      return {
+        key: catKey,
+        name: d.name,
+        icon: d.icon,
+        unit: d.unit,
+        qty: d.qty,
+        cash: d.cash,
+        bank: d.bank,
+        total: d.total,
+        pct: pct,
+        items: items,
+        isTotal: false
+      };
+    };
+
     order.forEach(catKey => {
       const d = catMap[catKey];
       if (d && (d.total > 0 || d.qty > 0)) {
-        const pct = grandTotal > 0 ? ((d.total / grandTotal) * 100).toFixed(2) : '0.00';
-        categories.push({
-          key: catKey,
-          name: d.name,
-          icon: d.icon,
-          unit: d.unit,
-          qty: d.qty,
-          cash: d.cash,
-          bank: d.bank,
-          total: d.total,
-          pct: pct,
-          isTotal: false
-        });
+        categories.push(formatCategory(catKey, d));
       }
     });
 
     for (const [k, d] of Object.entries(catMap)) {
       if (!order.includes(k) && (d.total > 0 || d.qty > 0)) {
-        const pct = grandTotal > 0 ? ((d.total / grandTotal) * 100).toFixed(2) : '0.00';
-        categories.push({
-          key: k,
-          name: d.name,
-          icon: d.icon,
-          unit: d.unit,
-          qty: d.qty,
-          cash: d.cash,
-          bank: d.bank,
-          total: d.total,
-          pct: pct,
-          isTotal: false
-        });
+        categories.push(formatCategory(k, d));
       }
     }
 
@@ -339,6 +389,7 @@ const ExportEngine = {
       bank: grandBank,
       total: grandTotal,
       pct: '100.00',
+      items: [],
       isTotal: true
     });
 
@@ -737,13 +788,25 @@ const ExportEngine = {
 
     catSummary.categories.forEach(c => {
       summaryRows.push({
-        'FINANCIAL ACCOUNTING HEAD': c.name,
+        'FINANCIAL ACCOUNTING HEAD': c.isTotal ? `=== ${c.name} ===` : c.name,
         'QUANTITY / VOLUME': c.qty > 0 ? `${c.qty.toFixed(2)} ${c.unit}` : '---',
         'CASH (₹)': c.cash,
         'BANK (₹)': c.bank,
         'TOTAL (₹)': c.total,
         'SHARE (%)': `${c.pct}%`
       });
+      if (c.items && c.items.length) {
+        c.items.forEach(it => {
+          summaryRows.push({
+            'FINANCIAL ACCOUNTING HEAD': `   ↳ ${it.nameEn}${it.nameTa ? ` (${it.nameTa})` : ''}`,
+            'QUANTITY / VOLUME': it.qty > 0 ? it.qty.toFixed(2) : '---',
+            'CASH (₹)': it.cash,
+            'BANK (₹)': it.bank,
+            'TOTAL (₹)': it.total,
+            'SHARE (%)': `${it.pct}%`
+          });
+        });
+      }
     });
 
     summaryRows.push({});

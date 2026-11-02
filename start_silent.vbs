@@ -6,6 +6,9 @@
 '   Uses WScript.Shell.Run with window style 0 (completely hidden/silent).
 '   Listens on http://localhost:8080 and http://<your-lan-ip>:8080 continuously.
 
+Set fso = CreateObject("Scripting.FileSystemObject")
+strPath = fso.GetParentFolderName(WScript.ScriptFullName)
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run "siraazhi-pos.exe -port 8080", 0, False
+WshShell.CurrentDirectory = strPath
+WshShell.Run """" & strPath & "\siraazhi-pos.exe"" -port 8080", 0, False
 Set WshShell = Nothing

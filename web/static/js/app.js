@@ -593,6 +593,7 @@ function addToCart(productId) {
       productId: product.id,
       nameEn: product.nameEn,
       nameTa: product.nameTa,
+      category: product.category,
       hsn: product.hsn,
       barcode: product.barcode,
       price: product.price,
@@ -1462,25 +1463,78 @@ async function loadDashboard() {
       </div>
     `).join('') : '<div style="color:#64748b; padding:10px 0;">No sales recorded yet.</div>';
 
+// --------------------------------------------------------------------------
+// Category & Item Sales Summary Renderer (Dashboard & Reports)
+// --------------------------------------------------------------------------
+function renderCategoryAndItemRows(summary) {
+  if (!summary || !summary.categories || summary.categories.length <= 1) {
+    return '<tr><td colspan="6" class="center muted-text" style="padding:20px;">No sales recorded for this period yet</td></tr>';
+  }
+
+  let html = '';
+  summary.categories.forEach(c => {
+    if (c.isTotal) {
+      html += `
+        <tr style="font-weight:700; background:#f1f5f9; border-top:2px solid #0f172a; font-size:13.5px;">
+          <td><b>${c.icon} ${c.name}</b></td>
+          <td><b>${c.qty > 0 ? c.qty.toFixed(2) : '—'}</b></td>
+          <td style="color:#15803d; font-weight:700;">${formatINR(c.cash)}</td>
+          <td style="color:#0284c7; font-weight:700;">${formatINR(c.bank)}</td>
+          <td><b style="font-size:15px; color:#0f172a;">${formatINR(c.total)}</b></td>
+          <td><span class="chip-btn" style="background:#0f172a; color:#fff; font-weight:700;">100.00%</span></td>
+        </tr>
+      `;
+    } else {
+      const itemCount = (c.items && c.items.length) || 0;
+      html += `
+        <tr style="background:#f8fafc; font-weight:600; border-top:1px solid #cbd5e1;">
+          <td>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:16px;">${c.icon}</span>
+              <b style="color:#0f172a; font-size:13.5px;">${c.name}</b>
+              <span style="font-size:11px; background:#e2e8f0; color:#475569; padding:1px 7px; border-radius:10px; font-weight:600;">${itemCount} ${itemCount === 1 ? 'item' : 'items'}</span>
+            </div>
+          </td>
+          <td><b>${c.qty > 0 ? c.qty.toFixed(2) + ' ' + (c.unit || '') : '0'}</b></td>
+          <td style="color:#15803d; font-weight:600;">${formatINR(c.cash)}</td>
+          <td style="color:#0284c7; font-weight:600;">${formatINR(c.bank)}</td>
+          <td><b style="font-size:14px; color:#0f172a;">${formatINR(c.total)}</b></td>
+          <td><span class="chip-btn" style="background:#e0f2fe; color:#0369a1; font-weight:700;">${c.pct}%</span></td>
+        </tr>
+      `;
+      if (c.items && c.items.length) {
+        c.items.forEach(it => {
+          html += `
+            <tr style="background:#ffffff; border-bottom:1px dashed #e2e8f0;">
+              <td style="padding-left:28px;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span style="color:#94a3b8; font-weight:bold; font-size:13px;">↳</span>
+                  <b style="font-size:13px; color:#1e293b;">${escapeHtml(it.nameEn)}</b>
+                  ${it.nameTa ? `<span style="font-size:11.5px; color:#64748b;">(${escapeHtml(it.nameTa)})</span>` : ''}
+                  ${it.hsn ? `<span style="font-size:10px; color:#64748b; background:#f1f5f9; border:1px solid #e2e8f0; padding:1px 5px; border-radius:3px;">HSN ${escapeHtml(it.hsn)}</span>` : ''}
+                </div>
+              </td>
+              <td style="color:#334155; font-size:12.5px;">${it.qty > 0 ? it.qty.toFixed(2) : '0'}</td>
+              <td style="color:#16a34a; font-size:12.5px;">${formatINR(it.cash)}</td>
+              <td style="color:#0284c7; font-size:12.5px;">${formatINR(it.bank)}</td>
+              <td style="font-size:13px; font-weight:600; color:#1e293b;">${formatINR(it.total)}</td>
+              <td><span class="chip-btn" style="background:#f1f5f9; color:#475569; font-size:11px; font-weight:600;">${it.pct}%</span></td>
+            </tr>
+          `;
+        });
+      }
+    }
+  });
+
+  return html;
+}
+
     // Product Category & Item Sales Summary for current month
     if ($('dashCategorySummaryBody')) {
       const currentMonth = new Date().toISOString().slice(0, 7);
       const monthBills = (bills || []).filter(b => b.date && b.date.startsWith(currentMonth));
       const summary = ExportEngine.computeCategorySummary(monthBills);
-      if (summary.categories && summary.categories.length > 1) {
-        $('dashCategorySummaryBody').innerHTML = summary.categories.map(c => `
-          <tr style="${c.isTotal ? 'font-weight:700; background:#f8fafc; border-top:2px solid #cbd5e1;' : ''}">
-            <td><b>${c.icon} ${c.name}</b></td>
-            <td>${c.qty > 0 ? c.qty.toFixed(2) + ' ' + c.unit : (c.isTotal ? '—' : '0')}</td>
-            <td style="color:#15803d; font-weight:600;">${formatINR(c.cash)}</td>
-            <td style="color:#0284c7; font-weight:600;">${formatINR(c.bank)}</td>
-            <td><b style="font-size:14px;">${formatINR(c.total)}</b></td>
-            <td><span class="chip-btn" style="background:${c.isTotal ? '#e2e8f0' : '#f0fdf4'}; color:#0f172a; font-weight:700;">${c.pct}%</span></td>
-          </tr>
-        `).join('');
-      } else {
-        $('dashCategorySummaryBody').innerHTML = `<tr><td colspan="6" class="center muted-text" style="padding:16px;">No sales recorded for this month yet</td></tr>`;
-      }
+      $('dashCategorySummaryBody').innerHTML = renderCategoryAndItemRows(summary);
     }
 
   } catch (err) {
@@ -2959,20 +3013,7 @@ async function loadGSTR1Report() {
     // Item Category Summary Table
     if ($('itemCategorySummaryBody')) {
       const summary = ExportEngine.computeCategorySummary(billsList);
-      if (summary.categories && summary.categories.length > 1) {
-        $('itemCategorySummaryBody').innerHTML = summary.categories.map(c => `
-          <tr style="${c.isTotal ? 'font-weight:700; background:#f8fafc; border-top:2px solid #cbd5e1;' : ''}">
-            <td><b>${c.icon} ${c.name}</b></td>
-            <td>${c.qty > 0 ? c.qty.toFixed(2) + ' ' + c.unit : (c.isTotal ? '—' : '0')}</td>
-            <td style="color:#15803d; font-weight:600;">${formatINR(c.cash)}</td>
-            <td style="color:#0284c7; font-weight:600;">${formatINR(c.bank)}</td>
-            <td><b style="font-size:14px;">${formatINR(c.total)}</b></td>
-            <td><span class="chip-btn" style="background:${c.isTotal ? '#e2e8f0' : '#f0fdf4'}; color:#0f172a; font-weight:700;">${c.pct}%</span></td>
-          </tr>
-        `).join('');
-      } else {
-        $('itemCategorySummaryBody').innerHTML = `<tr><td colspan="6" class="center muted-text" style="padding:24px;">No item sales recorded for this period</td></tr>`;
-      }
+      $('itemCategorySummaryBody').innerHTML = renderCategoryAndItemRows(summary);
     }
 
     // B2B Table
