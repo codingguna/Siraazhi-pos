@@ -513,6 +513,9 @@ const PrintEngine = {
                 <div class="calc-row"><span>Add : SGST:</span> <b>${this.formatINR(totalSgstAll || bill.sgst)}</b></div>
                 <div class="calc-row"><span>Add : CGST:</span> <b>${this.formatINR(totalCgstAll || bill.cgst)}</b></div>
               ` : ''}
+            </div>
+          </div>
+
           <!-- Worded Amount (Left) & Total Number (Right) on the Same Row -->
           <div class="grand-total-banner">
             <div class="grand-total-words">
