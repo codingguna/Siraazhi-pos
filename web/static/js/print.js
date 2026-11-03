@@ -36,6 +36,53 @@ const PrintEngine = {
     }
     return val;
   },
+
+  /**
+   * numberToWordsINR converts a numeric amount to Indian Rupee word representation.
+   * e.g. 10300 -> "INR Ten Thousand Three Hundred only"
+   */
+  numberToWordsINR(amount) {
+    const num = Math.round(Number(amount || 0));
+    if (num === 0) return 'INR Zero only';
+
+    const a = [
+      '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+      'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'
+    ];
+    const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+    function convertUnderThousand(n) {
+      let str = '';
+      if (n >= 100) {
+        str += a[Math.floor(n / 100)] + ' Hundred ';
+        n %= 100;
+      }
+      if (n >= 20) {
+        str += b[Math.floor(n / 10)] + (n % 10 > 0 ? ' ' + a[n % 10] : '') + ' ';
+      } else if (n > 0) {
+        str += a[n] + ' ';
+      }
+      return str;
+    }
+
+    let words = '';
+    let n = num;
+
+    const crore = Math.floor(n / 10000000);
+    n %= 10000000;
+    const lakh = Math.floor(n / 100000);
+    n %= 100000;
+    const thousand = Math.floor(n / 1000);
+    n %= 1000;
+
+    if (crore > 0) words += convertUnderThousand(crore) + 'Crore ';
+    if (lakh > 0) words += convertUnderThousand(lakh) + 'Lakh ';
+    if (thousand > 0) words += convertUnderThousand(thousand) + 'Thousand ';
+    if (n > 0) words += convertUnderThousand(n);
+
+    return 'INR ' + words.trim().replace(/\s+/g, ' ') + ' only';
+  },
+
   formatPayMode(bill) {
     if (!bill) return 'Cash';
     if (bill.payMode === 'Split' || (bill.cashPaid > 0 && bill.upiPaid > 0)) {
@@ -237,110 +284,190 @@ const PrintEngine = {
   renderA4Single(bill, settings, copyLabel, isHalf) {
     const s = settings || {};
     const cust = (bill && bill.customer) || {};
-    const rows = (bill.items || []).map((it, idx) => `
-      <tr>
-        <td class="center" style="width:5%">${idx + 1}</td>
-        <td style="width:40%">
-          <b>${it.nameEn || ''}</b>${it.nameTa && !isHalf ? `<br><small style="color:#444;">${it.nameTa}</small>` : (it.nameTa ? ` <small style="color:#555;">(${it.nameTa})</small>` : '')}
-        </td>
-        <td class="center" style="width:12%">${it.hsn || '-'}</td>
-        <td class="center" style="width:8%">${it.qty || 0}</td>
-        <td class="right" style="width:15%">${this.formatINR(it.price)}</td>
-        <td class="right" style="width:20%"><b>${this.formatINR(it.amount)}</b></td>
-      </tr>
-    `).join('');
+    const deliveryType = bill.deliveryType || 'Office';
+    const payMode = bill.payMode || 'Cash';
+    const placeOfSupply = (cust && cust.state) ? `${cust.state}` : 'Office (Tamil Nadu - 33)';
+
+    // Group items for HSN tax breakdown (reverse-calculated from inclusive net amount)
+    const hsnMap = {};
+    let totalTaxableAll = 0;
+    let totalCgstAll = 0;
+    let totalSgstAll = 0;
+    let totalTaxAll = 0;
+
+    const rows = (bill.items || []).map((it, idx) => {
+      const qty = Number(it.qty) || 0;
+      const netPrice = Number(it.price) || 0;
+      const lineAmt = Number(it.amount) || (qty * netPrice);
+      const mrp = Number(it.mrp) > 0 ? Number(it.mrp) : netPrice;
+      const taxRate = Number(it.gstPct !== undefined ? it.gstPct : (s.gstDefaultPct || 5));
+
+      // Calculate discount % per unit (MRP - NetPrice)
+      let discPct = 0;
+      if (mrp > netPrice && mrp > 0) {
+        discPct = ((mrp - netPrice) / mrp) * 100;
+      }
+      const discPerUnit = mrp > netPrice ? (mrp - netPrice) : 0;
+
+      // Reverse tax calculation: taxable = lineAmt / (1 + taxRate/100)
+      if (bill.gstOn && taxRate > 0) {
+        const taxableLine = lineAmt / (1 + (taxRate / 100));
+        const taxLine = lineAmt - taxableLine;
+        const halfTax = taxLine / 2;
+
+        const hsnKey = `${it.hsn || '1512'}_${taxRate}`;
+        if (!hsnMap[hsnKey]) {
+          hsnMap[hsnKey] = {
+            hsn: it.hsn || '1512',
+            taxRate: taxRate,
+            taxableAmt: 0,
+            sgstAmt: 0,
+            cgstAmt: 0,
+            totalTax: 0
+          };
+        }
+        hsnMap[hsnKey].taxableAmt += taxableLine;
+        hsnMap[hsnKey].sgstAmt += halfTax;
+        hsnMap[hsnKey].cgstAmt += halfTax;
+        hsnMap[hsnKey].totalTax += taxLine;
+
+        totalTaxableAll += taxableLine;
+        totalCgstAll += halfTax;
+        totalSgstAll += halfTax;
+        totalTaxAll += taxLine;
+      }
+
+      return `
+        <tr>
+          <td class="center" style="width:4%;">${idx + 1}</td>
+          <td style="width:36%;">
+            <b>${it.nameEn || ''}</b>
+            ${it.nameTa ? `<br><small style="color:#555;">${it.nameTa}</small>` : ''}
+            <div style="font-size:8.5px; color:#555;">HSN: ${it.hsn || '-'}</div>
+          </td>
+          <td class="center" style="width:8%; font-weight:bold;">${qty}</td>
+          <td class="center" style="width:8%;">${taxRate.toFixed(1)}%</td>
+          <td class="right" style="width:11%;">${this.formatINR(mrp)}</td>
+          <td class="center" style="width:10%;">
+            ${discPct > 0 ? `${discPct.toFixed(1)}%<br><small style="color:#666;">(-₹${discPerUnit.toFixed(1)})</small>` : '0%'}
+          </td>
+          <td class="right" style="width:11%;">${this.formatINR(netPrice)}</td>
+          <td class="right bold" style="width:12%;">${this.formatINR(lineAmt)}</td>
+        </tr>
+      `;
+    }).join('');
 
     let blankRows = '';
-    if (isHalf) {
-      const minRows = 3;
-      const count = (bill.items || []).length;
-      for (let i = count; i < minRows; i++) {
-        blankRows += `
-          <tr class="blank-row">
-            <td class="center">&nbsp;</td>
-            <td>&nbsp;</td>
-            <td class="center">&nbsp;</td>
-            <td class="center">&nbsp;</td>
-            <td class="right">&nbsp;</td>
-            <td class="right">&nbsp;</td>
-          </tr>
-        `;
-      }
+    const minRows = isHalf ? 3 : 5;
+    const count = (bill.items || []).length;
+    for (let i = count; i < minRows; i++) {
+      blankRows += `
+        <tr class="blank-row">
+          <td class="center">&nbsp;</td>
+          <td>&nbsp;</td>
+          <td class="center">&nbsp;</td>
+          <td class="center">&nbsp;</td>
+          <td class="right">&nbsp;</td>
+          <td class="center">&nbsp;</td>
+          <td class="right">&nbsp;</td>
+          <td class="right">&nbsp;</td>
+        </tr>
+      `;
     }
 
-    const taxTable = bill.gstOn ? `
-      <table class="tax-summary-table">
-        <thead>
+    // Build HSN Tax Breakdown Table rows
+    const hsnKeys = Object.keys(hsnMap);
+    let hsnRowsHtml = '';
+    if (bill.gstOn && hsnKeys.length > 0) {
+      hsnRowsHtml = hsnKeys.map(k => {
+        const item = hsnMap[k];
+        return `
           <tr>
-            <th>HSN/SAC</th>
-            <th>Taxable Val</th>
-            <th>CGST</th>
-            <th>SGST</th>
-            <th>IGST</th>
-            <th>Total Tax</th>
+            <td class="center">${item.hsn}</td>
+            <td class="center">${item.taxRate.toFixed(0)}%</td>
+            <td class="right">${this.formatINR(item.taxableAmt)}</td>
+            <td class="right">${this.formatINR(item.sgstAmt)}</td>
+            <td class="right">${this.formatINR(item.cgstAmt)}</td>
+            <td class="right bold">${this.formatINR(item.totalTax)}</td>
           </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="center">1512 / 1513 / 1515</td>
-            <td>${this.formatINR(bill.taxable)}</td>
-            <td>${this.formatINR(bill.cgst)}</td>
-            <td>${this.formatINR(bill.sgst)}</td>
-            <td>${this.formatINR(bill.igst)}</td>
-            <td><b>${this.formatINR(bill.gstAmt)}</b></td>
-          </tr>
-        </tbody>
-      </table>
-    ` : '<div></div>';
+        `;
+      }).join('');
+    } else {
+      hsnRowsHtml = `
+        <tr>
+          <td class="center">1512 / 1513</td>
+          <td class="center">0%</td>
+          <td class="right">${this.formatINR(bill.grandTotal)}</td>
+          <td class="right">₹0.00</td>
+          <td class="right">₹0.00</td>
+          <td class="right bold">₹0.00</td>
+        </tr>
+      `;
+    }
 
     const copyBadge = copyLabel ? `<div class="copy-tag">${copyLabel}</div>` : '';
+    const totalWords = this.numberToWordsINR(bill.grandTotal);
+    const invoiceTitle = bill.gstOn ? 'Tax Invoice' : 'Invoice';
 
     return `
       <div class="invoice-a4 ${isHalf ? 'invoice-a4-half' : ''}">
         <div class="half-top-block">
           ${copyBadge}
+          
+          <!-- Top Center Document Title -->
+          <div class="a4-doc-title-bar">
+            <span class="a4-doc-title">${invoiceTitle}</span>
+          </div>
+
+          <!-- Header Section: Left/Center Brand, Right Shop Contact -->
           <div class="header-block">
-            <div>
-              <h1>${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}</h1>
-              <div style="font-size:${isHalf ? '11.5px' : '15px'}; font-weight:bold; color:#1b5e20;">
-                ${s.brandEn || 'Siraazhi'} (${this.cleanBrandTa(s)}) — ${s.tagline || 'Pure Marachekku Oils'}
+            <div class="header-left">
+              <h1 class="company-name">${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}</h1>
+              <div class="brand-line">
+                <span class="brand-en">${s.brandEn || 'Siraazhi'}</span>
+                <span class="brand-ta">(${this.cleanBrandTa(s)})</span>
+                <span class="tagline">— ${s.tagline || 'Pure Traditional Marachekku Oils'}</span>
               </div>
+              <div class="fssai-line">FSSAI Lic. No: <b>${s.fssai || '12423031000494'}</b></div>
+            </div>
+            <div class="header-right">
               <div>${s.address || 'Vanur, Villupuram, Tamil Nadu'}</div>
-              <div>Phone: <b>${s.phone || '-'}</b> | FSSAI Lic. No: <b>${s.fssai || '12423031000494'}</b></div>
-              ${s.gstin ? `<div>GSTIN: <b>${s.gstin}</b> | State: <b>33 - Tamil Nadu</b></div>` : ''}
-            </div>
-            <div style="text-align:right;">
-              <div class="badge-invoice">${bill.gstOn ? 'TAX INVOICE' : 'RETAIL CASH BILL'}</div>
-              <div style="margin-top:${isHalf ? '2px' : '6px'}; font-size:${isHalf ? '10px' : '13px'};">
-                Invoice No: <b>${bill.billNo || ''}</b><br>
-                Date: <b>${bill.date || ''}</b><br>
-                Mode: <b>${this.formatPayMode(bill)}</b>
-              </div>
+              <div><b>GSTIN:</b> ${s.gstin || '33AAJCV1242R1ZY'}</div>
+              <div><b>Phone:</b> ${s.phone || '9751680093'}</div>
+              <div><b>Email:</b> ${s.email || 'vanurfpc@gmail.com'}</div>
             </div>
           </div>
 
+          <!-- Billed To (Left) & Invoice Metadata (Right) -->
           <div class="meta-grid">
-            <div>
-              <div style="font-size:9px; font-weight:bold; text-transform:uppercase; color:#666;">Billed To (Customer):</div>
-              <div style="font-size:${isHalf ? '11px' : '14px'}; font-weight:bold;">${cust.name || '-'}</div>
-              <div>Mobile / Phone: <b>${cust.phone || '-'}</b></div>
-              <div>Address: ${cust.address || 'Tamil Nadu'}</div>
+            <div class="meta-billed-to">
+              <div class="meta-label">Billed To :</div>
+              <div class="customer-name">${cust.name || 'Walk-in Customer'}</div>
+              <div><b>Mobile:</b> ${cust.phone || '-'}</div>
+              <div><b>Address:</b> ${cust.address || 'Office'}</div>
+              ${cust.gstin ? `<div><b>GSTIN:</b> ${cust.gstin}</div>` : ''}
             </div>
-            <div>
-              ${cust.gstin ? `<div>Customer GSTIN: <b>${cust.gstin}</b></div>` : '<div>Customer Type: <b>Consumer / Unregistered</b></div>'}
-              <div>Place of Supply: <b>${cust.state || 'Tamil Nadu (33)'}</b></div>
+            <div class="meta-invoice-info">
+              <div><b>Bill No:</b> ${bill.billNo || ''}</div>
+              <div><b>Date:</b> ${bill.date || ''}</div>
+              <div><b>Payment Type:</b> ${payMode}</div>
+              <div><b>Delivery Type:</b> ${deliveryType}</div>
+              <div><b>Place of Supply:</b> ${placeOfSupply}</div>
             </div>
           </div>
 
+          <!-- Product Line Items Table -->
           <table class="items-table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>Description of Goods</th>
-                <th>HSN</th>
-                <th>Qty</th>
-                <th>Unit Rate</th>
-                <th>Total Amount</th>
+                <th style="width:4%;">S.No</th>
+                <th style="width:36%;">Description of Goods</th>
+                <th style="width:8%;">Qty</th>
+                <th style="width:8%;">Tax Rate</th>
+                <th style="width:11%;">MRP Price</th>
+                <th style="width:10%;">Disc. %</th>
+                <th style="width:11%;">Net Price</th>
+                <th style="width:12%;">Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -351,33 +478,72 @@ const PrintEngine = {
         </div>
 
         <div class="half-bottom-block">
+          <!-- Tax Calculation Section & Overall Totals -->
           <div class="totals-block">
-            ${taxTable}
+            <!-- Left HSN Summary Table -->
+            <div class="hsn-summary-wrapper">
+              <table class="tax-summary-table">
+                <thead>
+                  <tr>
+                    <th>HSN Code</th>
+                    <th>Tax Rate</th>
+                    <th>Taxable Amt</th>
+                    <th>SGST Amt</th>
+                    <th>CGST Amt</th>
+                    <th>Total Tax</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${hsnRowsHtml}
+                </tbody>
+              </table>
+            </div>
 
+            <!-- Right Calculation Summary -->
             <div class="final-calc">
-              <div>Subtotal: <b>${this.formatINR(bill.subtotal)}</b></div>
-              ${bill.discount > 0 ? `<div>Discount: <b>-${this.formatINR(bill.discount)}</b></div>` : ''}
-              ${bill.gstOn ? `<div>Taxable Value: <b>${this.formatINR(bill.taxable)}</b></div>` : ''}
-              ${bill.gstOn ? `<div>Total GST (incl.): <b>${this.formatINR(bill.gstAmt)}</b></div>` : ''}
+              <div class="calc-row"><span>Sub Total:</span> <b>${this.formatINR(bill.subtotal)}</b></div>
+              ${bill.discount > 0 ? `<div class="calc-row"><span>Discount:</span> <b>-${this.formatINR(bill.discount)}</b></div>` : ''}
+              ${bill.gstOn ? `
+                <div class="calc-row"><span>Taxable Amount:</span> <b>${this.formatINR(totalTaxableAll || bill.taxable)}</b></div>
+                <div class="calc-row"><span>Add : SGST:</span> <b>${this.formatINR(totalSgstAll || bill.sgst)}</b></div>
+                <div class="calc-row"><span>Add : CGST:</span> <b>${this.formatINR(totalCgstAll || bill.cgst)}</b></div>
+              ` : ''}
               <div class="grand-total-row">
-                GRAND TOTAL: ${this.formatINR(bill.grandTotal)}
+                <span>TOTAL:</span> <span>${this.formatINR(bill.grandTotal)}</span>
               </div>
-              <div>Amount Paid: <b>${this.formatINR(bill.paid)}</b></div>
-              <div>Balance Due: <b>${this.formatINR(bill.balance)}</b></div>
             </div>
           </div>
 
-          <div class="sign-block">
-            <div>Customer Signature</div>
-            <div>For ${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}<br><br><small>(Authorised Signatory)</small></div>
+          <!-- Worded Amount & Bank Information Section -->
+          <div class="words-and-bank-block">
+            <div class="words-line">
+              <b>${totalWords}</b>
+            </div>
+            <div class="bank-details-line">
+              <b>Bank Details:</b> The Karur Vysya Bank Limited, Villupuram | A/c No : <b>1208135000000616</b> | IFSC: <b>KVBL0001208</b>
+            </div>
           </div>
 
-          <div style="margin-top:${isHalf ? '3px' : '14px'}; font-size:8px; font-style:italic; color:#444;">
-            Declaration: We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+          <!-- Dual Authority & Customer Signatures -->
+          <div class="sign-block">
+            <div class="cust-sign">
+              <div class="sign-line"></div>
+              <span>Receiver's / Customer Signature</span>
+            </div>
+            <div class="auth-sign">
+              <div class="sign-company">For ${s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED'}</div>
+              <div class="sign-line" style="margin-top:22px;"></div>
+              <span>Authorised Signatory</span>
+            </div>
+          </div>
+
+          <div class="footer-terms">
+            (E&OE) We declare that this invoice shows the actual price of goods described and all particulars are true and correct.
           </div>
         </div>
       </div>
     `;
+  },
   },
 
   /**

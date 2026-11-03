@@ -597,7 +597,8 @@ function addToCart(productId) {
       hsn: product.hsn,
       barcode: product.barcode,
       price: product.price,
-      gstPct: product.gstPct,
+      mrp: product.mrp || product.price,
+      gstPct: product.gstPct !== undefined ? product.gstPct : 5,
       qty: 1
     });
   }
@@ -647,6 +648,10 @@ function removeFromCart(index) {
   renderCart();
 }
 
+function onDeliveryTypeChange() {
+  saveCurrentBillTabForm();
+}
+
 function clearCart() {
   const isGstDefault = SETTINGS && SETTINGS.gstDefaultOn === true;
   if (BILL_TABS[ACTIVE_BILL_INDEX]) {
@@ -655,6 +660,7 @@ function clearCart() {
     BILL_TABS[ACTIVE_BILL_INDEX].discount = 0;
     BILL_TABS[ACTIVE_BILL_INDEX].paid = '';
     BILL_TABS[ACTIVE_BILL_INDEX].payMode = 'Cash';
+    BILL_TABS[ACTIVE_BILL_INDEX].deliveryType = 'Office';
     BILL_TABS[ACTIVE_BILL_INDEX].splitCash = '';
     BILL_TABS[ACTIVE_BILL_INDEX].splitUPI = '';
     BILL_TABS[ACTIVE_BILL_INDEX].gstOn = isGstDefault;
@@ -667,6 +673,7 @@ function clearCart() {
   if ($('custAddress')) $('custAddress').value = '';
   if ($('billPaid')) $('billPaid').value = '';
   if ($('billPayMode')) $('billPayMode').value = 'Cash';
+  if ($('billDeliveryType')) $('billDeliveryType').value = 'Office';
   if ($('billSplitCash')) $('billSplitCash').value = '';
   if ($('billSplitUPI')) $('billSplitUPI').value = '';
   if ($('customerStatusBar')) $('customerStatusBar').style.display = 'none';
@@ -723,7 +730,8 @@ function addNewBillTab() {
     gstOn: isGstDefault,
     discount: 0,
     paid: '',
-    payMode: 'Cash'
+    payMode: 'Cash',
+    deliveryType: 'Office'
   };
   BILL_TABS.push(newBill);
   ACTIVE_BILL_INDEX = BILL_TABS.length - 1;
@@ -779,6 +787,7 @@ function saveCurrentBillTabForm() {
   b.discount = $('billDiscount') ? Number($('billDiscount').value) || 0 : 0;
   b.paid = $('billPaid') ? $('billPaid').value : '';
   b.payMode = $('billPayMode') ? $('billPayMode').value : 'Cash';
+  b.deliveryType = $('billDeliveryType') ? $('billDeliveryType').value : 'Office';
   b.splitCash = $('billSplitCash') ? $('billSplitCash').value : '';
   b.splitUPI = $('billSplitUPI') ? $('billSplitUPI').value : '';
   b.gstOn = $('gstToggle') ? $('gstToggle').checked : true;
@@ -795,6 +804,7 @@ function loadActiveBillTabForm() {
   if ($('billDiscount')) $('billDiscount').value = b.discount || 0;
   if ($('billPaid')) $('billPaid').value = b.paid || '';
   if ($('billPayMode')) $('billPayMode').value = b.payMode || 'Cash';
+  if ($('billDeliveryType')) $('billDeliveryType').value = b.deliveryType || 'Office';
   if ($('billSplitCash')) $('billSplitCash').value = b.splitCash || '';
   if ($('billSplitUPI')) $('billSplitUPI').value = b.splitUPI || '';
   onPayModeChange();
@@ -1288,6 +1298,7 @@ async function checkoutBill(printFormat) {
     discount: Number($('billDiscount').value) || 0,
     gstOn: isGst,
     payMode: payMode,
+    deliveryType: $('billDeliveryType') ? $('billDeliveryType').value : 'Office',
     paid: paidVal,
     cashPaid: cashPaid,
     upiPaid: upiPaid,

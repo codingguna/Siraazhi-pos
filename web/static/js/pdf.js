@@ -1,5 +1,5 @@
-/* ==========================================================================
-   Siraazhi Pro POS — Vector PDF Export Engine
+﻿/* ==========================================================================
+   Siraazhi Pro POS â€” Vector PDF Export Engine
    
    WHAT IT IS:
      Client-side PDF generation engine that creates pristine vector-sharp
@@ -193,95 +193,193 @@ const PDFEngine = {
         top: -7px;
         font-weight: 700;
       }
+      /* A4 Document Top Center Title */
+      .a4-doc-title-bar {
+        text-align: center;
+        margin-bottom: 4px;
+      }
+      .a4-doc-title {
+        font-size: 13.5px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #000;
+        border-bottom: 1.5px solid #000;
+        display: inline-block;
+        padding: 0 16px 1px 16px;
+      }
       .invoice-a4 .header-block {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        border-bottom: 2px solid #000;
-        padding-bottom: 8px;
-        margin-bottom: 10px;
+        border: 1px solid #000;
+        padding: 6px 10px;
+        margin-bottom: 4px;
       }
-      .invoice-a4 h1 {
-        font-size: 18px;
+      .invoice-a4 .header-left {
+        flex: 1.3;
+      }
+      .invoice-a4 .header-right {
+        flex: 1;
+        text-align: right;
+        font-size: 10px;
+        line-height: 1.35;
+      }
+      .invoice-a4 h1.company-name {
+        font-size: 14px;
         margin: 0 0 2px 0;
         font-weight: 900;
+        color: #000;
       }
-      .invoice-a4 .badge-invoice {
-        background: #000;
-        color: #fff;
-        padding: 4px 10px;
-        font-weight: 800;
-        font-size: 14px;
-        display: inline-block;
+      .invoice-a4 .brand-line {
+        font-size: 12px;
+        font-weight: bold;
+        color: #1b5e20;
+        margin-bottom: 2px;
+      }
+      .invoice-a4 .fssai-line {
+        font-size: 10px;
+        color: #333;
       }
       .invoice-a4 .meta-grid {
         display: grid;
         grid-template-columns: 1.2fr 1fr;
-        gap: 12px;
+        gap: 8px;
         border: 1px solid #000;
-        padding: 8px;
-        margin-bottom: 12px;
+        padding: 5px 8px;
+        margin-bottom: 4px;
+        font-size: 10.5px;
+        line-height: 1.35;
+      }
+      .invoice-a4 .meta-billed-to .meta-label {
+        font-size: 9.5px;
+        font-weight: 800;
+        text-transform: uppercase;
+        color: #444;
+      }
+      .invoice-a4 .meta-billed-to .customer-name {
+        font-size: 12.5px;
+        font-weight: 900;
+        color: #000;
+        margin: 1px 0;
+      }
+      .invoice-a4 .meta-invoice-info {
+        text-align: right;
       }
       .invoice-a4 table.items-table {
         width: 100%;
         border-collapse: collapse;
-        margin-bottom: 12px;
+        margin-bottom: 4px;
       }
       .invoice-a4 table.items-table th,
       .invoice-a4 table.items-table td {
         border: 1px solid #000;
-        padding: 6px 8px;
-        font-size: 11.5px;
+        padding: 3px 5px;
+        font-size: 10px;
       }
       .invoice-a4 table.items-table th {
-        background-color: #f0f0f0;
+        background-color: #f2f2f2;
         font-weight: 700;
+        text-align: center;
       }
       .invoice-a4 .totals-block {
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
-        gap: 20px;
+        align-items: stretch;
+        border: 1px solid #000;
+        margin-bottom: 4px;
+      }
+      .invoice-a4 .hsn-summary-wrapper {
+        flex: 1.35;
+        border-right: 1px solid #000;
+        padding: 4px;
       }
       .invoice-a4 .tax-summary-table {
-        width: 55%;
+        width: 100%;
         border-collapse: collapse;
-        font-size: 10px;
+        font-size: 9px;
       }
       .invoice-a4 .tax-summary-table th,
       .invoice-a4 .tax-summary-table td {
-        border: 1px solid #666;
-        padding: 3px 5px;
-        text-align: right;
+        border: 1px solid #777;
+        padding: 2px 4px;
       }
       .invoice-a4 .tax-summary-table th {
         background: #f7f7f7;
         text-align: center;
+        font-weight: 700;
       }
       .invoice-a4 .final-calc {
-        width: 40%;
-        text-align: right;
-        font-size: 12px;
+        flex: 0.95;
+        padding: 4px 8px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        font-size: 10.5px;
       }
-      .invoice-a4 .grand-total-row {
-        font-size: 16px;
-        font-weight: 900;
-        border-top: 2px solid #000;
-        border-bottom: 2px solid #000;
-        padding: 4px 0;
-        margin: 6px 0;
-      }
-      .invoice-a4 .sign-block {
-        margin-top: 28px;
+      .invoice-a4 .final-calc .calc-row {
         display: flex;
         justify-content: space-between;
-        padding: 0 10px;
+        margin-bottom: 2px;
       }
-      .invoice-a4 .sign-block div {
+      .invoice-a4 .grand-total-row {
+        font-size: 13.5px;
+        font-weight: 900;
+        border-top: 1.5px solid #000;
+        padding-top: 3px;
+        margin-top: 3px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .invoice-a4 .words-and-bank-block {
+        border: 1px solid #000;
+        padding: 4px 8px;
+        margin-bottom: 6px;
+        font-size: 9.5px;
+        line-height: 1.35;
+        background: #fafafa;
+      }
+      .invoice-a4 .words-line {
+        font-size: 10.5px;
+        font-weight: 800;
+        color: #000;
+        margin-bottom: 2px;
+      }
+      .invoice-a4 .bank-details-line {
+        color: #222;
+      }
+      .invoice-a4 .sign-block {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        border: 1px solid #000;
+        padding: 8px 14px;
+        margin-top: 4px;
+      }
+      .invoice-a4 .cust-sign {
         text-align: center;
+        width: 200px;
+        font-size: 10px;
+        font-weight: 700;
+      }
+      .invoice-a4 .auth-sign {
+        text-align: center;
+        width: 260px;
+        font-size: 10px;
+      }
+      .invoice-a4 .sign-company {
+        font-weight: 800;
+        font-size: 10px;
+      }
+      .invoice-a4 .sign-line {
         border-top: 1px solid #000;
-        padding-top: 6px;
-        width: 180px;
+        margin-bottom: 3px;
+      }
+      .invoice-a4 .footer-terms {
+        font-size: 8px;
+        color: #666;
+        text-align: center;
+        margin-top: 4px;
       }
       .pdf-actions-bar {
         position: fixed;
@@ -475,8 +573,8 @@ const PDFEngine = {
       </head>
       <body>
         <div class="pdf-actions-bar">
-          <button class="pdf-btn" onclick="window.print()">📥 Click to Save as PDF / Print</button>
-          <button class="pdf-btn" style="background:#555;" onclick="window.close()">✕ Close</button>
+          <button class="pdf-btn" onclick="window.print()">ðŸ“¥ Click to Save as PDF / Print</button>
+          <button class="pdf-btn" style="background:#555;" onclick="window.close()">âœ• Close</button>
         </div>
         <div id="printContainer" class="print-container">
           ${invoiceHtml}
@@ -524,9 +622,9 @@ const PDFEngine = {
           <td style="border:1px solid #999; padding:5px 6px;">${this.esc(b.date || '')}</td>
           <td style="border:1px solid #999; padding:5px 6px;">${this.esc(cust)}</td>
           <td style="border:1px solid #999; padding:5px 6px; text-align:center;">${this.esc(b.payMode || 'Cash')}</td>
-          <td style="border:1px solid #999; padding:5px 6px; text-align:right;">₹${sub}</td>
-          <td style="border:1px solid #999; padding:5px 6px; text-align:right;">₹${gst}</td>
-          <td style="border:1px solid #999; padding:5px 6px; text-align:right; font-weight:bold;">₹${total}</td>
+          <td style="border:1px solid #999; padding:5px 6px; text-align:right;">â‚¹${sub}</td>
+          <td style="border:1px solid #999; padding:5px 6px; text-align:right;">â‚¹${gst}</td>
+          <td style="border:1px solid #999; padding:5px 6px; text-align:right; font-weight:bold;">â‚¹${total}</td>
         </tr>
       `;
     }).join('');
@@ -553,12 +651,12 @@ const PDFEngine = {
       </head>
       <body>
         <div class="pdf-actions-bar">
-          <button class="pdf-btn" onclick="window.print()">📥 Click to Save / Print PDF</button>
-          <button class="pdf-btn" style="background:#555;" onclick="window.close()">✕ Close</button>
+          <button class="pdf-btn" onclick="window.print()">ðŸ“¥ Click to Save / Print PDF</button>
+          <button class="pdf-btn" style="background:#555;" onclick="window.close()">âœ• Close</button>
         </div>
         <div class="header">
           <h2>${this.esc(s.companyName || 'VANUR FARMER PRODUCER COMPANY LIMITED')}</h2>
-          <div>SALES REGISTER REPORT • Generated: ${new Date().toLocaleString()}</div>
+          <div>SALES REGISTER REPORT â€¢ Generated: ${new Date().toLocaleString()}</div>
         </div>
         <table>
           <thead>
@@ -578,7 +676,7 @@ const PDFEngine = {
           </tbody>
         </table>
         <div class="total-box">
-          Total Bills: ${bills.length} &nbsp;|&nbsp; Total GST: ₹${totalGst.toFixed(2)} &nbsp;|&nbsp; Net Sales: ₹${totalSales.toFixed(2)}
+          Total Bills: ${bills.length} &nbsp;|&nbsp; Total GST: â‚¹${totalGst.toFixed(2)} &nbsp;|&nbsp; Net Sales: â‚¹${totalSales.toFixed(2)}
         </div>
         <script>
           window.addEventListener('DOMContentLoaded', () => { setTimeout(() => { window.print(); }, 250); });
