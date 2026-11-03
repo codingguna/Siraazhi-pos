@@ -268,13 +268,16 @@ const PDFEngine = {
         display: flex;
         justify-content: center;
         align-items: center;
+        gap: 12px;
         text-align: center;
       }
       .invoice-a4 .a4-center-logo {
-        max-height: 62px;
-        max-width: 62px;
+        max-height: 56px;
+        max-width: 56px;
         object-fit: contain;
         display: block;
+        opacity: 0.90;
+        filter: alpha(opacity=90);
       }
       .invoice-a4 .meta-invoice-info {
         text-align: right;
