@@ -544,7 +544,6 @@ const PrintEngine = {
       </div>
     `;
   },
-  },
 
   /**
    * renderA5 generates half-page delivery slip.
