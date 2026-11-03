@@ -2088,6 +2088,17 @@ func RestoreBillsAndMoves(bills []Bill, moves []StockMove) error {
 }
 
 // CloseDB safely checkpoints Write-Ahead Logging (WAL) and closes the SQLite database connection.
+// CheckpointDB explicitly executes a WAL truncate checkpoint to flush all uncommitted frames to disk.
+func CheckpointDB() error {
+	lock.Lock()
+	defer lock.Unlock()
+	if DB != nil {
+		_, err := DB.Exec("PRAGMA wal_checkpoint(TRUNCATE);")
+		return err
+	}
+	return nil
+}
+
 func CloseDB() error {
 	lock.Lock()
 	defer lock.Unlock()

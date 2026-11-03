@@ -80,4 +80,4 @@ echo.
 echo Standalone Portable: siraazhi-pos.exe
 echo ==================================================================
 echo.
-pause
+rem pause

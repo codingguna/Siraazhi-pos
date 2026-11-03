@@ -10,5 +10,5 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 strPath = fso.GetParentFolderName(WScript.ScriptFullName)
 Set WshShell = CreateObject("WScript.Shell")
 WshShell.CurrentDirectory = strPath
-WshShell.Run """" & strPath & "\siraazhi-pos.exe"" -port 8080", 0, False
+WshShell.Run """" & strPath & "\siraazhi-pos.exe"" -port 8080 -db ""C:\ProgramData\SiraazhiPOS\data\pos.db""", 0, False
 Set WshShell = Nothing

@@ -55,6 +55,13 @@ Source: "start_silent.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion
 
+[InstallDelete]
+; Clean up old divergent shortcuts from previous versions so only one unified shortcut exists
+Type: files; Name: "{commonprograms}\Siraazhi Pro POS.lnk"
+Type: files; Name: "{commonprograms}\SiraazhiPOS\Siraazhi Pro POS.lnk"
+Type: files; Name: "{userprograms}\Siraazhi Pro POS.lnk"
+Type: files; Name: "{userprograms}\SiraazhiPOS\Siraazhi Pro POS.lnk"
+
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "-port 8080 -db ""{commonappdata}\SiraazhiPOS\data\pos.db"""; IconFilename: "{app}\app.ico"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
@@ -80,70 +87,17 @@ begin
 end;
 
 // -------------------------------------------------------------------
-// Helper: Check registry for existing installation across 32/64 bit views
+// Safe Step Handler: Flush SQLite WAL before updating binaries
 // -------------------------------------------------------------------
-function GetInstalledUninstaller(var UninstallerPath: String): Boolean;
-var
-  SubKey: String;
-begin
-  Result := False;
-  SubKey := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#MyAppId}_is1';
-  if RegQueryStringValue(HKLM64, SubKey, 'UninstallString', UninstallerPath) then
-  begin
-    Result := True;
-    Exit;
-  end;
-  if RegQueryStringValue(HKLM32, SubKey, 'UninstallString', UninstallerPath) then
-  begin
-    Result := True;
-    Exit;
-  end;
-end;
-
-// -------------------------------------------------------------------
-// Single Setup Handler: Detect existing installation & handle Install / Uninstall / Reinstall
-// -------------------------------------------------------------------
-function InitializeSetup(): Boolean;
-var
-  UninstallerPath: String;
-  ResultCode: Integer;
-  Choice: Integer;
-begin
-  Result := True;
-
-  // Check if Siraazhi Pro POS is already installed on this PC
-  if GetInstalledUninstaller(UninstallerPath) then
-  begin
-    Choice := MsgBox('Siraazhi Pro POS is ALREADY INSTALLED on this computer.'#13#10#13#10 +
-                     'What action would you like to perform?'#13#10#13#10 +
-                     '• Click [YES] to completely UNINSTALL Siraazhi Pro POS.'#13#10 +
-                     '• Click [NO] to REINSTALL / UPDATE the installation.'#13#10 +
-                     '• Click [CANCEL] to abort and exit.',
-                     mbConfirmation, MB_YESNOCANCEL);
-
-    if Choice = IDYES then
-    begin
-      // Launch standard uninstaller
-      Exec(RemoveQuotes(UninstallerPath), '', '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
-      Result := False; // Exit setup after uninstaller completes
-      Exit;
-    end
-    else if Choice = IDCANCEL then
-    begin
-      Result := False; // Abort setup
-      Exit;
-    end;
-    // If Choice = IDNO, continue with Reinstall/Upgrade!
-  end;
-end;
-
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
 begin
   if CurStep = ssInstall then
   begin
-    // Terminate any running POS instances before copying new files
+    // 1. Ask active server to checkpoint WAL to disk before stopping
+    ExecCommand('powershell.exe', '-NoProfile -Command "try { Invoke-RestMethod -Uri http://127.0.0.1:8080/api/system/checkpoint -Method POST -TimeoutSec 1 } catch {}"', ResultCode);
+    // 2. Terminate running POS instances before copying new binary
     ExecCommand('taskkill.exe', '/f /im {#MyAppExeName}', ResultCode);
   end;
 end;

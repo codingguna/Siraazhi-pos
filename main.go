@@ -88,9 +88,9 @@ func main() {
 		execDir = filepath.Dir(execDir)
 	}
 
-	actualDBPath := *dbPath
+	actualDBPath := strings.Trim(strings.TrimSpace(*dbPath), "\"")
 	if actualDBPath == "" {
-		actualDBPath = resolveAppDataDatabasePath(execDir)
+		actualDBPath = resolveCanonicalDatabasePath(execDir)
 	}
 
 	fmt.Println("==================================================================")
@@ -161,6 +161,15 @@ func main() {
 	mux.HandleFunc("/api/export/csv", handlers.HandleSalesCSV)
 	mux.HandleFunc("/api/backup", handlers.HandleBackup)
 	mux.HandleFunc("/api/restore", handlers.HandleRestore)
+	mux.HandleFunc("/api/system/checkpoint", func(w http.ResponseWriter, r *http.Request) {
+		if err := db.CheckpointDB(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true,"checkpoint":"completed"}`))
+	})
 
 	mux.HandleFunc("/api/network-info", handlers.HandleNetworkInfo(*port))
 	mux.HandleFunc("/api/print-queue", handlers.HandlePrintQueue)
@@ -273,54 +282,40 @@ func openNativeAppWindow(url string) {
 	exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 }
 
-// resolveAppDataDatabasePath returns the persistent SQLite database path inside the current user's AppData directory.
-// It also checks for and auto-migrates existing databases from older locations (%ProgramData% or local ./data)
-// so user data is never lost across reinstalls, upgrades, or directory relocations.
-func resolveAppDataDatabasePath(execDir string) string {
-	appData := os.Getenv("APPDATA")
-	if appData == "" {
-		userProfile := os.Getenv("USERPROFILE")
-		if userProfile != "" {
-			appData = filepath.Join(userProfile, "AppData", "Roaming")
-		} else {
-			appData = execDir
-		}
-	}
-
-	targetDir := filepath.Join(appData, "SiraazhiPOS", "data")
-	targetDB := filepath.Join(targetDir, "pos.db")
-
-	// If pos.db already exists in AppData, use it directly.
-	if fi, err := os.Stat(targetDB); err == nil && fi.Size() > 0 {
-		return targetDB
-	}
-
-	// Ensure target directory exists
-	_ = os.MkdirAll(targetDir, 0755)
-
-	// Check candidate legacy locations for migration
-	candidates := []string{}
-
-	// 1. Check %ProgramData%\SiraazhiPOS\data\pos.db
+// resolveCanonicalDatabasePath returns the persistent SQLite database path for Siraazhi Pro POS.
+// It prioritizes %ProgramData%\SiraazhiPOS\data\pos.db as the single machine-wide canonical database.
+// If legacy or secondary databases exist in %APPDATA% or local execution directory, it automatically
+// migrates and unifies them into the canonical path so no bills or products are ever lost.
+func resolveCanonicalDatabasePath(execDir string) string {
 	programData := os.Getenv("ProgramData")
-	if programData != "" {
-		candidates = append(candidates, filepath.Join(programData, "SiraazhiPOS", "data", "pos.db"))
-	} else {
-		candidates = append(candidates, `C:\ProgramData\SiraazhiPOS\data\pos.db`)
+	if programData == "" {
+		programData = `C:\ProgramData`
+	}
+	canonicalDir := filepath.Join(programData, "SiraazhiPOS", "data")
+	canonicalDB := filepath.Join(canonicalDir, "pos.db")
+	_ = os.MkdirAll(canonicalDir, 0755)
+
+	// If pos.db already exists in canonical ProgramData, use it directly.
+	if fi, err := os.Stat(canonicalDB); err == nil && fi.Size() > 0 {
+		return canonicalDB
 	}
 
-	// 2. Check local execution directory ./data/pos.db
+	appData := os.Getenv("APPDATA")
+	candidates := []string{}
+	if appData != "" {
+		candidates = append(candidates, filepath.Join(appData, "SiraazhiPOS", "data", "pos.db"))
+	}
 	candidates = append(candidates, filepath.Join(execDir, "data", "pos.db"))
 
 	for _, cand := range candidates {
 		if fi, err := os.Stat(cand); err == nil && fi.Size() > 0 {
-			log.Printf("[Migration] Found existing database at %s. Migrating to AppData: %s", cand, targetDB)
-			copyDBFiles(cand, targetDB)
-			return targetDB
+			log.Printf("[Migration] Found existing database at %s. Migrating to Canonical: %s", cand, canonicalDB)
+			copyDBFiles(cand, canonicalDB)
+			return canonicalDB
 		}
 	}
 
-	return targetDB
+	return canonicalDB
 }
 
 // copyDBFiles copies pos.db as well as SQLite WAL and SHM journal files if present
