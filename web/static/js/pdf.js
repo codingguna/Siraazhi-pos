@@ -243,7 +243,8 @@ const PDFEngine = {
       }
       .invoice-a4 .meta-grid {
         display: grid;
-        grid-template-columns: 1.2fr 1fr;
+        grid-template-columns: 1.25fr 0.8fr 1.15fr;
+        align-items: center;
         gap: 8px;
         border: 1px solid #000;
         padding: 5px 8px;
@@ -262,6 +263,18 @@ const PDFEngine = {
         font-weight: 900;
         color: #000;
         margin: 1px 0;
+      }
+      .invoice-a4 .meta-logo-center {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+      }
+      .invoice-a4 .a4-center-logo {
+        max-height: 62px;
+        max-width: 62px;
+        object-fit: contain;
+        display: block;
       }
       .invoice-a4 .meta-invoice-info {
         text-align: right;
@@ -287,7 +300,8 @@ const PDFEngine = {
         justify-content: space-between;
         align-items: stretch;
         border: 1px solid #000;
-        margin-bottom: 4px;
+        border-bottom: none;
+        margin-bottom: 0;
       }
       .invoice-a4 .hsn-summary-wrapper {
         flex: 1.35;
@@ -322,31 +336,40 @@ const PDFEngine = {
         justify-content: space-between;
         margin-bottom: 2px;
       }
-      .invoice-a4 .grand-total-row {
-        font-size: 13.5px;
-        font-weight: 900;
-        border-top: 1.5px solid #000;
-        padding-top: 3px;
-        margin-top: 3px;
+      .invoice-a4 .grand-total-banner {
         display: flex;
         justify-content: space-between;
-      }
-      .invoice-a4 .words-and-bank-block {
-        border: 1px solid #000;
-        padding: 4px 8px;
+        align-items: center;
+        border: 1.5px solid #000;
+        padding: 6px 10px;
         margin-bottom: 6px;
-        font-size: 9.5px;
-        line-height: 1.35;
-        background: #fafafa;
+        background: #fdfdfd;
       }
-      .invoice-a4 .words-line {
-        font-size: 10.5px;
+      .invoice-a4 .grand-total-words {
+        flex: 1.3;
+        font-size: 11px;
         font-weight: 800;
         color: #000;
-        margin-bottom: 2px;
+        text-transform: capitalize;
       }
-      .invoice-a4 .bank-details-line {
-        color: #222;
+      .invoice-a4 .grand-total-number {
+        flex: 0.8;
+        text-align: right;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
+        font-size: 14.5px;
+        font-weight: 900;
+        color: #000;
+      }
+      .invoice-a4 .grand-total-number .total-lbl {
+        font-size: 13px;
+        font-weight: 900;
+      }
+      .invoice-a4 .grand-total-number .total-val {
+        font-size: 15px;
+        font-weight: 900;
       }
       .invoice-a4 .sign-block {
         display: flex;
