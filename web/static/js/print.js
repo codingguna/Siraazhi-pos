@@ -361,21 +361,25 @@ const PrintEngine = {
     }).join('');
 
     let blankRows = '';
-    const minRows = isHalf ? 3 : 5;
-    const count = (bill.items || []).length;
-    for (let i = count; i < minRows; i++) {
-      blankRows += `
-        <tr class="blank-row">
-          <td class="center">&nbsp;</td>
-          <td>&nbsp;</td>
-          <td class="center">&nbsp;</td>
-          <td class="center">&nbsp;</td>
-          <td class="right">&nbsp;</td>
-          <td class="center">&nbsp;</td>
-          <td class="right">&nbsp;</td>
-          <td class="right">&nbsp;</td>
-        </tr>
-      `;
+    // Only add blank padding rows for GST tax invoices or when explicitly configured,
+    // to keep non-GST bills compact and clean without unnecessary empty rows.
+    if (bill.gstOn) {
+      const minRows = isHalf ? 3 : 5;
+      const count = (bill.items || []).length;
+      for (let i = count; i < minRows; i++) {
+        blankRows += `
+          <tr class="blank-row">
+            <td class="center">&nbsp;</td>
+            <td>&nbsp;</td>
+            <td class="center">&nbsp;</td>
+            <td class="center">&nbsp;</td>
+            <td class="right">&nbsp;</td>
+            <td class="center">&nbsp;</td>
+            <td class="right">&nbsp;</td>
+            <td class="right">&nbsp;</td>
+          </tr>
+        `;
+      }
     }
 
     // Build HSN Tax Breakdown Table rows
@@ -486,37 +490,44 @@ const PrintEngine = {
 
         <div class="half-bottom-block">
           <!-- Tax Calculation Section & Overall Totals -->
-          <div class="totals-block">
-            <!-- Left HSN Summary Table -->
-            <div class="hsn-summary-wrapper">
-              <table class="tax-summary-table">
-                <thead>
-                  <tr>
-                    <th>HSN Code</th>
-                    <th>Tax Rate</th>
-                    <th>Taxable Amt</th>
-                    <th>SGST Amt</th>
-                    <th>CGST Amt</th>
-                    <th>Total Tax</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${hsnRowsHtml}
-                </tbody>
-              </table>
-            </div>
+          ${bill.gstOn ? `
+            <div class="totals-block">
+              <!-- Left HSN Summary Table -->
+              <div class="hsn-summary-wrapper">
+                <table class="tax-summary-table">
+                  <thead>
+                    <tr>
+                      <th>HSN Code</th>
+                      <th>Tax Rate</th>
+                      <th>Taxable Amt</th>
+                      <th>SGST Amt</th>
+                      <th>CGST Amt</th>
+                      <th>Total Tax</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${hsnRowsHtml}
+                  </tbody>
+                </table>
+              </div>
 
-            <!-- Right Calculation Summary -->
-            <div class="final-calc">
-              <div class="calc-row"><span>Sub Total:</span> <b>${this.formatINR(bill.subtotal)}</b></div>
-              ${bill.discount > 0 ? `<div class="calc-row"><span>Discount:</span> <b>-${this.formatINR(bill.discount)}</b></div>` : ''}
-              ${bill.gstOn ? `
+              <!-- Right Calculation Summary -->
+              <div class="final-calc">
+                <div class="calc-row"><span>Sub Total:</span> <b>${this.formatINR(bill.subtotal)}</b></div>
+                ${bill.discount > 0 ? `<div class="calc-row"><span>Discount:</span> <b>-${this.formatINR(bill.discount)}</b></div>` : ''}
                 <div class="calc-row"><span>Taxable Amount:</span> <b>${this.formatINR(totalTaxableAll || bill.taxable)}</b></div>
                 <div class="calc-row"><span>Add : SGST:</span> <b>${this.formatINR(totalSgstAll || bill.sgst)}</b></div>
                 <div class="calc-row"><span>Add : CGST:</span> <b>${this.formatINR(totalCgstAll || bill.cgst)}</b></div>
-              ` : ''}
+              </div>
             </div>
-          </div>
+          ` : (bill.discount > 0 ? `
+            <div class="totals-block non-gst-calc">
+              <div class="final-calc" style="width:100%; border:1px solid #000; border-bottom:none; padding:4px 8px;">
+                <div class="calc-row"><span>Sub Total:</span> <b>${this.formatINR(bill.subtotal)}</b></div>
+                <div class="calc-row"><span>Discount:</span> <b>-${this.formatINR(bill.discount)}</b></div>
+              </div>
+            </div>
+          ` : '')}
 
           <!-- Worded Amount (Left) & Total Number (Right) on the Same Row -->
           <div class="grand-total-banner">
