@@ -340,47 +340,47 @@ const PrintEngine = {
         totalTaxAll += taxLine;
       }
 
-      return `
-        <tr>
-          <td class="center" style="width:4%;">${idx + 1}</td>
-          <td style="width:36%;">
-            <b>${it.nameEn || ''}</b>
-            ${it.nameTa ? `<br><small style="color:#555;">${it.nameTa}</small>` : ''}
-            <div style="font-size:8.5px; color:#555;">HSN: ${it.hsn || '-'}</div>
-          </td>
-          <td class="center" style="width:8%; font-weight:bold;">${qty}</td>
-          <td class="center" style="width:8%;">${taxRate.toFixed(1)}%</td>
-          <td class="right" style="width:11%;">${this.formatINR(mrp)}</td>
-          <td class="center" style="width:10%;">
-            ${discPct > 0 ? `${discPct.toFixed(1)}%<br><small style="color:#666;">(-₹${discPerUnit.toFixed(1)})</small>` : '0%'}
-          </td>
-          <td class="right" style="width:11%;">${this.formatINR(netPrice)}</td>
-          <td class="right bold" style="width:12%;">${this.formatINR(lineAmt)}</td>
-        </tr>
-      `;
-    }).join('');
-
-    let blankRows = '';
-    // Only add blank padding rows for GST tax invoices or when explicitly configured,
-    // to keep non-GST bills compact and clean without unnecessary empty rows.
-    if (bill.gstOn) {
-      const minRows = isHalf ? 3 : 5;
-      const count = (bill.items || []).length;
-      for (let i = count; i < minRows; i++) {
-        blankRows += `
-          <tr class="blank-row">
-            <td class="center">&nbsp;</td>
-            <td>&nbsp;</td>
-            <td class="center">&nbsp;</td>
-            <td class="center">&nbsp;</td>
-            <td class="right">&nbsp;</td>
-            <td class="center">&nbsp;</td>
-            <td class="right">&nbsp;</td>
-            <td class="right">&nbsp;</td>
+      if (bill.gstOn) {
+        return `
+          <tr>
+            <td class="center" style="width:4%;">${idx + 1}</td>
+            <td style="width:36%;">
+              <b>${it.nameEn || ''}</b>
+              ${it.nameTa ? `<br><small style="color:#555;">${it.nameTa}</small>` : ''}
+              <div style="font-size:8.5px; color:#555;">HSN: ${it.hsn || '-'}</div>
+            </td>
+            <td class="center" style="width:8%; font-weight:bold;">${qty}</td>
+            <td class="center" style="width:8%;">${taxRate.toFixed(1)}%</td>
+            <td class="right" style="width:11%;">${this.formatINR(mrp)}</td>
+            <td class="center" style="width:10%;">
+              ${discPct > 0 ? `${discPct.toFixed(1)}%<br><small style="color:#666;">(-₹${discPerUnit.toFixed(1)})</small>` : '0%'}
+            </td>
+            <td class="right" style="width:11%;">${this.formatINR(netPrice)}</td>
+            <td class="right bold" style="width:12%;">${this.formatINR(lineAmt)}</td>
+          </tr>
+        `;
+      } else {
+        return `
+          <tr>
+            <td class="center" style="width:5%;">${idx + 1}</td>
+            <td style="width:41%;">
+              <b>${it.nameEn || ''}</b>
+              ${it.nameTa ? `<br><small style="color:#555;">${it.nameTa}</small>` : ''}
+              <div style="font-size:8.5px; color:#555;">HSN: ${it.hsn || '-'}</div>
+            </td>
+            <td class="center" style="width:9%; font-weight:bold;">${qty}</td>
+            <td class="right" style="width:13%;">${this.formatINR(mrp)}</td>
+            <td class="center" style="width:10%;">
+              ${discPct > 0 ? `${discPct.toFixed(1)}%<br><small style="color:#666;">(-₹${discPerUnit.toFixed(1)})</small>` : '0%'}
+            </td>
+            <td class="right" style="width:11%;">${this.formatINR(netPrice)}</td>
+            <td class="right bold" style="width:11%;">${this.formatINR(lineAmt)}</td>
           </tr>
         `;
       }
-    }
+    }).join('');
+
+    let blankRows = '';
 
     // Build HSN Tax Breakdown Table rows
     const hsnKeys = Object.keys(hsnMap);
@@ -470,16 +470,28 @@ const PrintEngine = {
           <!-- Product Line Items Table -->
           <table class="items-table">
             <thead>
-              <tr>
-                <th style="width:4%;">S.No</th>
-                <th style="width:36%;">Description of Goods</th>
-                <th style="width:8%;">Qty</th>
-                <th style="width:8%;">Tax Rate</th>
-                <th style="width:11%;">MRP Price</th>
-                <th style="width:10%;">Disc. %</th>
-                <th style="width:11%;">Net Price</th>
-                <th style="width:12%;">Amount</th>
-              </tr>
+              ${bill.gstOn ? `
+                <tr>
+                  <th style="width:4%;">S.No</th>
+                  <th style="width:36%;">Description of Goods</th>
+                  <th style="width:8%;">Qty</th>
+                  <th style="width:8%;">Tax Rate</th>
+                  <th style="width:11%;">MRP Price</th>
+                  <th style="width:10%;">Disc. %</th>
+                  <th style="width:11%;">Net Price</th>
+                  <th style="width:12%;">Amount</th>
+                </tr>
+              ` : `
+                <tr>
+                  <th style="width:5%;">S.No</th>
+                  <th style="width:41%;">Description of Goods</th>
+                  <th style="width:9%;">Qty</th>
+                  <th style="width:13%;">MRP Price</th>
+                  <th style="width:10%;">Disc. %</th>
+                  <th style="width:11%;">Net Price</th>
+                  <th style="width:11%;">Amount</th>
+                </tr>
+              `}
             </thead>
             <tbody>
               ${rows}
