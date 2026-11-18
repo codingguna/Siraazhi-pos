@@ -131,6 +131,9 @@ func main() {
 	mux.HandleFunc("/api/bills", handlers.HandleBills)
 	mux.HandleFunc("/api/bills/", handlers.HandleBillByID)
 
+	mux.HandleFunc("/api/returns", handlers.HandleReturns)
+	mux.HandleFunc("/api/returns/", handlers.HandleReturnByID)
+
 	mux.HandleFunc("/api/categories", handlers.HandleCategories)
 	mux.HandleFunc("/api/categories/", handlers.HandleCategoryDelete)
 

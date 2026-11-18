@@ -308,3 +308,41 @@ type CustomerLedger struct {
 	BalanceType    string                `json:"balanceType"` // "Debit Balance", "Credit Balance", "Settled (Nil)"
 }
 
+// ReturnItem represents a line item returned from a previous invoice.
+type ReturnItem struct {
+	ID         int64   `json:"id,omitempty"`
+	ReturnID   string  `json:"returnId"`
+	ProductID  string  `json:"productId"`
+	NameEn     string  `json:"nameEn"`
+	NameTa     string  `json:"nameTa"`
+	HSN        string  `json:"hsn"`
+	Qty        float64 `json:"qty"`
+	Price      float64 `json:"price"` // Unit sale price (tax-inclusive)
+	GSTPct     float64 `json:"gstPct"`
+	Amount     float64 `json:"amount"` // Qty * Price
+	Condition  string  `json:"condition"` // "restock" (sellable) or "damaged"
+}
+
+// Return represents a sales return / credit note transaction.
+type Return struct {
+	ID          string       `json:"id"`
+	ReturnNo    string       `json:"returnNo"` // e.g. CN/2026-27/0001
+	BillID      string       `json:"billId"`
+	BillNo      string       `json:"billNo"`
+	Date        string       `json:"date"`
+	Customer    Customer     `json:"customer"`
+	Items       []ReturnItem `json:"items"`
+	Subtotal    float64      `json:"subtotal"`
+	Taxable     float64      `json:"taxable"`
+	GSTOn       bool         `json:"gstOn"`
+	GSTAmt      float64      `json:"gstAmt"`
+	CGST        float64      `json:"cgst"`
+	SGST        float64      `json:"sgst"`
+	IGST        float64      `json:"igst"`
+	RefundTotal float64      `json:"refundTotal"`
+	RefundMode  string       `json:"refundMode"` // "Cash", "UPI", "Credit"
+	Reason      string       `json:"reason"`
+	CreatedAt   time.Time    `json:"createdAt"`
+}
+
+

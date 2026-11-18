@@ -286,6 +286,11 @@ func HandleBillByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) > 1 && parts[1] == "returns" {
+		HandleBillReturnsCheck(w, r)
+		return
+	}
+
 	if len(parts) > 1 && parts[1] == "cancel" {
 		if r.Method != http.MethodPost {
 			ErrorJSON(w, http.StatusMethodNotAllowed, "Method not allowed")

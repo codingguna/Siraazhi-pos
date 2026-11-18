@@ -487,6 +487,9 @@ const PDFEngine = {
       .receipt-80mm .right { text-align: right; }
       .receipt-80mm .left { text-align: left; }
       .receipt-80mm .bold { font-weight: bold; }
+      .receipt-80mm .receipt-logo-container { display: flex; justify-content: center; align-items: center; gap: 8px; margin-bottom: 6px; }
+      .receipt-80mm .receipt-logo { height: 44px; width: auto; max-width: 48px; object-fit: contain; }
+      .receipt-80mm .brand-title { color: #15803d; }
       .receipt-80mm .header-title { font-size: 13.5px; font-weight: 900; }
       .receipt-80mm .header-sub { font-size: 9.5px; margin: 2px 0; }
       .receipt-80mm .dashed-line { border-top: 1px dashed #000; margin: 4px 0; }

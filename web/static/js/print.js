@@ -133,10 +133,14 @@ const PrintEngine = {
 
     return `
       <div class="receipt-80mm">
+        <div class="receipt-logo-container center" style="margin-bottom:6px;">
+          <img src="${VFPCL_LOGO_BASE64}" alt="VFPCL Logo" class="receipt-logo vfpcl-receipt-logo" style="height:44px; width:auto; max-width:48px; object-fit:contain; vertical-align:middle; margin-right:8px;" />
+          <img src="${SIRAAZHI_LOGO_BASE64}" alt="Siraazhi Logo" class="receipt-logo siraazhi-receipt-logo" style="height:44px; width:auto; max-width:48px; object-fit:contain; vertical-align:middle;" />
+        </div>
         <div class="center">
           <div class="header-title">${s.companyName || 'VANUR FARMER PRODUCER COMPANY LTD'}</div>
-          <div class="header-title" style="font-size:16px; color:#000;">${s.brandEn || 'Siraazhi'} (${this.cleanBrandTa(s)})</div>
-          <div class="header-sub">${s.tagline || 'Pure Traditional Marachekku Oils'}</div>
+          <div class="header-title brand-title" style="font-size:16px; color:#15803d; font-weight:800; margin-top:2px;">${s.brandEn || 'Siraazhi'} (${this.cleanBrandTa(s)})</div>
+          <div class="header-sub">${s.tagline || 'Pure Traditional chekku Oils'}</div>
           <div class="header-sub">${s.address || 'Vanur, Villupuram, Tamil Nadu'}</div>
           <div class="header-sub">Ph: ${s.phone || '-'} | FSSAI: ${s.fssai || '-'}</div>
           ${bill.gstOn && s.gstin ? `<div class="header-sub bold">GSTIN: ${s.gstin}</div>` : ''}
@@ -905,6 +909,263 @@ const PrintEngine = {
     `;
 
     // Suppress toasts before printing
+    const toastBox = document.getElementById('toastNotificationContainer');
+    if (toastBox) {
+      toastBox.innerHTML = '';
+      toastBox.style.setProperty('display', 'none', 'important');
+    }
+
+    container.innerHTML = html;
+
+    const restoreToasts = () => {
+      if (toastBox) toastBox.style.removeProperty('display');
+      window.removeEventListener('afterprint', restoreToasts);
+    };
+    window.addEventListener('afterprint', restoreToasts);
+
+    setTimeout(() => {
+      window.print();
+      setTimeout(restoreToasts, 2000);
+    }, 150);
+  },
+
+  /**
+   * printReturn80mm prints an 80mm thermal receipt for a Sales Return / Credit Note.
+   */
+  printReturn80mm(returnDoc, settings) {
+    const container = document.getElementById('printContainer');
+    if (!container) return;
+
+    const brandTa = this.cleanBrandTa(settings);
+    const company = (settings && settings.companyName) || 'Vanur Farmer Producer Company Ltd';
+    const address = (settings && settings.address) || '';
+    const phone = (settings && settings.phone) || '';
+    const gstin = (settings && settings.gstin) || '';
+    const fssai = (settings && settings.fssai) || '';
+
+    const itemsHtml = (returnDoc.items || []).map(it => `
+      <tr>
+        <td style="text-align:left; padding:3px 0;">
+          <div><b>${it.nameEn || ''}</b></div>
+          ${it.nameTa ? `<div style="font-size:11px;">${it.nameTa}</div>` : ''}
+          <div style="font-size:10px; color:#555;">[${it.condition === 'damaged' ? 'Damaged' : 'Restocked'}]</div>
+        </td>
+        <td style="text-align:center; padding:3px 0;">${it.qty}</td>
+        <td style="text-align:right; padding:3px 0;">${this.formatINR(it.price)}</td>
+        <td style="text-align:right; padding:3px 0;"><b>${this.formatINR(it.amount)}</b></td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <div class="receipt thermal-80mm" style="font-family:'Courier New', monospace; font-size:12px; line-height:1.35; padding:6px; color:#000;">
+        <div style="text-align:center; border-bottom:1px dashed #000; padding-bottom:8px; margin-bottom:8px;">
+          <div style="font-size:15px; font-weight:bold;">${company}</div>
+          <div style="font-size:13px; font-weight:bold;">சீராழி — ${brandTa}</div>
+          ${address ? `<div style="font-size:11px;">${address}</div>` : ''}
+          ${phone ? `<div style="font-size:11px;">Ph: ${phone}</div>` : ''}
+          ${gstin ? `<div style="font-size:11px;">GSTIN: ${gstin}</div>` : ''}
+          ${fssai ? `<div style="font-size:11px;">FSSAI: ${fssai}</div>` : ''}
+          <div style="margin-top:6px; font-weight:bold; font-size:13px; border:1px solid #000; display:inline-block; padding:2px 8px;">
+            SALES RETURN / CREDIT NOTE
+          </div>
+        </div>
+
+        <div style="border-bottom:1px dashed #000; padding-bottom:6px; margin-bottom:6px; font-size:11px;">
+          <div><b>Return No:</b> ${returnDoc.returnNo}</div>
+          <div><b>Date:</b> ${returnDoc.date}</div>
+          <div><b>Original Bill No:</b> ${returnDoc.billNo}</div>
+          <div><b>Customer:</b> ${returnDoc.customer ? (returnDoc.customer.name || 'Walk-in') : 'Walk-in'}</div>
+          ${returnDoc.customer && returnDoc.customer.phone ? `<div><b>Phone:</b> ${returnDoc.customer.phone}</div>` : ''}
+          <div><b>Refund Mode:</b> ${returnDoc.refundMode}</div>
+          ${returnDoc.reason ? `<div><b>Reason:</b> ${returnDoc.reason}</div>` : ''}
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; margin-bottom:6px; font-size:11px;">
+          <thead>
+            <tr style="border-bottom:1px solid #000;">
+              <th style="text-align:left; padding:3px 0;">Item</th>
+              <th style="text-align:center; padding:3px 0;">Qty</th>
+              <th style="text-align:right; padding:3px 0;">Rate</th>
+              <th style="text-align:right; padding:3px 0;">Amt</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+        </table>
+
+        <div style="border-top:1px dashed #000; padding-top:6px; margin-top:6px;">
+          <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:bold; margin-top:4px; border-top:1px solid #000; border-bottom:1px solid #000; padding:4px 0;">
+            <span>TOTAL REFUND:</span>
+            <span>${this.formatINR(returnDoc.refundTotal)}</span>
+          </div>
+          <div style="font-size:10px; margin-top:4px;">
+            ${this.numberToWordsINR(returnDoc.refundTotal)}
+          </div>
+        </div>
+
+        <div style="margin-top:25px; text-align:right; font-size:11px;">
+          <div>For ${company}</div>
+          <div style="margin-top:25px;">Authorized Signatory</div>
+        </div>
+      </div>
+    `;
+
+    this._sendToPrint(container, html);
+  },
+
+  /**
+   * printReturnA4 prints an A4 Credit Note matching the corporate Tax Invoice template.
+   */
+  printReturnA4(returnDoc, settings) {
+    const container = document.getElementById('printContainer');
+    if (!container) return;
+
+    const brandTa = this.cleanBrandTa(settings);
+    const company = (settings && settings.companyName) || 'VANUR FARMER PRODUCER COMPANY LIMITED';
+    const address = (settings && settings.address) || 'Thailapuram Village, Vanur, Villupuram, Tamil Nadu';
+    const phone = (settings && settings.phone) || '9751680093';
+    const email = (settings && settings.email) || 'vanurfpc@gmail.com';
+    const gstin = (settings && settings.gstin) || '33AAJCV1242R1ZY';
+    const fssai = (settings && settings.fssai) || '12423031000494';
+
+    const cust = returnDoc.customer || {};
+    const items = returnDoc.items || [];
+
+    const itemsRows = items.map((it, idx) => `
+      <tr>
+        <td style="text-align:center; padding:6px 4px; border-right:1px solid #000; border-bottom:1px solid #000;">${idx + 1}</td>
+        <td style="padding:6px 6px; border-right:1px solid #000; border-bottom:1px solid #000;">
+          <div style="font-weight:600;">${it.nameEn || ''}</div>
+          ${it.nameTa ? `<div style="font-size:10px; color:#555;">${it.nameTa}</div>` : ''}
+          ${it.hsn ? `<div style="font-size:9px; color:#777;">HSN: ${it.hsn}</div>` : ''}
+          <div style="font-size:9px; color:#475569;">[Condition: ${it.condition === 'damaged' ? 'Damaged / Leakage' : 'Restocked to Inventory'}]</div>
+        </td>
+        <td style="text-align:center; padding:6px 4px; border-right:1px solid #000; border-bottom:1px solid #000;">${it.qty}</td>
+        ${returnDoc.gstOn ? `<td style="text-align:center; padding:6px 4px; border-right:1px solid #000; border-bottom:1px solid #000;">${it.gstPct}%</td>` : ''}
+        <td style="text-align:right; padding:6px 6px; border-right:1px solid #000; border-bottom:1px solid #000;">${this.formatINR(it.price)}</td>
+        <td style="text-align:right; padding:6px 6px; border-bottom:1px solid #000; font-weight:600;">${this.formatINR(it.amount)}</td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <div class="receipt a4-doc" style="font-family:'Segoe UI', Arial, sans-serif; font-size:11px; padding:15mm; color:#000; box-sizing:border-box;">
+        <div style="text-align:center; margin-bottom:8px;">
+          <h2 style="margin:0; font-size:18px; text-transform:uppercase; letter-spacing:1px; border-bottom:2px solid #000; display:inline-block; padding-bottom:2px;">
+            CREDIT NOTE / RETURN INVOICE
+          </h2>
+        </div>
+
+        <div style="border:1.5px solid #000; margin-bottom:12px;">
+          <!-- Header block with dual logos centered -->
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #000;">
+            <div style="width:42%;">
+              <h3 style="margin:0 0 2px 0; font-size:13px; font-weight:800;">${company}</h3>
+              <div style="font-size:11px; font-weight:600; color:#1b5e20;">Siraazhi (${brandTa}) — Pure Traditional chekku Oils</div>
+              ${fssai ? `<div style="font-size:9.5px; margin-top:2px;">FSSAI Lic. No: ${fssai}</div>` : ''}
+            </div>
+
+            <div style="width:16%; display:flex; justify-content:center; align-items:center; gap:6px;">
+              <img src="${VFPCL_LOGO_BASE64}" style="max-height:48px; opacity:0.90;" alt="VFPCL">
+              <img src="${SIRAAZHI_LOGO_BASE64}" style="max-height:48px; opacity:0.90;" alt="Siraazhi">
+            </div>
+
+            <div style="width:42%; text-align:right; font-size:10px; line-height:1.35;">
+              <div>${address}</div>
+              ${gstin ? `<div><b>GSTIN:</b> ${gstin}</div>` : ''}
+              ${phone ? `<div><b>Phone:</b> ${phone}</div>` : ''}
+              ${email ? `<div><b>Email:</b> ${email}</div>` : ''}
+            </div>
+          </div>
+
+          <!-- Customer & Return Info Bar -->
+          <div style="display:flex; justify-content:space-between; padding:8px 10px; border-bottom:1px solid #000; font-size:11px;">
+            <div style="width:50%;">
+              <div style="font-size:9.5px; font-weight:bold; text-transform:uppercase; color:#444;">Returned By / Customer:</div>
+              <div style="font-size:12px; font-weight:bold; margin-top:1px;">${cust.name || 'Walk-in Customer'}</div>
+              ${cust.phone ? `<div><b>Mobile:</b> ${cust.phone}</div>` : ''}
+              ${cust.address ? `<div><b>Address:</b> ${cust.address}</div>` : ''}
+              ${cust.gstin ? `<div><b>GSTIN:</b> ${cust.gstin}</div>` : ''}
+            </div>
+
+            <div style="width:50%; text-align:right; line-height:1.4;">
+              <div><b>Credit Note No:</b> ${returnDoc.returnNo}</div>
+              <div><b>Return Date:</b> ${returnDoc.date}</div>
+              <div><b>Against Original Bill No:</b> ${returnDoc.billNo}</div>
+              <div><b>Refund Method:</b> ${returnDoc.refundMode}</div>
+              ${returnDoc.reason ? `<div><b>Reason:</b> ${returnDoc.reason}</div>` : ''}
+            </div>
+          </div>
+
+          <!-- Products Table -->
+          <table style="width:100%; border-collapse:collapse; font-size:11px;">
+            <thead>
+              <tr style="background:#f1f5f9; border-bottom:1.5px solid #000;">
+                <th style="width:35px; text-align:center; padding:6px 4px; border-right:1px solid #000;">S.No</th>
+                <th style="text-align:left; padding:6px 6px; border-right:1px solid #000;">Description of Goods Returned</th>
+                <th style="width:50px; text-align:center; padding:6px 4px; border-right:1px solid #000;">Qty</th>
+                ${returnDoc.gstOn ? `<th style="width:55px; text-align:center; padding:6px 4px; border-right:1px solid #000;">Tax %</th>` : ''}
+                <th style="width:85px; text-align:right; padding:6px 6px; border-right:1px solid #000;">Unit Rate</th>
+                <th style="width:95px; text-align:right; padding:6px 6px;">Refund Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsRows}
+            </tbody>
+          </table>
+
+          <!-- Total Calculation -->
+          <div style="border-top:1.5px solid #000; display:flex;">
+            <div style="flex:1; border-right:1px solid #000; padding:8px 10px; display:flex; flex-direction:column; justify-content:center;">
+              <div style="font-size:10px; text-transform:uppercase; font-weight:bold; color:#444;">Amount in Words:</div>
+              <div style="font-size:12px; font-weight:bold; margin-top:2px;">${this.numberToWordsINR(returnDoc.refundTotal)}</div>
+            </div>
+            <div style="width:280px; padding:8px 10px;">
+              <div style="display:flex; justify-content:space-between; margin-bottom:3px; font-size:11px;">
+                <span>Subtotal:</span>
+                <span>${this.formatINR(returnDoc.subtotal)}</span>
+              </div>
+              ${returnDoc.gstOn && returnDoc.gstAmt > 0 ? `
+                <div style="display:flex; justify-content:space-between; margin-bottom:3px; font-size:10px; color:#555;">
+                  <span>Taxable Base:</span>
+                  <span>${this.formatINR(returnDoc.taxable)}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:3px; font-size:10px; color:#555;">
+                  <span>Tax Adjusted:</span>
+                  <span>${this.formatINR(returnDoc.gstAmt)}</span>
+                </div>
+              ` : ''}
+              <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:800; border-top:1px solid #000; padding-top:4px; margin-top:4px;">
+                <span>TOTAL REFUND:</span>
+                <span>${this.formatINR(returnDoc.refundTotal)}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dual Signatures -->
+          <div style="border-top:1px solid #000; display:flex; justify-content:space-between; padding:20px 25px 12px 25px; margin-top:20px; font-size:11px;">
+            <div style="text-align:center;">
+              <div style="border-top:1px dashed #000; width:160px; margin-bottom:4px;"></div>
+              <div>Customer Signature</div>
+            </div>
+            <div style="text-align:center;">
+              <div><b>For ${company}</b></div>
+              <div style="border-top:1px dashed #000; width:180px; margin-top:35px; margin-bottom:4px;"></div>
+              <div>Authorized Signatory</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align:center; font-size:9.5px; color:#666;">
+          (E&OE) This Credit Note confirms product return acceptance and accounting refund adjustment.
+        </div>
+      </div>
+    `;
+
+    this._sendToPrint(container, html);
+  },
+
+  _sendToPrint(container, html) {
     const toastBox = document.getElementById('toastNotificationContainer');
     if (toastBox) {
       toastBox.innerHTML = '';

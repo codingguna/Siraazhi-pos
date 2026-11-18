@@ -45,9 +45,10 @@ Name: "autostart"; Description: "Automatically start Siraazhi POS background ser
 
 [Dirs]
 ; Protected data directories for SQLite database and automatic daily backups
-Name: "{commonappdata}\SiraazhiPOS"; Flags: uninsneveruninstall
-Name: "{commonappdata}\SiraazhiPOS\data"; Flags: uninsneveruninstall
-Name: "{commonappdata}\SiraazhiPOS\backups"; Flags: uninsneveruninstall
+; Explicitly grant Full Control to all users so non-admin boot runs never hit "readonly database (8)"
+Name: "{commonappdata}\SiraazhiPOS"; Permissions: users-full; Flags: uninsneveruninstall
+Name: "{commonappdata}\SiraazhiPOS\data"; Permissions: users-full; Flags: uninsneveruninstall
+Name: "{commonappdata}\SiraazhiPOS\backups"; Permissions: users-full; Flags: uninsneveruninstall
 
 [Files]
 Source: "siraazhi-pos.exe"; DestDir: "{app}"; Flags: ignoreversion

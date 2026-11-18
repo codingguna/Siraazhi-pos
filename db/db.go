@@ -278,6 +278,45 @@ func createTables() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS returns (
+		id TEXT PRIMARY KEY,
+		return_no TEXT UNIQUE NOT NULL,
+		bill_id TEXT NOT NULL,
+		bill_no TEXT NOT NULL,
+		date TEXT NOT NULL,
+		customer_name TEXT,
+		customer_phone TEXT,
+		customer_address TEXT,
+		customer_gstin TEXT,
+		customer_state TEXT,
+		subtotal REAL NOT NULL,
+		taxable REAL NOT NULL,
+		gst_on INTEGER DEFAULT 1,
+		gst_amt REAL DEFAULT 0,
+		cgst REAL DEFAULT 0,
+		sgst REAL DEFAULT 0,
+		igst REAL DEFAULT 0,
+		refund_total REAL NOT NULL,
+		refund_mode TEXT DEFAULT 'Cash',
+		reason TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS return_items (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		return_id TEXT NOT NULL,
+		product_id TEXT NOT NULL,
+		name_en TEXT,
+		name_ta TEXT,
+		hsn TEXT,
+		qty REAL NOT NULL,
+		price REAL NOT NULL,
+		gst_pct REAL NOT NULL,
+		amount REAL NOT NULL,
+		condition TEXT DEFAULT 'restock',
+		FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_bills_date ON bills(date);
 	CREATE INDEX IF NOT EXISTS idx_stock_moves_pid ON stock_moves(product_id);
 	CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(date);
@@ -289,6 +328,11 @@ func createTables() error {
 	CREATE INDEX IF NOT EXISTS idx_customer_payments_phone ON customer_payments(customer_phone);
 	CREATE INDEX IF NOT EXISTS idx_customer_payments_name ON customer_payments(customer_name);
 	CREATE INDEX IF NOT EXISTS idx_customer_payments_date ON customer_payments(date);
+	CREATE INDEX IF NOT EXISTS idx_returns_bill_id ON returns(bill_id);
+	CREATE INDEX IF NOT EXISTS idx_returns_date ON returns(date);
+	CREATE INDEX IF NOT EXISTS idx_returns_customer_phone ON returns(customer_phone);
+	CREATE INDEX IF NOT EXISTS idx_return_items_return_id ON return_items(return_id);
+	CREATE INDEX IF NOT EXISTS idx_return_items_product_id ON return_items(product_id);
 	`
 	_, err := DB.Exec(schema)
 	if err != nil {
@@ -542,8 +586,9 @@ func DeleteProduct(id string) error {
 	return err
 }
 
-// NextBillSeq generates the next sequential bill number atomically.
-// Flow: begins tx -> reads current sequence -> formats string -> increments sequence -> commits tx.
+// NextBillSeq generates the next sequential bill number atomically and bulletproof.
+// Flow: begins tx -> checks MAX existing numeric sequence in 'bills' table ->
+// ensures sequence is always > MAX existing bill number -> writes incremented value to meta -> commits tx.
 func NextBillSeq(prefix, fy string) (string, error) {
 	lock.Lock()
 	defer lock.Unlock()
@@ -554,14 +599,44 @@ func NextBillSeq(prefix, fy string) (string, error) {
 	}
 	defer tx.Rollback()
 
-	var seq int
-	err = tx.QueryRow("SELECT CAST(val AS INTEGER) FROM meta WHERE key = 'bill_seq'").Scan(&seq)
-	if err != nil {
-		seq = 1
+	// 1. Read stored sequence from meta table
+	var metaSeq int
+	err = tx.QueryRow("SELECT CAST(val AS INTEGER) FROM meta WHERE key = 'bill_seq'").Scan(&metaSeq)
+	if err != nil || metaSeq < 1 {
+		metaSeq = 1
 	}
 
-	billNo := fmt.Sprintf("%s/%s/%04d", prefix, fy, seq)
-	_, err = tx.Exec("UPDATE meta SET val = ? WHERE key = 'bill_seq'", fmt.Sprintf("%d", seq+1))
+	// 2. BULLETPROOF SYNC: Query the actual MAX numeric suffix from existing bills matching prefix & fy
+	// Format is: PREFIX/FY/NNNN (e.g. VFPC/2026-27/0044)
+	pattern := fmt.Sprintf("%s/%s/%%", prefix, fy)
+	rows, err := tx.Query("SELECT bill_no FROM bills WHERE bill_no LIKE ?", pattern)
+	maxExisting := 0
+	if err == nil {
+		for rows.Next() {
+			var bNo string
+			if err := rows.Scan(&bNo); err == nil {
+				parts := strings.Split(bNo, "/")
+				if len(parts) >= 3 {
+					var num int
+					if _, err := fmt.Sscanf(parts[len(parts)-1], "%d", &num); err == nil {
+						if num > maxExisting {
+							maxExisting = num
+						}
+					}
+				}
+			}
+		}
+		rows.Close()
+	}
+
+	// 3. Current sequence to use must be greater than any existing bill
+	currentSeq := metaSeq
+	if maxExisting >= currentSeq {
+		currentSeq = maxExisting + 1
+	}
+
+	billNo := fmt.Sprintf("%s/%s/%04d", prefix, fy, currentSeq)
+	_, err = tx.Exec("UPDATE meta SET val = ? WHERE key = 'bill_seq'", fmt.Sprintf("%d", currentSeq+1))
 	if err != nil {
 		return "", err
 	}
@@ -1015,6 +1090,319 @@ func GetBillByID(id string) (Bill, error) {
 	return b, nil
 }
 
+// NextReturnSeq generates sequential Credit Note / Return numbers (e.g. CN/2026-27/0001) bulletproof.
+func NextReturnSeq(prefix, fy string) (string, error) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	var metaSeq int
+	err = tx.QueryRow("SELECT CAST(val AS INTEGER) FROM meta WHERE key = 'return_seq'").Scan(&metaSeq)
+	if err != nil || metaSeq < 1 {
+		metaSeq = 1
+	}
+
+	// Bulletproof sync: Check MAX existing return number
+	pattern := fmt.Sprintf("%s/%s/%%", prefix, fy)
+	rows, err := tx.Query("SELECT return_no FROM returns WHERE return_no LIKE ?", pattern)
+	maxExisting := 0
+	if err == nil {
+		for rows.Next() {
+			var rNo string
+			if err := rows.Scan(&rNo); err == nil {
+				parts := strings.Split(rNo, "/")
+				if len(parts) >= 3 {
+					var num int
+					if _, err := fmt.Sscanf(parts[len(parts)-1], "%d", &num); err == nil {
+						if num > maxExisting {
+							maxExisting = num
+						}
+					}
+				}
+			}
+		}
+		rows.Close()
+	}
+
+	currentSeq := metaSeq
+	if maxExisting >= currentSeq {
+		currentSeq = maxExisting + 1
+	}
+
+	retNo := fmt.Sprintf("%s/%s/%04d", prefix, fy, currentSeq)
+	_, err = tx.Exec("UPDATE meta SET val = ? WHERE key = 'return_seq'", fmt.Sprintf("%d", currentSeq+1))
+	if err != nil {
+		return "", err
+	}
+
+	return retNo, tx.Commit()
+}
+
+// GetReturnedQuantitiesByBill returns a map of product_id -> total already returned qty for a given bill.
+func GetReturnedQuantitiesByBill(billID string) (map[string]float64, error) {
+	returned := make(map[string]float64)
+	rows, err := DB.Query(`SELECT ri.product_id, COALESCE(SUM(ri.qty), 0)
+		FROM return_items ri
+		JOIN returns r ON r.id = ri.return_id
+		WHERE r.bill_id = ?
+		GROUP BY ri.product_id`, billID)
+	if err != nil {
+		return returned, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var pid string
+		var q float64
+		if err := rows.Scan(&pid, &q); err == nil {
+			returned[pid] = q
+		}
+	}
+	return returned, nil
+}
+
+// CreateReturn records a sales return / credit note, updates inventory, and handles customer credit.
+func CreateReturn(ret Return) (Return, error) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return ret, err
+	}
+	defer tx.Rollback()
+
+	// 1. Verify bill exists
+	var origBillNo, origDate string
+	var origGrandTotal float64
+	err = tx.QueryRow("SELECT bill_no, date, grand_total FROM bills WHERE id = ?", ret.BillID).Scan(&origBillNo, &origDate, &origGrandTotal)
+	if err != nil {
+		return ret, fmt.Errorf("original bill %s not found: %w", ret.BillID, err)
+	}
+	ret.BillNo = origBillNo
+
+	// 2. Check already returned quantities for this bill
+	rows, err := tx.Query(`SELECT ri.product_id, COALESCE(SUM(ri.qty), 0)
+		FROM return_items ri
+		JOIN returns r ON r.id = ri.return_id
+		WHERE r.bill_id = ?
+		GROUP BY ri.product_id`, ret.BillID)
+	if err != nil {
+		return ret, fmt.Errorf("failed to check existing returns: %w", err)
+	}
+	priorReturns := make(map[string]float64)
+	for rows.Next() {
+		var pid string
+		var q float64
+		if err := rows.Scan(&pid, &q); err == nil {
+			priorReturns[pid] = q
+		}
+	}
+	rows.Close()
+
+	// Check sold quantities on original bill
+	soldRows, err := tx.Query("SELECT product_id, qty FROM bill_items WHERE bill_id = ?", ret.BillID)
+	if err != nil {
+		return ret, fmt.Errorf("failed to query bill items: %w", err)
+	}
+	soldQty := make(map[string]float64)
+	for soldRows.Next() {
+		var pid string
+		var q float64
+		if err := soldRows.Scan(&pid, &q); err == nil {
+			soldQty[pid] = q
+		}
+	}
+	soldRows.Close()
+
+	// Validate return items qty
+	if len(ret.Items) == 0 {
+		return ret, fmt.Errorf("at least one item must be returned")
+	}
+
+	for _, item := range ret.Items {
+		if item.Qty <= 0 {
+			return ret, fmt.Errorf("invalid return quantity %v for product %s", item.Qty, item.NameEn)
+		}
+		origSold := soldQty[item.ProductID]
+		alreadyReturned := priorReturns[item.ProductID]
+		remaining := origSold - alreadyReturned
+		if item.Qty > remaining+0.0001 {
+			return ret, fmt.Errorf("cannot return %v of %s; only %v remaining from original bill (sold: %v, returned: %v)",
+				item.Qty, item.NameEn, remaining, origSold, alreadyReturned)
+		}
+	}
+
+	// 3. Insert return header
+	gstOnInt := 0
+	if ret.GSTOn {
+		gstOnInt = 1
+	}
+
+	_, err = tx.Exec(`INSERT INTO returns
+		(id, return_no, bill_id, bill_no, date, customer_name, customer_phone, customer_address, customer_gstin, customer_state,
+		 subtotal, taxable, gst_on, gst_amt, cgst, sgst, igst, refund_total, refund_mode, reason, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		ret.ID, ret.ReturnNo, ret.BillID, ret.BillNo, ret.Date, ret.Customer.Name, ret.Customer.Phone, ret.Customer.Address, ret.Customer.Gstin, ret.Customer.State,
+		ret.Subtotal, ret.Taxable, gstOnInt, ret.GSTAmt, ret.CGST, ret.SGST, ret.IGST, ret.RefundTotal, ret.RefundMode, ret.Reason,
+	)
+	if err != nil {
+		return ret, fmt.Errorf("insert return header failed: %w", err)
+	}
+
+	// 4. Insert items and update stock
+	for _, item := range ret.Items {
+		cond := strings.ToLower(strings.TrimSpace(item.Condition))
+		if cond != "damaged" {
+			cond = "restock"
+		}
+
+		_, err = tx.Exec(`INSERT INTO return_items
+			(return_id, product_id, name_en, name_ta, hsn, qty, price, gst_pct, amount, condition)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			ret.ID, item.ProductID, item.NameEn, item.NameTa, item.HSN, item.Qty, item.Price, item.GSTPct, item.Amount, cond,
+		)
+		if err != nil {
+			return ret, fmt.Errorf("insert return item failed: %w", err)
+		}
+
+		if cond == "restock" {
+			// Increment sellable stock
+			_, err = tx.Exec("UPDATE products SET stock = stock + ? WHERE id = ?", item.Qty, item.ProductID)
+			if err != nil {
+				return ret, fmt.Errorf("restock inventory failed: %w", err)
+			}
+
+			// Record 'return' move in stock_moves ledger
+			moveID := GenID("sm_ret")
+			_, err = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref)
+				VALUES (?, ?, ?, 'return', ?, ?, ?)`,
+				moveID, ret.Date, item.ProductID, item.Qty, "Return "+ret.ReturnNo+" (Bill "+ret.BillNo+")", ret.ID,
+			)
+			if err != nil {
+				return ret, fmt.Errorf("record return stock move failed: %w", err)
+			}
+		} else {
+			// Damaged / waste return: Do not increase sellable stock, record damaged audit entry
+			moveID := GenID("sm_dmg")
+			_, err = tx.Exec(`INSERT INTO stock_moves (id, date, product_id, type, qty, note, ref)
+				VALUES (?, ?, ?, 'damage_return', ?, ?, ?)`,
+				moveID, ret.Date, item.ProductID, item.Qty, "Damaged Return "+ret.ReturnNo+" (Bill "+ret.BillNo+")", ret.ID,
+			)
+			if err != nil {
+				return ret, fmt.Errorf("record damage move failed: %w", err)
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return ret, err
+	}
+
+	return ret, nil
+}
+
+// GetReturns retrieves sales returns / credit notes with optional date range filter.
+func GetReturns(from, to string) ([]Return, error) {
+	query := `SELECT id, return_no, bill_id, bill_no, date, COALESCE(customer_name, ''), COALESCE(customer_phone, ''),
+		COALESCE(customer_address, ''), COALESCE(customer_gstin, ''), COALESCE(customer_state, ''),
+		subtotal, taxable, gst_on, gst_amt, cgst, sgst, igst, refund_total, COALESCE(refund_mode, 'Cash'), COALESCE(reason, ''), created_at
+		FROM returns`
+	var args []interface{}
+	var conds []string
+	if from != "" {
+		conds = append(conds, "date >= ?")
+		args = append(args, from)
+	}
+	if to != "" {
+		conds = append(conds, "date <= ?")
+		args = append(args, to)
+	}
+	if len(conds) > 0 {
+		query += " WHERE " + strings.Join(conds, " AND ")
+	}
+	query += " ORDER BY created_at DESC"
+
+	rows, err := DB.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]Return, 0)
+	for rows.Next() {
+		var r Return
+		var gstOnInt int
+		err := rows.Scan(
+			&r.ID, &r.ReturnNo, &r.BillID, &r.BillNo, &r.Date, &r.Customer.Name, &r.Customer.Phone,
+			&r.Customer.Address, &r.Customer.Gstin, &r.Customer.State,
+			&r.Subtotal, &r.Taxable, &gstOnInt, &r.GSTAmt, &r.CGST, &r.SGST, &r.IGST,
+			&r.RefundTotal, &r.RefundMode, &r.Reason, &r.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		r.GSTOn = gstOnInt == 1
+		list = append(list, r)
+	}
+
+	// Fetch items for each return
+	for i := range list {
+		iRows, err := DB.Query(`SELECT id, return_id, product_id, name_en, name_ta, hsn, qty, price, gst_pct, amount, COALESCE(condition, 'restock')
+			FROM return_items WHERE return_id = ?`, list[i].ID)
+		if err == nil {
+			for iRows.Next() {
+				var it ReturnItem
+				if err := iRows.Scan(&it.ID, &it.ReturnID, &it.ProductID, &it.NameEn, &it.NameTa, &it.HSN, &it.Qty, &it.Price, &it.GSTPct, &it.Amount, &it.Condition); err == nil {
+					list[i].Items = append(list[i].Items, it)
+				}
+			}
+			iRows.Close()
+		}
+	}
+
+	return list, nil
+}
+
+// GetReturnByID retrieves a single return record with its items.
+func GetReturnByID(id string) (Return, error) {
+	var r Return
+	var gstOnInt int
+	err := DB.QueryRow(`SELECT id, return_no, bill_id, bill_no, date, COALESCE(customer_name, ''), COALESCE(customer_phone, ''),
+		COALESCE(customer_address, ''), COALESCE(customer_gstin, ''), COALESCE(customer_state, ''),
+		subtotal, taxable, gst_on, gst_amt, cgst, sgst, igst, refund_total, COALESCE(refund_mode, 'Cash'), COALESCE(reason, ''), created_at
+		FROM returns WHERE id = ?`, id).
+		Scan(
+			&r.ID, &r.ReturnNo, &r.BillID, &r.BillNo, &r.Date, &r.Customer.Name, &r.Customer.Phone,
+			&r.Customer.Address, &r.Customer.Gstin, &r.Customer.State,
+			&r.Subtotal, &r.Taxable, &gstOnInt, &r.GSTAmt, &r.CGST, &r.SGST, &r.IGST,
+			&r.RefundTotal, &r.RefundMode, &r.Reason, &r.CreatedAt,
+		)
+	if err != nil {
+		return r, err
+	}
+	r.GSTOn = gstOnInt == 1
+
+	rows, err := DB.Query(`SELECT id, return_id, product_id, name_en, name_ta, hsn, qty, price, gst_pct, amount, COALESCE(condition, 'restock')
+		FROM return_items WHERE return_id = ?`, r.ID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var it ReturnItem
+			if err := rows.Scan(&it.ID, &it.ReturnID, &it.ProductID, &it.NameEn, &it.NameTa, &it.HSN, &it.Qty, &it.Price, &it.GSTPct, &it.Amount, &it.Condition); err == nil {
+				r.Items = append(r.Items, it)
+			}
+		}
+	}
+	return r, nil
+}
+
+
 // AdjustStock updates product stock level and records a stock movement audit entry.
 func AdjustStock(productID, date, moveType string, qty float64, note string) error {
 	lock.Lock()
@@ -1156,11 +1544,19 @@ func GetDashboard() (DashboardStats, error) {
 	today := time.Now().Format("2006-01-02")
 	month := time.Now().Format("2006-01")
 
-	// Today sales & bill count
-	_ = DB.QueryRow("SELECT COALESCE(SUM(grand_total), 0), COUNT(*) FROM bills WHERE date = ?", today).Scan(&s.TodaySales, &s.TodayBillsCount)
+	// Today sales & bill count (net of returns)
+	var todayBillsGross float64
+	var todayReturns float64
+	_ = DB.QueryRow("SELECT COALESCE(SUM(grand_total), 0), COUNT(*) FROM bills WHERE date = ?", today).Scan(&todayBillsGross, &s.TodayBillsCount)
+	_ = DB.QueryRow("SELECT COALESCE(SUM(refund_total), 0) FROM returns WHERE date = ?", today).Scan(&todayReturns)
+	s.TodaySales = roundMoney(todayBillsGross - todayReturns)
 
-	// Month sales & bill count
-	_ = DB.QueryRow("SELECT COALESCE(SUM(grand_total), 0), COUNT(*) FROM bills WHERE strftime('%Y-%m', date) = ?", month).Scan(&s.MonthSales, &s.MonthBillsCount)
+	// Month sales & bill count (net of returns)
+	var monthBillsGross float64
+	var monthReturns float64
+	_ = DB.QueryRow("SELECT COALESCE(SUM(grand_total), 0), COUNT(*) FROM bills WHERE strftime('%Y-%m', date) = ?", month).Scan(&monthBillsGross, &s.MonthBillsCount)
+	_ = DB.QueryRow("SELECT COALESCE(SUM(refund_total), 0) FROM returns WHERE strftime('%Y-%m', date) = ?", month).Scan(&monthReturns)
+	s.MonthSales = roundMoney(monthBillsGross - monthReturns)
 
 	// Month purchases & expenses
 	_ = DB.QueryRow("SELECT COALESCE(SUM(cost), 0) FROM purchases WHERE strftime('%Y-%m', date) = ?", month).Scan(&s.MonthPurchases)
@@ -1543,12 +1939,17 @@ func GetCustomerHistory(query string, from string, to string) (*CustomerHistory,
 
 	phone := c.Phone
 
-	// Lifetime stats
+	// Lifetime stats - STRICT PHONE MATCHING: If customer has a phone, query strictly by phone
 	var lifetimeBills int
 	var lifetimeSpent sql.NullFloat64
 	var minDate, maxDate sql.NullString
-	_ = DB.QueryRow(`SELECT COUNT(*), SUM(grand_total), MIN(date), MAX(date) FROM bills WHERE (customer_phone = ? AND customer_phone != '') OR customer_name = ?`, phone, c.Name).
-		Scan(&lifetimeBills, &lifetimeSpent, &minDate, &maxDate)
+	if phone != "" {
+		_ = DB.QueryRow(`SELECT COUNT(*), SUM(grand_total), MIN(date), MAX(date) FROM bills WHERE customer_phone = ?`, phone).
+			Scan(&lifetimeBills, &lifetimeSpent, &minDate, &maxDate)
+	} else {
+		_ = DB.QueryRow(`SELECT COUNT(*), SUM(grand_total), MIN(date), MAX(date) FROM bills WHERE customer_name = ? AND (customer_phone = '' OR customer_phone IS NULL)`, c.Name).
+			Scan(&lifetimeBills, &lifetimeSpent, &minDate, &maxDate)
+	}
 
 	hist.IsRegistered = lifetimeBills > 0
 	if minDate.Valid {
@@ -1558,14 +1959,24 @@ func GetCustomerHistory(query string, from string, to string) (*CustomerHistory,
 		hist.LastVisitDate = maxDate.String
 	}
 
-	// 2. Filtered Bills Query
-	bQuery := `SELECT id, bill_no, date, customer_name, customer_phone, customer_address, customer_gstin, customer_state,
-			subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, note,
-			COALESCE(cash_paid, 0), COALESCE(upi_paid, 0)
-		FROM bills 
-		WHERE ((customer_phone = ? AND customer_phone != '') OR customer_name = ?)`
+	// 2. Filtered Bills Query - STRICT PHONE MATCHING
+	var bQuery string
 	var args []interface{}
-	args = append(args, phone, c.Name)
+	if phone != "" {
+		bQuery = `SELECT id, bill_no, date, customer_name, customer_phone, customer_address, customer_gstin, customer_state,
+				subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, note,
+				COALESCE(cash_paid, 0), COALESCE(upi_paid, 0)
+			FROM bills 
+			WHERE customer_phone = ?`
+		args = append(args, phone)
+	} else {
+		bQuery = `SELECT id, bill_no, date, customer_name, customer_phone, customer_address, customer_gstin, customer_state,
+				subtotal, discount, taxable, gst_on, gst_amt, cgst, sgst, igst, grand_total, pay_mode, paid, balance, note,
+				COALESCE(cash_paid, 0), COALESCE(upi_paid, 0)
+			FROM bills 
+			WHERE customer_name = ? AND (customer_phone = '' OR customer_phone IS NULL)`
+		args = append(args, c.Name)
+	}
 
 	if from != "" {
 		bQuery += " AND date >= ?"
@@ -1606,17 +2017,30 @@ func GetCustomerHistory(query string, from string, to string) (*CustomerHistory,
 		hist.AvgBillValue = roundMoney(hist.TotalSpent / float64(hist.TotalBillsCount))
 	}
 
-	// 3. Product-Wise Purchase Summary (What products they purchased & spend)
-	pQuery := `
-		SELECT bi.product_id, bi.name_en, bi.name_ta, COALESCE(p.category, 'Other'),
-			SUM(bi.qty) as total_qty, SUM(bi.amount) as total_spent,
-			COUNT(DISTINCT b.id) as orders_count, MAX(b.date) as last_date
-		FROM bill_items bi
-		JOIN bills b ON bi.bill_id = b.id
-		LEFT JOIN products p ON bi.product_id = p.id
-		WHERE ((b.customer_phone = ? AND b.customer_phone != '') OR b.customer_name = ?)`
+	// 3. Product-Wise Purchase Summary (STRICT PHONE MATCHING)
+	var pQuery string
 	var pArgs []interface{}
-	pArgs = append(pArgs, phone, c.Name)
+	if phone != "" {
+		pQuery = `
+			SELECT bi.product_id, bi.name_en, bi.name_ta, COALESCE(p.category, 'Other'),
+				SUM(bi.qty) as total_qty, SUM(bi.amount) as total_spent,
+				COUNT(DISTINCT b.id) as orders_count, MAX(b.date) as last_date
+			FROM bill_items bi
+			JOIN bills b ON bi.bill_id = b.id
+			LEFT JOIN products p ON bi.product_id = p.id
+			WHERE b.customer_phone = ?`
+		pArgs = append(pArgs, phone)
+	} else {
+		pQuery = `
+			SELECT bi.product_id, bi.name_en, bi.name_ta, COALESCE(p.category, 'Other'),
+				SUM(bi.qty) as total_qty, SUM(bi.amount) as total_spent,
+				COUNT(DISTINCT b.id) as orders_count, MAX(b.date) as last_date
+			FROM bill_items bi
+			JOIN bills b ON bi.bill_id = b.id
+			LEFT JOIN products p ON bi.product_id = p.id
+			WHERE b.customer_name = ? AND (b.customer_phone = '' OR b.customer_phone IS NULL)`
+		pArgs = append(pArgs, c.Name)
+	}
 
 	if from != "" {
 		pQuery += " AND b.date >= ?"
@@ -1658,11 +2082,12 @@ func GetCustomerDirectory(query string, limit int) ([]CustomerDirectoryItem, err
 			COALESCE(MIN(b.date), '') as first_visit,
 			COALESCE(MAX(b.date), '') as last_visit,
 			ROUND(
-				COALESCE((SELECT SUM(b2.grand_total) - SUM(b2.paid) FROM bills b2 WHERE (b2.customer_phone = c.phone AND c.phone != '') OR b2.customer_name = c.name), 0) -
-				COALESCE((SELECT SUM(p.amount) FROM customer_payments p WHERE (p.customer_phone = c.phone AND c.phone != '') OR p.customer_name = c.name), 0)
+				COALESCE((SELECT SUM(b2.grand_total) - SUM(b2.paid) FROM bills b2 WHERE (c.phone != '' AND b2.customer_phone = c.phone) OR (c.phone = '' AND b2.customer_name = c.name AND (b2.customer_phone = '' OR b2.customer_phone IS NULL))), 0) -
+				COALESCE((SELECT SUM(p.amount) FROM customer_payments p WHERE (c.phone != '' AND p.customer_phone = c.phone) OR (c.phone = '' AND p.customer_name = c.name AND (p.customer_phone = '' OR p.customer_phone IS NULL))), 0) -
+				COALESCE((SELECT SUM(r.refund_total) FROM returns r WHERE ((c.phone != '' AND r.customer_phone = c.phone) OR (c.phone = '' AND r.customer_name = c.name AND (r.customer_phone = '' OR r.customer_phone IS NULL))) AND r.refund_mode = 'Credit'), 0)
 			, 2) as balance
 		FROM customers c
-		LEFT JOIN bills b ON (c.phone = b.customer_phone AND c.phone != '') OR c.name = b.customer_name`
+		LEFT JOIN bills b ON (c.phone != '' AND b.customer_phone = c.phone) OR (c.phone = '' AND b.customer_name = c.name AND (b.customer_phone = '' OR b.customer_phone IS NULL))`
 
 	var args []interface{}
 	if query != "" {
@@ -1831,22 +2256,32 @@ func GetCustomerLedger(query string, from string, to string) (*CustomerLedger, e
 		Entries:  []CustomerLedgerEntry{},
 	}
 
-	phone := c.Phone
-	name := c.Name
+	phone := strings.TrimSpace(c.Phone)
+	name := strings.TrimSpace(c.Name)
 
-	// 2. Compute Opening Balance (All debits and credits prior to 'from')
+	// 2. Compute Opening Balance (All debits and credits prior to 'from') - STRICT PHONE MATCHING
 	var openingBal float64
 	if from != "" {
 		var priorDebits sql.NullFloat64
 		var priorBillPaid sql.NullFloat64
-		_ = DB.QueryRow(`SELECT SUM(grand_total), SUM(paid) FROM bills 
-			WHERE ((customer_phone = ? AND customer_phone != '') OR customer_name = ?) AND date < ?`,
-			phone, name, from).Scan(&priorDebits, &priorBillPaid)
-
 		var priorDirectPayments sql.NullFloat64
-		_ = DB.QueryRow(`SELECT SUM(amount) FROM customer_payments 
-			WHERE ((customer_phone = ? AND customer_phone != '') OR customer_name = ?) AND date < ?`,
-			phone, name, from).Scan(&priorDirectPayments)
+		var priorReturns sql.NullFloat64
+
+		if phone != "" {
+			_ = DB.QueryRow(`SELECT SUM(grand_total), SUM(paid) FROM bills WHERE customer_phone = ? AND date < ?`, phone, from).
+				Scan(&priorDebits, &priorBillPaid)
+			_ = DB.QueryRow(`SELECT SUM(amount) FROM customer_payments WHERE customer_phone = ? AND date < ?`, phone, from).
+				Scan(&priorDirectPayments)
+			_ = DB.QueryRow(`SELECT SUM(refund_total) FROM returns WHERE customer_phone = ? AND date < ? AND refund_mode = 'Credit'`, phone, from).
+				Scan(&priorReturns)
+		} else {
+			_ = DB.QueryRow(`SELECT SUM(grand_total), SUM(paid) FROM bills WHERE customer_name = ? AND (customer_phone = '' OR customer_phone IS NULL) AND date < ?`, name, from).
+				Scan(&priorDebits, &priorBillPaid)
+			_ = DB.QueryRow(`SELECT SUM(amount) FROM customer_payments WHERE customer_name = ? AND (customer_phone = '' OR customer_phone IS NULL) AND date < ?`, name, from).
+				Scan(&priorDirectPayments)
+			_ = DB.QueryRow(`SELECT SUM(refund_total) FROM returns WHERE customer_name = ? AND (customer_phone = '' OR customer_phone IS NULL) AND date < ? AND refund_mode = 'Credit'`, name, from).
+				Scan(&priorReturns)
+		}
 
 		deb := 0.0
 		if priorDebits.Valid {
@@ -1859,15 +2294,23 @@ func GetCustomerLedger(query string, from string, to string) (*CustomerLedger, e
 		if priorDirectPayments.Valid {
 			cred += priorDirectPayments.Float64
 		}
+		if priorReturns.Valid {
+			cred += priorReturns.Float64
+		}
 		openingBal = roundMoney(deb - cred)
 	}
 	ledger.OpeningBalance = openingBal
 
-	// 3. Collect Bills within [from, to]
-	bQuery := `SELECT id, bill_no, date, grand_total, paid, pay_mode, gst_on, note FROM bills 
-		WHERE ((customer_phone = ? AND customer_phone != '') OR customer_name = ?)`
+	// 3. Collect Bills within [from, to] - STRICT PHONE MATCHING
+	var bQuery string
 	var bArgs []interface{}
-	bArgs = append(bArgs, phone, name)
+	if phone != "" {
+		bQuery = `SELECT id, bill_no, date, grand_total, paid, pay_mode, gst_on, note FROM bills WHERE customer_phone = ?`
+		bArgs = append(bArgs, phone)
+	} else {
+		bQuery = `SELECT id, bill_no, date, grand_total, paid, pay_mode, gst_on, note FROM bills WHERE customer_name = ? AND (customer_phone = '' OR customer_phone IS NULL)`
+		bArgs = append(bArgs, name)
+	}
 	if from != "" {
 		bQuery += " AND date >= ?"
 		bArgs = append(bArgs, from)
@@ -1918,11 +2361,16 @@ func GetCustomerLedger(query string, from string, to string) (*CustomerLedger, e
 		}
 	}
 
-	// 4. Collect Customer Payments (Bank receipts, cheques, standalone receipts)
-	pQuery := `SELECT id, receipt_no, date, amount, pay_mode, bank_name, ref_no, note FROM customer_payments 
-		WHERE ((customer_phone = ? AND customer_phone != '') OR customer_name = ?)`
+	// 4. Collect Customer Payments (Bank receipts, cheques, standalone receipts) - STRICT PHONE MATCHING
+	var pQuery string
 	var pArgs []interface{}
-	pArgs = append(pArgs, phone, name)
+	if phone != "" {
+		pQuery = `SELECT id, receipt_no, date, amount, pay_mode, bank_name, ref_no, note FROM customer_payments WHERE customer_phone = ?`
+		pArgs = append(pArgs, phone)
+	} else {
+		pQuery = `SELECT id, receipt_no, date, amount, pay_mode, bank_name, ref_no, note FROM customer_payments WHERE customer_name = ? AND (customer_phone = '' OR customer_phone IS NULL)`
+		pArgs = append(pArgs, name)
+	}
 	if from != "" {
 		pQuery += " AND date >= ?"
 		pArgs = append(pArgs, from)
@@ -1963,7 +2411,56 @@ func GetCustomerLedger(query string, from string, to string) (*CustomerLedger, e
 		}
 	}
 
-	// 5. Stable Sort chronologically by Date. On same date, Debits (sales) come before Credits (payments)
+	// 5. Collect Sales Returns (Credit Notes) - STRICT PHONE MATCHING
+	var rQuery string
+	var rArgs []interface{}
+	if phone != "" {
+		rQuery = `SELECT id, return_no, bill_no, date, refund_total, refund_mode, reason FROM returns WHERE customer_phone = ?`
+		rArgs = append(rArgs, phone)
+	} else {
+		rQuery = `SELECT id, return_no, bill_no, date, refund_total, refund_mode, reason FROM returns WHERE customer_name = ? AND (customer_phone = '' OR customer_phone IS NULL)`
+		rArgs = append(rArgs, name)
+	}
+	if from != "" {
+		rQuery += " AND date >= ?"
+		rArgs = append(rArgs, from)
+	}
+	if to != "" {
+		rQuery += " AND date <= ?"
+		rArgs = append(rArgs, to)
+	}
+	rQuery += " ORDER BY date ASC, return_no ASC"
+
+	rRows, err := DB.Query(rQuery, rArgs...)
+	if err == nil {
+		defer rRows.Close()
+		for rRows.Next() {
+			var retID, retNo, bNo, retDate, refMode, reason string
+			var refTotal float64
+			if err := rRows.Scan(&retID, &retNo, &bNo, &retDate, &refTotal, &refMode, &reason); err == nil {
+				// Only Store Credit mode reduces customer account balance (Cash/UPI was paid back directly)
+				particulars := fmt.Sprintf("Sales Return / Credit Note (%s - against %s)", refMode, bNo)
+				if reason != "" {
+					particulars += " [" + reason + "]"
+				}
+				creditAmt := 0.0
+				if refMode == "Credit" {
+					creditAmt = roundMoney(refTotal)
+				}
+				ledger.Entries = append(ledger.Entries, CustomerLedgerEntry{
+					Date:        retDate,
+					VchNo:       retNo,
+					Particulars: particulars,
+					Type:        "return",
+					Debit:       0,
+					Credit:      creditAmt,
+					RefID:       retID,
+				})
+			}
+		}
+	}
+
+	// 6. Stable Sort chronologically by Date. On same date, Debits (sales) come before Credits (payments/returns)
 	sort.SliceStable(ledger.Entries, func(i, j int) bool {
 		if ledger.Entries[i].Date != ledger.Entries[j].Date {
 			return ledger.Entries[i].Date < ledger.Entries[j].Date

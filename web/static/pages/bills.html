@@ -2,24 +2,31 @@
     <section id="tab-bills" class="tab-pane">
       <div class="panel-box">
         <div class="panel-toolbar" style="flex-wrap:wrap; gap:10px;">
-          <h2>Sales & Invoices Register</h2>
+          <div style="display:flex; align-items:center; gap:14px;">
+            <h2>Sales & Invoices Register</h2>
+            <div class="btn-group" style="display:flex; gap:4px; background:#e2e8f0; padding:2px; border-radius:6px;">
+              <button class="btn btn-xs" id="subtabBillsBtn" style="padding:4px 10px; font-weight:700; background:#fff; border-radius:4px;" onclick="switchBillsView('bills')">📑 Sales Invoices</button>
+              <button class="btn btn-xs" id="subtabReturnsBtn" style="padding:4px 10px; font-weight:600; color:#475569; background:transparent; border-radius:4px;" onclick="switchBillsView('returns')">↩️ Returns / Credit Notes</button>
+            </div>
+          </div>
           <div class="filter-group" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <label>From: <input type="date" id="filterFrom"></label>
             <label>To: <input type="date" id="filterTo"></label>
-            <button class="btn btn-secondary" onclick="loadBills()">Filter</button>
+            <button class="btn btn-secondary" onclick="refreshBillsTab()">Filter</button>
             <button class="btn btn-primary" onclick="openCustomerDirectoryModal()" style="margin-left:8px;">👥 Customer Directory & CRM History</button>
           </div>
         </div>
 
         <!-- Multi-Format Export Bar -->
-        <div class="export-banner">
+        <div class="export-banner" id="billsExportBar">
           <span class="export-title">Export Sales Data:</span>
           <button class="btn-export btn-excel" onclick="exportSalesExcel()">📗 Export Excel (.xlsx)</button>
           <button class="btn-export btn-csv" onclick="exportSalesCSV()">📄 Export CSV</button>
           <button class="btn-export btn-pdf" onclick="exportSalesPDF()">📑 Export PDF Summary</button>
         </div>
 
-        <div class="table-responsive">
+        <!-- 1. SALES INVOICES TABLE -->
+        <div class="table-responsive" id="billsTableContainer">
           <table class="data-table" id="billsTable">
             <thead>
               <tr>
@@ -35,6 +42,26 @@
               </tr>
             </thead>
             <tbody id="billsTableBody"></tbody>
+          </table>
+        </div>
+
+        <!-- 2. RETURNS & CREDIT NOTES TABLE -->
+        <div class="table-responsive" id="returnsTableContainer" style="display:none;">
+          <table class="data-table" id="returnsTable">
+            <thead>
+              <tr>
+                <th>Credit Note No</th>
+                <th>Date</th>
+                <th>Against Bill</th>
+                <th>Customer</th>
+                <th>Items Returned</th>
+                <th>Tax Adjust (₹)</th>
+                <th>Refund Total (₹)</th>
+                <th>Refund Mode</th>
+                <th>Print & Actions</th>
+              </tr>
+            </thead>
+            <tbody id="returnsTableBody"></tbody>
           </table>
         </div>
       </div>

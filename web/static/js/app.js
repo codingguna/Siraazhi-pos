@@ -2964,6 +2964,7 @@ async function loadBills() {
         <td><b style="font-size:14px;">${formatINR(b.grandTotal)}</b></td>
         <td>${payBadge}</td>
         <td>
+          <button class="chip-btn" style="color:#059669; font-weight:700;" onclick="openReturnModal('${b.id}')" title="Return products & refund">↩️ Return</button>
           <button class="chip-btn" style="color:#0284c7; font-weight:700;" onclick="editExistingBill('${b.id}')">✏️ Edit</button>
           <button class="chip-btn" onclick="reprintBill('${b.id}', '80mm')">🧻 80mm</button>
           <button class="chip-btn" onclick="reprintBill('${b.id}', 'a4')">📑 A4</button>
@@ -2975,6 +2976,342 @@ async function loadBills() {
     `}).join('');
   } catch (err) {
     console.error('Bills load failed:', err);
+  }
+}
+
+let CURRENT_BILLS_VIEW = 'bills';
+let ACTIVE_RETURN_BILL = null;
+let ACTIVE_RETURN_DATA = null;
+
+function switchBillsView(view) {
+  CURRENT_BILLS_VIEW = view;
+  const subtabBillsBtn = $('subtabBillsBtn');
+  const subtabReturnsBtn = $('subtabReturnsBtn');
+  const billsContainer = $('billsTableContainer');
+  const returnsContainer = $('returnsTableContainer');
+  const exportBar = $('billsExportBar');
+
+  if (view === 'bills') {
+    if (subtabBillsBtn) {
+      subtabBillsBtn.style.background = '#fff';
+      subtabBillsBtn.style.fontWeight = '700';
+      subtabBillsBtn.style.color = '#0f172a';
+    }
+    if (subtabReturnsBtn) {
+      subtabReturnsBtn.style.background = 'transparent';
+      subtabReturnsBtn.style.fontWeight = '600';
+      subtabReturnsBtn.style.color = '#475569';
+    }
+    if (billsContainer) billsContainer.style.display = 'block';
+    if (returnsContainer) returnsContainer.style.display = 'none';
+    if (exportBar) exportBar.style.display = 'flex';
+    loadBills();
+  } else {
+    if (subtabBillsBtn) {
+      subtabBillsBtn.style.background = 'transparent';
+      subtabBillsBtn.style.fontWeight = '600';
+      subtabBillsBtn.style.color = '#475569';
+    }
+    if (subtabReturnsBtn) {
+      subtabReturnsBtn.style.background = '#fff';
+      subtabReturnsBtn.style.fontWeight = '700';
+      subtabReturnsBtn.style.color = '#059669';
+    }
+    if (billsContainer) billsContainer.style.display = 'none';
+    if (returnsContainer) returnsContainer.style.display = 'block';
+    if (exportBar) exportBar.style.display = 'none';
+    loadReturns();
+  }
+}
+
+function refreshBillsTab() {
+  if (CURRENT_BILLS_VIEW === 'returns') {
+    loadReturns();
+  } else {
+    loadBills();
+  }
+}
+
+async function loadReturns() {
+  if (!IS_MASTER_MODE) return;
+  try {
+    const from = $('filterFrom').value;
+    const to = $('filterTo').value;
+    const q = [];
+    if (from) q.push(`from=${from}`);
+    if (to) q.push(`to=${to}`);
+
+    const returns = (await api('GET', '/api/returns' + (q.length ? '?' + q.join('&') : ''))) || [];
+    const tbody = $('returnsTableBody');
+    if (!returns.length) {
+      tbody.innerHTML = `<tr><td colspan="9" class="center muted-text" style="padding:24px;">No returns or credit notes found for the selected period</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = returns.map(r => {
+      let modeBadge = `<span class="chip-btn" style="background:#f0fdf4; color:#15803d; font-weight:700;">💵 ${r.refundMode}</span>`;
+      if (r.refundMode === 'UPI') {
+        modeBadge = `<span class="chip-btn" style="background:#e0f2fe; color:#0369a1; font-weight:700;">📱 UPI</span>`;
+      } else if (r.refundMode === 'Credit') {
+        modeBadge = `<span class="chip-btn" style="background:#fef3c7; color:#92400e; font-weight:700;">💳 Store Credit</span>`;
+      }
+
+      const itemsDesc = (r.items || []).map(it => `${it.qty}x ${it.nameEn || it.nameTa} (${it.condition || 'restock'})`).join(', ');
+
+      return `
+      <tr>
+        <td><b>${r.returnNo}</b></td>
+        <td>${r.date}</td>
+        <td><a href="javascript:void(0)" onclick="openReturnBillDetail('${r.billId}')" style="font-weight:600; color:#0f766e; text-decoration:underline;">${r.billNo}</a></td>
+        <td>
+          <a href="javascript:void(0)" onclick="openCustomerHistory('${escapeHtml(r.customer.phone || r.customer.name || '')}')" style="font-weight:600; color:#0284c7; text-decoration:underline;">
+            ${escapeHtml(r.customer.name || 'Walk-in Customer')}
+          </a>
+          ${r.customer.phone ? `<div style="font-size:11px; color:#64748b;">📞 ${escapeHtml(r.customer.phone)}</div>` : ''}
+        </td>
+        <td style="max-width:240px; font-size:12px; color:#334155;" title="${escapeHtml(itemsDesc)}">
+          <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(itemsDesc)}</div>
+          ${r.reason ? `<div style="font-size:11px; color:#94a3b8; font-style:italic;">"${escapeHtml(r.reason)}"</div>` : ''}
+        </td>
+        <td>${r.gstAmt > 0 ? formatINR(r.gstAmt) : '-'}</td>
+        <td><b style="font-size:14px; color:#dc2626;">- ${formatINR(r.refundTotal)}</b></td>
+        <td>${modeBadge}</td>
+        <td>
+          <button class="chip-btn" onclick="printReturn('${r.id}', '80mm')">🧻 80mm</button>
+          <button class="chip-btn" onclick="printReturn('${r.id}', 'a4')">📑 A4</button>
+        </td>
+      </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Returns load failed:', err);
+  }
+}
+
+async function openReturnBillDetail(billId) {
+  try {
+    const bill = await api('GET', `/api/bills/${billId}`);
+    if (bill && bill.id) {
+      reprintBill(bill.id, '80mm');
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function openReturnModal(billId) {
+  try {
+    const bill = await api('GET', `/api/bills/${billId}`);
+    if (!bill || !bill.items || !bill.items.length) {
+      alert('Could not retrieve bill line items.');
+      return;
+    }
+
+    // Check already returned quantities for this bill
+    const returnCheck = await api('GET', `/api/bills/${billId}/returns`);
+    const returnedMap = (returnCheck && returnCheck.returned) ? returnCheck.returned : {};
+
+    ACTIVE_RETURN_BILL = bill;
+    ACTIVE_RETURN_DATA = returnedMap;
+
+    $('retCustName').textContent = bill.customer.name || 'Walk-in Customer';
+    $('retCustPhone').textContent = bill.customer.phone ? `📞 ${bill.customer.phone}` : '📞 None';
+    $('retBillNo').textContent = bill.billNo;
+    $('retBillDate').textContent = `Date: ${bill.date}`;
+    $('retBillGrandTotal').textContent = formatINR(bill.grandTotal);
+    $('retBillTaxType').textContent = `Type: ${bill.gstOn ? 'GST Tax Invoice' : 'Retail Cash Bill'}`;
+    $('returnModalBillBadge').textContent = bill.billNo;
+    $('retReason').value = '';
+    $('retRefundMode').value = 'Cash';
+
+    // Populate line items table
+    const tbody = $('returnItemsTableBody');
+    let hasReturnable = false;
+
+    tbody.innerHTML = bill.items.map((it, idx) => {
+      const alreadyRet = returnedMap[it.productId] || 0;
+      const remaining = Math.max(0, it.qty - alreadyRet);
+      if (remaining > 0) hasReturnable = true;
+
+      const disabledAttr = remaining <= 0 ? 'disabled' : '';
+      const rowStyle = remaining <= 0 ? 'opacity:0.5; background:#f8fafc;' : '';
+
+      return `
+      <tr style="${rowStyle}">
+        <td style="text-align:center;">
+          <input type="checkbox" class="ret-item-check" data-idx="${idx}" ${disabledAttr} onchange="onReturnItemCheckChange(${idx})">
+        </td>
+        <td>
+          <b>${escapeHtml(it.nameEn)}</b>
+          ${it.nameTa ? `<div style="font-size:11px; color:#64748b;">${escapeHtml(it.nameTa)}</div>` : ''}
+          ${it.hsn ? `<div style="font-size:10px; color:#94a3b8;">HSN: ${it.hsn}</div>` : ''}
+        </td>
+        <td style="text-align:center;">${it.qty}</td>
+        <td style="text-align:center; font-weight:700; color:${remaining > 0 ? '#0f766e' : '#94a3b8'};">
+          ${remaining}
+          ${alreadyRet > 0 ? `<div style="font-size:10px; color:#dc2626;">(${alreadyRet} ret'd)</div>` : ''}
+        </td>
+        <td style="text-align:center;">
+          <input type="number" id="retQty_${idx}" min="0.1" max="${remaining}" step="any" value="${remaining}" 
+            ${disabledAttr} style="width:70px; padding:4px 6px; text-align:center; border:1px solid #cbd5e1; border-radius:4px;"
+            oninput="recalcReturnTotals()" onchange="recalcReturnTotals()">
+        </td>
+        <td style="text-align:right;">${formatINR(it.price)}</td>
+        <td style="text-align:center;">
+          <select id="retCond_${idx}" ${disabledAttr} style="font-size:12px; padding:4px 6px; border:1px solid #cbd5e1; border-radius:4px;">
+            <option value="restock">Restock (Sellable)</option>
+            <option value="damaged">Damaged / Leakage</option>
+          </select>
+        </td>
+        <td style="text-align:right; font-weight:700; color:#0f766e;" id="retLineAmt_${idx}">
+          ₹0.00
+        </td>
+      </tr>
+      `;
+    }).join('');
+
+    $('retSelectAll').checked = false;
+    $('retSelectAll').disabled = !hasReturnable;
+    recalcReturnTotals();
+
+    $('returnModal').classList.add('active');
+  } catch (err) {
+    console.error('Failed to open return modal:', err);
+    alert('Error loading bill: ' + err.message);
+  }
+}
+
+function closeReturnModal() {
+  $('returnModal').classList.remove('active');
+  ACTIVE_RETURN_BILL = null;
+  ACTIVE_RETURN_DATA = null;
+}
+
+function toggleSelectAllReturns(checked) {
+  const checks = document.querySelectorAll('.ret-item-check:not(:disabled)');
+  checks.forEach(chk => {
+    chk.checked = checked;
+  });
+  recalcReturnTotals();
+}
+
+function onReturnItemCheckChange(idx) {
+  recalcReturnTotals();
+}
+
+function recalcReturnTotals() {
+  if (!ACTIVE_RETURN_BILL) return;
+  const items = ACTIVE_RETURN_BILL.items;
+  let totalRefund = 0;
+
+  items.forEach((it, idx) => {
+    const chk = document.querySelector(`.ret-item-check[data-idx="${idx}"]`);
+    const qtyInput = $(`retQty_${idx}`);
+    const lineAmtCell = $(`retLineAmt_${idx}`);
+
+    if (chk && chk.checked && qtyInput) {
+      const q = parseFloat(qtyInput.value) || 0;
+      const lineAmt = Math.round(q * it.price * 100) / 100;
+      totalRefund += lineAmt;
+      if (lineAmtCell) lineAmtCell.textContent = formatINR(lineAmt);
+    } else {
+      if (lineAmtCell) lineAmtCell.textContent = '₹0.00';
+    }
+  });
+
+  totalRefund = Math.round(totalRefund * 100) / 100;
+  $('retCalculatedRefund').textContent = formatINR(totalRefund);
+  return totalRefund;
+}
+
+async function submitReturnProcess() {
+  if (!ACTIVE_RETURN_BILL) return;
+  const bill = ACTIVE_RETURN_BILL;
+  const items = bill.items;
+
+  const returnPayloadItems = [];
+
+  items.forEach((it, idx) => {
+    const chk = document.querySelector(`.ret-item-check[data-idx="${idx}"]`);
+    const qtyInput = $(`retQty_${idx}`);
+    const condSelect = $(`retCond_${idx}`);
+
+    if (chk && chk.checked && qtyInput) {
+      const q = parseFloat(qtyInput.value) || 0;
+      if (q > 0) {
+        returnPayloadItems.push({
+          productId: it.productId,
+          qty: q,
+          condition: condSelect ? condSelect.value : 'restock'
+        });
+      }
+    }
+  });
+
+  if (!returnPayloadItems.length) {
+    alert('Please select at least one item and enter a return quantity.');
+    return;
+  }
+
+  const refundMode = $('retRefundMode').value;
+  const reason = $('retReason').value;
+
+  const confirmMsg = `Process return for ${returnPayloadItems.length} item(s) on Bill ${bill.billNo}?\n` +
+    `Refund Mode: ${refundMode}\nTotal Refund: ${$('retCalculatedRefund').textContent}`;
+
+  if (!confirm(confirmMsg)) return;
+
+  const btn = $('btnSubmitReturn');
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+
+  try {
+    const res = await api('POST', '/api/returns', {
+      billId: bill.id,
+      refundMode: refundMode,
+      reason: reason,
+      items: returnPayloadItems
+    });
+
+    closeReturnModal();
+    showToast(`✅ Return ${res.returnNo} created successfully! Refund: ${formatINR(res.refundTotal)}`, 'success');
+
+    // Prompt to print Credit Note / Return Receipt
+    if (confirm(`Return ${res.returnNo} completed!\nDo you want to print the Return Slip / Credit Note now?`)) {
+      printReturn(res.id, '80mm');
+    }
+
+    // Refresh views
+    if (CURRENT_BILLS_VIEW === 'returns') {
+      loadReturns();
+    } else {
+      loadBills();
+    }
+  } catch (err) {
+    console.error('Return creation error:', err);
+    alert('Failed to process return: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↩️ Confirm & Issue Refund';
+  }
+}
+
+async function printReturn(returnId, format) {
+  try {
+    const ret = await api('GET', `/api/returns/${returnId}`);
+    if (!ret) {
+      alert('Could not load return details for printing.');
+      return;
+    }
+    const settings = await api('GET', '/api/settings');
+    if (format === 'a4') {
+      PrintEngine.printReturnA4(ret, settings);
+    } else {
+      PrintEngine.printReturn80mm(ret, settings);
+    }
+  } catch (err) {
+    console.error('Print return failed:', err);
+    alert('Failed to print return: ' + err.message);
   }
 }
 
@@ -3727,15 +4064,17 @@ async function testHardwarePrinterSlip() {
 }
 
 async function printBillDirect(bill, format) {
-  if (SETTINGS.printerInterface === 'browser') {
-    PrintEngine.print(bill, format, SETTINGS);
-    return true;
-  }
-
   // Resolve effective format
   let effFormat = format;
   if (!effFormat || effFormat === 'default') {
     effFormat = SETTINGS.defaultPrinter || SETTINGS.paperSize || SETTINGS.thermalPaperSize || 'a4';
+  }
+
+  // If format is A4 (or browser interface mode is active), use the unified high-definition HTML/CSS template
+  // featuring the centered dual logos (VFPCL + Siraazhi), single-row grand total banner, and dual signatures.
+  if (SETTINGS.printerInterface === 'browser' || effFormat === 'a4' || effFormat === 'a5') {
+    PrintEngine.print(bill, effFormat, SETTINGS);
+    return true;
   }
 
   try {
@@ -3747,8 +4086,9 @@ async function printBillDirect(bill, format) {
     showToast(`🖨 Bill ${bill.billNo} sent to ${res.printerUsed || 'printer'}`, 'success', 3000);
     return true;
   } catch (err) {
-    console.warn('Hardware direct print failed:', err);
-    showToast(`⚠️ Print error: ${err.message}`, 'danger', 5000);
+    console.warn('Hardware direct print failed, falling back to browser print engine:', err);
+    // Fallback cleanly to high-definition browser print template if direct spooler fails
+    PrintEngine.print(bill, effFormat, SETTINGS);
     return false;
   }
 }
